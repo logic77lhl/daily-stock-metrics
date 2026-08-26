@@ -26,7 +26,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 RESULT_DIR = os.path.join(BASE_DIR, "backtest_results")
 
-DEFAULT_HORIZONS = [1, 2, 3, 5, 10, 20]
+DEFAULT_HORIZONS = [1, 2, 3, 5, 10, 20, 40, 60]
+DISPLAY_HORIZONS = (1, 2, 3, 5, 10, 20)
+RECENT_HORIZON = 3
 
 STRATEGIES = [
     ("全样本(基准)", None),
@@ -290,8 +292,8 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
         if len(w) and len(l) and abs(l.mean()) > 1e-9:
             pl_map[(sname, int(h))] = round(float(w.mean() / abs(l.mean())), 2)
     tt = trades[trades["信号日"] == last_date]
-    for (sname, h), sub in tt.groupby(["策略", "持有期"]):
-        today_cnt[(sname, int(h))] = len(sub)
+    for sname, sub in tt.groupby("策略"):
+        today_cnt[sname] = sub["代码"].nunique()
 
     rules_map = dict((n, e) for n, e in STRATEGIES)
     top_picks = summary[(summary["持有期(交易日)"] == 3) & (summary["交易次数"] >= 10)] \
@@ -300,7 +302,7 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
     for _, pr in top_picks.iterrows():
         pname, phold = pr["策略"], int(pr["持有期(交易日)"])
         rule = rules_map.get(pname, "自定义策略")
-        tcnt = today_cnt.get((pname, phold), 0)
+        tcnt = today_cnt.get(pname, 0)
         recent5 = trades[(trades["策略"] == pname) & (trades["持有期"] == phold)] \
             .sort_values("信号日").tail(5)
         r5 = "".join(
@@ -316,8 +318,8 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
             <div class="pk-recent">{r5 or '<span style="color:#999">暂无近期交易</span>'}</div></div>"""
     pick_section = f'<div class="section-title">⭐ 重点策略参考（按3日持有胜率取前3）</div><div class="picks">{pick_cards}</div>' if pick_cards else ""
 
-    recent_days = sorted(trades["信号日"].unique())[-10:]
-    recent = trades[trades["信号日"].isin(set(recent_days))] \
+    recent_days = sorted(trades.loc[trades["持有期"] == RECENT_HORIZON, "信号日"].unique())[-10:]
+    recent = trades[(trades["信号日"].isin(set(recent_days))) & (trades["持有期"] == RECENT_HORIZON)] \
         .sort_values(["信号日", "策略"], ascending=[False, True]).head(300)
     recent_rows = ""
     for _, r in recent.iterrows():
@@ -335,12 +337,13 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
         f"<div class='rule-line'><b>{esc(n)}</b>：{esc(e)}</div>" for n, e in STRATEGIES)
 
     sum_rows = ""
-    for _, r in summary.iterrows():
+    disp = summary[summary["持有期(交易日)"].isin(DISPLAY_HORIZONS)]
+    for _, r in disp.iterrows():
         wr = r["胜率%"]
         wr_cls = "good" if (pd.notna(wr) and wr >= 60) else "bad" if (pd.notna(wr) and wr <= 40) else ""
         key = (r['策略'], int(r['持有期(交易日)']))
         pl = pl_map.get(key)
-        tc = today_cnt.get(key, 0)
+        tc = today_cnt.get(r['策略'], 0)
         sum_rows += f"""<tr data-wr="{num(r['胜率%'], 1)}">
             <td class="name" title="{esc(rules_map.get(r['策略'], '自定义策略'))}">{esc(r['策略'])}</td>
             <td>{int(r['持有期(交易日)'])}</td>
@@ -492,7 +495,7 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
 
     {pick_section}
 
-    <div class="section-title">近10个交易日信号（最新{len(recent)}笔，完整数据请下载CSV）</div>
+    <div class="section-title">近10个交易日信号（{RECENT_HORIZON}日持有，最新{len(recent)}笔，完整数据请下载CSV）</div>
     <div style="overflow-x: auto;">
     <table>
         <thead><tr>
@@ -510,7 +513,7 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
     <div class="footer">
         回测假设：买入=信号日收盘价，卖出=持有期结束日收盘价（统一采用最新前复权序列，跨日可比）；收益已按单边成本 {cost_pct}% 扣减；
         持有期&gt;1天时交易重叠，累计净值仅供参考 ｜ 盈亏比 = 平均盈利 ÷ 平均亏损绝对值，&gt;1 表示赚多亏小<br>
-        完整历史数据：<a href="backtest_report_trades.csv" download>下载全部交易明细CSV</a> ｜ 本报告由 backtest.py 生成，仅供研究，不构成投资建议
+        完整历史数据：<a href="backtest_report_trades.csv" download>下载全部交易明细CSV</a>（含全部持有期 1/2/3/5/10/20/40/60 日，本页仅展示常用档） ｜ 本报告由 backtest.py 生成，仅供研究，不构成投资建议
     </div>
 </div>
 <script>
@@ -576,7 +579,7 @@ def main():
     ap = argparse.ArgumentParser(description="对 output 目录每日 metrics 数据进行回测")
     ap.add_argument("--market", default="all", help="市场: all(默认), 个股, ETF, HK, 或逗号分隔如 个股,ETF")
     ap.add_argument("--input", default=None, help="数据目录(仅单市场时使用, 覆盖 --market)")
-    ap.add_argument("--horizons", default="1,2,3,5,10,20", help="持有期(交易日), 逗号分隔")
+    ap.add_argument("--horizons", default="1,2,3,5,10,20,40,60", help="持有期(交易日), 逗号分隔")
     ap.add_argument("--cost", type=float, default=0.15, help="单边交易成本%%(佣金+税费+滑点), 默认0.15")
     ap.add_argument("--strategy", action="append", default=[], help="自定义策略, 格式: 名称=日线J<0 and 周线J<0, 可多次传入")
     ap.add_argument("--outdir", default=RESULT_DIR, help="结果输出目录")

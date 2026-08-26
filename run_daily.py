@@ -8,6 +8,7 @@ import fetch_metrics
 import generate_report
 import generate_stock_charts
 import send_email
+import stock_pool
 import strategy_summary
 
 if sys.stdout is None:
@@ -62,7 +63,10 @@ def main():
             wlog(f"步骤1已存在，跳过 -> {top_csv}")
 
         wlog("步骤2: 计算 KDJ-J(日/周/月) 及 PE/PB 历史分位…")
-        fetch_metrics.run(in_csv=top_csv, out_csv=metrics_csv, log_file=log_file)
+        tracked_csv, pool_size, added = stock_pool.build_tracked_csv(
+            OUTPUT_DIR, day_dir, top_csv, today)
+        wlog(f"观察池: 共{pool_size}只(含历史追踪{added}只) -> {tracked_csv}")
+        fetch_metrics.run(in_csv=tracked_csv, out_csv=metrics_csv, log_file=log_file)
         wlog(f"步骤2完成 -> {metrics_csv}")
 
         wlog("步骤3: 生成 HTML 总结报告…")

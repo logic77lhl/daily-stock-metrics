@@ -20,6 +20,7 @@ import fetch_hk
 import fetch_metrics
 import generate_report
 import send_email
+import stock_pool
 import strategy_summary
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -77,7 +78,11 @@ def main():
             wlog(f"步骤1已存在，跳过 -> {hk_csv}")
 
         wlog("步骤2: 计算 KDJ-J(日/周/月)...")
-        fetch_metrics.run(in_csv=hk_csv, out_csv=metrics_csv, log_file=log_file, market="HK")
+        wlog("步骤2: 计算指标...")
+        tracked_csv, pool_size, added = stock_pool.build_tracked_csv(
+            OUTPUT_DIR, day_dir, hk_csv, today)
+        wlog(f"观察池: 共{pool_size}只(含历史追踪{added}只)")
+        fetch_metrics.run(in_csv=tracked_csv, out_csv=metrics_csv, log_file=log_file, market="HK")
         wlog(f"步骤2完成 -> {metrics_csv}")
 
         wlog("步骤3: 生成 HTML 总结报告...")
