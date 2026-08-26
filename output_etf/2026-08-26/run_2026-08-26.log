@@ -181,3 +181,14 @@
 2026-08-26 19:00:15  步骤4: 发送邮件报告...
 2026-08-26 19:00:16  步骤4完成: 邮件已发送
 2026-08-26 19:00:16  ===== 全部完成 2026-08-26 =====
+2026-08-26 19:47:39  ===== 开始每日ETF指标任务 2026-08-26 =====
+2026-08-26 19:47:39  步骤1已存在，跳过 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_etf/2026-08-26/etf_list_2026-08-26.csv
+2026-08-26 19:47:39  步骤2: 计算 KDJ-J(日/周/月)...
+2026-08-26 19:47:39  检测到已完成 61 条，跳过续跑
+2026-08-26 19:47:39  全部完成，结果已写入 /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_etf/2026-08-26/metrics_2026-08-26.csv
+2026-08-26 19:47:39  步骤2完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_etf/2026-08-26/metrics_2026-08-26.csv
+2026-08-26 19:47:39  步骤3: 生成 HTML 总结报告...
+2026-08-26 19:47:39  步骤3完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_etf/2026-08-26/report_2026-08-26.html
+2026-08-26 19:47:39  步骤4: 发送邮件报告...
+2026-08-26 19:47:43  步骤4完成: 邮件已发送
+2026-08-26 19:47:43  ===== 全部完成 2026-08-26 =====

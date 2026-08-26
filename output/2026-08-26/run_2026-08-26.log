@@ -125,3 +125,16 @@
 2026-08-26 19:00:12  步骤5: 发送邮件报告…
 2026-08-26 19:00:13  步骤5完成: 邮件已发送
 2026-08-26 19:00:13  ===== 全部完成 2026-08-26 =====
+2026-08-26 19:47:34  ===== 开始每日指标任务 2026-08-26 =====
+2026-08-26 19:47:34  步骤1已存在，跳过 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-08-26/top100_2026-08-26.csv
+2026-08-26 19:47:34  步骤2: 计算 KDJ-J(日/周/月) 及 PE/PB 历史分位…
+2026-08-26 19:47:34  检测到已完成 100 条，跳过续跑
+2026-08-26 19:47:34  全部完成，结果已写入 /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-08-26/metrics_2026-08-26.csv
+2026-08-26 19:47:34  步骤2完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-08-26/metrics_2026-08-26.csv
+2026-08-26 19:47:34  步骤3: 生成 HTML 总结报告…
+2026-08-26 19:47:34  步骤3完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-08-26/report_2026-08-26.html
+2026-08-26 19:47:34  步骤4: 生成个股股价走势图（含每日信号）…
+2026-08-26 19:47:35  步骤4完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/stock_charts.html
+2026-08-26 19:47:35  步骤5: 发送邮件报告…
+2026-08-26 19:47:39  步骤5完成: 邮件已发送
+2026-08-26 19:47:39  ===== 全部完成 2026-08-26 =====
