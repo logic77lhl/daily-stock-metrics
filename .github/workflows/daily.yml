@@ -1,0 +1,61 @@
+name: daily-metrics
+
+on:
+  schedule:
+    # UTC 09:30 = 北京时间 17:30，仅工作日（GitHub 定时任务可能延迟几分钟到半小时）
+    - cron: "30 9 * * 1-5"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-metrics
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run-daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TZ: Asia/Shanghai
+      SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+      SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+      SENDER_AUTH_CODE: ${{ secrets.SENDER_AUTH_CODE }}
+      RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run A股 daily
+        continue-on-error: true
+        run: python run_daily.py
+
+      - name: Run ETF daily
+        continue-on-error: true
+        run: python run_etf_daily.py
+
+      - name: Run 港股 daily
+        continue-on-error: true
+        run: python run_hk_daily.py
+
+      - name: Commit outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add output output_etf output_hk
+          if git diff --cached --quiet; then
+            echo "没有新的输出需要提交"
+          else
+            git commit -m "daily results $(date +%Y-%m-%d)"
+            git push
+          fi

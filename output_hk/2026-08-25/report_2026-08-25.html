@@ -1,0 +1,1703 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>港股通 KDJ 多周期信号报告 - 2026-08-25</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f0f2f5; color: #333; padding: 20px; }
+    .container { max-width: 1400px; margin: 0 auto; }
+    h1 { font-size: 24px; margin-bottom: 4px; color: #1a1a2e; }
+    .subtitle { color: #666; font-size: 14px; margin-bottom: 20px; }
+    .legend { background: #fff; border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); font-size: 14px; line-height: 1.8; }
+    .legend strong { color: #1a1a2e; }
+    .legend .tag { display: inline-block; padding: 0 8px; border-radius: 4px; font-size: 12px; font-weight: 600; margin: 0 2px; }
+    .tag-ob { background: #ffebee; color: #c62828; }
+    .tag-os { background: #e8f5e9; color: #2e7d32; }
+    .tag-nl { background: #fff3e0; color: #e65100; }
+    .tag-bull { background: #e3f2fd; color: #1565c0; }
+    .tag-bear { background: #f3e5f5; color: #6a1b9a; }
+    .tag-div { background: #fff8e1; color: #f57f17; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .summary-card { background: #fff; border-radius: 10px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .summary-card .num { font-size: 28px; font-weight: 700; }
+    .summary-card .label { font-size: 13px; color: #888; margin-top: 2px; }
+    .card-red .num { color: #c62828; }
+    .card-green .num { color: #2e7d32; }
+    .card-orange .num { color: #e65100; }
+    .card-blue .num { color: #1565c0; }
+    .card-purple .num { color: #6a1b9a; }
+    .card-gold .num { color: #f57f17; }
+    .card-gray .num { color: #666; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    th { background: #1a1a2e; color: #fff; padding: 12px 10px; font-size: 13px; font-weight: 600; text-align: center; white-space: nowrap; }
+    td { padding: 10px; text-align: center; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+    tr:hover { background: #f8f9ff; }
+    .name { text-align: left; font-weight: 500; }
+    .flag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; min-width: 50px; }
+    .flag.overbought { background: #ffebee; color: #c62828; }
+    .flag.oversold { background: #e8f5e9; color: #2e7d32; }
+    .flag.newlow { background: #fff3e0; color: #e65100; }
+    .flag.normal { background: #f5f5f5; color: #666; }
+    .signal { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .signal.resonance_strong { background: #e3f2fd; color: #1565c0; }
+    .signal.resonance_weak { background: #f3e5f5; color: #6a1b9a; }
+    .signal.overbought_resonance { background: #d32f2f; color: #fff; }
+    .signal.oversold_resonance { background: #2e7d32; color: #fff; }
+    .signal.newlow_resonance { background: #e65100; color: #fff; }
+    .signal.divergence_dw { background: #fff8e1; color: #f57f17; }
+    .signal.divergence_wd { background: #fff8e1; color: #f57f17; }
+    .signal.partial { background: #f5f5f5; color: #888; }
+    .signal.insufficient { background: #eceff1; color: #90a4ae; }
+    .price { font-weight: 600; }
+    .chg { font-weight: 600; }
+    .chg.up { color: #c62828; }
+    .chg.down { color: #2e7d32; }
+    .chg.flat { color: #666; }
+    .filter-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+    .filter-btn { padding: 5px 14px; border: 1px solid #ddd; border-radius: 16px; background: #fff; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+    .filter-btn:hover { border-color: #1a1a2e; }
+    .filter-btn.active { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
+    .footer { margin-top: 16px; font-size: 12px; color: #999; text-align: center; }
+    .section-title { font-size: 16px; font-weight: 600; margin: 20px 0 10px; color: #1a1a2e; }
+    @media (max-width: 768px) { table { font-size: 12px; } th, td { padding: 6px 4px; } }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>港股通 KDJ 多周期信号报告</h1>
+    <div class="subtitle">数据日期：2026-08-25 ｜ 生成时间：2026-08-25 17:34:28 ｜ 样本数：100</div>
+
+    <div class="legend">
+        <strong>值解读：</strong>
+        <span class="tag tag-ob">>80 超买区</span>
+        <span class="tag tag-os">&lt;20 超卖区</span>
+        <span class="tag tag-nl">负值 近期新低</span>
+        <br>
+        <strong>信号分类：</strong>
+        <span class="tag tag-bull">三周期共振偏强（均>50）</span>
+        <span class="tag tag-bear">三周期共振偏弱（均&lt;50）</span>
+        <span class="tag tag-ob">三周期共振超买（均>80）</span>
+        <span class="tag tag-os">三周期共振超卖（均&lt;20）</span>
+        <span class="tag tag-nl">三周期共振新低（均&lt;0）</span>
+        <span class="tag tag-div">分化（日高周低 / 日低周高）</span>
+        <br>
+        <strong>三周期共振（同向）信号最强</strong>，分化说明趋势未确认，需结合成交量和大盘环境综合判断。
+    </div>
+
+    <div class="section-title">汇总统计</div>
+    <div class="summary-grid">
+        <div class="summary-card card-red">
+            <div class="num">42/39/16</div>
+            <div class="label">超买（日/周/月）</div>
+        </div>
+        <div class="summary-card card-green">
+            <div class="num">11/3/18</div>
+            <div class="label">超卖（日/周/月）</div>
+        </div>
+        <div class="summary-card card-orange">
+            <div class="num">5/3/2</div>
+            <div class="label">近期新低（日/周/月）</div>
+        </div>
+        <div class="summary-card card-blue">
+            <div class="num">13</div>
+            <div class="label">三周期共振偏强</div>
+        </div>
+        <div class="summary-card card-purple">
+            <div class="num">15</div>
+            <div class="label">三周期共振偏弱</div>
+        </div>
+        <div class="summary-card card-red">
+            <div class="num">8</div>
+            <div class="label">三周期共振超买</div>
+        </div>
+        <div class="summary-card card-green">
+            <div class="num">1</div>
+            <div class="label">三周期共振超卖</div>
+        </div>
+        <div class="summary-card card-orange">
+            <div class="num">0</div>
+            <div class="label">三周期共振新低</div>
+        </div>
+        <div class="summary-card card-gold">
+            <div class="num">21</div>
+            <div class="label">分化（日↕周）</div>
+        </div>
+        <div class="summary-card card-gray">
+            <div class="num">24</div>
+            <div class="label">部分分化</div>
+        </div>
+        <div class="summary-card card-gray">
+            <div class="num">18</div>
+            <div class="label">数据不足</div>
+        </div>
+    </div>
+
+    <div class="section-title">标的明细</div>
+    <div class="filter-bar" id="filterBar">
+        <button class="filter-btn active" data-filter="all">全部</button>
+        <button class="filter-btn" data-filter="overbought_resonance">三周期共振超买</button>
+        <button class="filter-btn" data-filter="oversold_resonance">三周期共振超卖</button>
+        <button class="filter-btn" data-filter="newlow_resonance">三周期共振新低</button>
+        <button class="filter-btn" data-filter="resonance_strong">三周期共振偏强</button>
+        <button class="filter-btn" data-filter="resonance_weak">三周期共振偏弱</button>
+        <button class="filter-btn" data-filter="divergence_dw">分化-日高周低</button>
+        <button class="filter-btn" data-filter="divergence_wd">分化-日低周高</button>
+        <button class="filter-btn" data-filter="partial">部分分化</button>
+        <button class="filter-btn" data-filter="insufficient">数据不足</button>
+    </div>
+    <div style="overflow-x: auto;">
+    <table>
+        <thead>
+            <tr>
+                <th>排名</th>
+                <th>代码</th>
+                <th>名称</th>
+                <th>日线J</th>
+                <th>周线J</th>
+                <th>月线J</th>
+                <th>信号</th>
+                <th>昨日信号</th>
+                <th>最新价</th>
+                <th>涨跌幅</th>
+                <th>PE_TTM</th>
+                <th>PE分位%</th>
+                <th>PB_MRQ</th>
+                <th>PB分位%</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr data-signal="resonance_weak">
+            <td>1</td>
+            <td>00700</td>
+            <td class="name">腾讯控股</td>
+            <td><span class="flag normal">25.59</span></td>
+            <td><span class="flag normal">40.51</span></td>
+            <td><span class="flag oversold">4.1</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">442.00</td>
+            <td class="chg up">+0.45%</td>
+            <td>15.08</td>
+            <td>-</td>
+            <td>3.07</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>2</td>
+            <td>03750</td>
+            <td class="name">宁德时代</td>
+            <td><span class="flag oversold">12.61</span></td>
+            <td><span class="flag normal">36.15</span></td>
+            <td><span class="flag normal">48.09</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">621.00</td>
+            <td class="chg down">-2.74%</td>
+            <td>29.82</td>
+            <td>-</td>
+            <td>6.58</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>3</td>
+            <td>00005</td>
+            <td class="name">汇丰控股</td>
+            <td><span class="flag normal">74.24</span></td>
+            <td><span class="flag normal">66.49</span></td>
+            <td><span class="flag overbought">94.06</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">163.20</td>
+            <td class="chg up">+1.05%</td>
+            <td>14.86</td>
+            <td>-</td>
+            <td>2.07</td>
+            <td>-</td>
+        </tr><tr data-signal="overbought_resonance">
+            <td>4</td>
+            <td>01398</td>
+            <td class="name">工商银行</td>
+            <td><span class="flag overbought">91.17</span></td>
+            <td><span class="flag overbought">93.62</span></td>
+            <td><span class="flag overbought">85.23</span></td>
+            <td><span class="signal overbought_resonance">三周期共振超买</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">7.47</td>
+            <td class="chg up">+0.20%</td>
+            <td>6.41</td>
+            <td>-</td>
+            <td>0.6</td>
+            <td>-</td>
+        </tr><tr data-signal="overbought_resonance">
+            <td>5</td>
+            <td>00939</td>
+            <td class="name">建设银行</td>
+            <td><span class="flag overbought">92.25</span></td>
+            <td><span class="flag overbought">99.38</span></td>
+            <td><span class="flag overbought">89.65</span></td>
+            <td><span class="signal overbought_resonance">三周期共振超买</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">9.18</td>
+            <td class="chg up">+0.05%</td>
+            <td>6.28</td>
+            <td>-</td>
+            <td>0.6</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>6</td>
+            <td>09988</td>
+            <td class="name">阿里巴巴-W</td>
+            <td><span class="flag oversold">12.2</span></td>
+            <td><span class="flag normal">79.97</span></td>
+            <td><span class="flag oversold">18.19</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">114.20</td>
+            <td class="chg up">+1.51%</td>
+            <td>25.77</td>
+            <td>-</td>
+            <td>1.8</td>
+            <td>-</td>
+        </tr><tr data-signal="overbought_resonance">
+            <td>7</td>
+            <td>01288</td>
+            <td class="name">农业银行</td>
+            <td><span class="flag overbought">94.76</span></td>
+            <td><span class="flag overbought">88.44</span></td>
+            <td><span class="flag overbought">80.1</span></td>
+            <td><span class="signal overbought_resonance">三周期共振超买</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">6.25</td>
+            <td class="chg up">+0.24%</td>
+            <td>6.64</td>
+            <td>-</td>
+            <td>0.68</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>8</td>
+            <td>00857</td>
+            <td class="name">中国石油股份</td>
+            <td><span class="flag overbought">89.5</span></td>
+            <td><span class="flag overbought">101.14</span></td>
+            <td><span class="flag normal">35.33</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">10.06</td>
+            <td class="chg down">-0.79%</td>
+            <td>10.37</td>
+            <td>-</td>
+            <td>1.0</td>
+            <td>-</td>
+        </tr><tr data-signal="overbought_resonance">
+            <td>9</td>
+            <td>03988</td>
+            <td class="name">中国银行</td>
+            <td><span class="flag overbought">103.89</span></td>
+            <td><span class="flag overbought">100.15</span></td>
+            <td><span class="flag overbought">94.78</span></td>
+            <td><span class="signal overbought_resonance">三周期共振超买</span></td>
+            <td><span class="signal overbought_resonance">三周期共振超买</span></td>
+            <td class="price">5.54</td>
+            <td class="chg up">+1.09%</td>
+            <td>6.51</td>
+            <td>-</td>
+            <td>0.58</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>10</td>
+            <td>00941</td>
+            <td class="name">中国移动</td>
+            <td><span class="flag normal">21.17</span></td>
+            <td><span class="flag normal">67.2</span></td>
+            <td><span class="flag normal">38.36</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">80.15</td>
+            <td class="chg down">-2.67%</td>
+            <td>11.57</td>
+            <td>-</td>
+            <td>1.04</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>11</td>
+            <td>03968</td>
+            <td class="name">招商银行</td>
+            <td><span class="flag overbought">95.9</span></td>
+            <td><span class="flag overbought">82.19</span></td>
+            <td><span class="flag normal">58.05</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">49.38</td>
+            <td class="chg down">-0.28%</td>
+            <td>7.38</td>
+            <td>-</td>
+            <td>0.97</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>12</td>
+            <td>00883</td>
+            <td class="name">中国海洋石油</td>
+            <td><span class="flag overbought">93.01</span></td>
+            <td><span class="flag overbought">113.83</span></td>
+            <td><span class="flag normal">28.43</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">25.12</td>
+            <td class="chg down">-1.10%</td>
+            <td>8.54</td>
+            <td>-</td>
+            <td>1.26</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>13</td>
+            <td>02318</td>
+            <td class="name">中国平安</td>
+            <td><span class="flag overbought">98.78</span></td>
+            <td><span class="flag overbought">80.28</span></td>
+            <td><span class="flag oversold">11.04</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">56.40</td>
+            <td class="chg down">-0.35%</td>
+            <td>5.64</td>
+            <td>-</td>
+            <td>0.86</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>14</td>
+            <td>02899</td>
+            <td class="name">紫金矿业</td>
+            <td><span class="flag normal">69.44</span></td>
+            <td><span class="flag overbought">100.62</span></td>
+            <td><span class="flag normal">27.93</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">37.04</td>
+            <td class="chg down">-3.64%</td>
+            <td>12.81</td>
+            <td>-</td>
+            <td>4.24</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>15</td>
+            <td>01088</td>
+            <td class="name">中国神华</td>
+            <td><span class="flag overbought">95.25</span></td>
+            <td><span class="flag overbought">106.45</span></td>
+            <td><span class="flag normal">44.97</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">45.22</td>
+            <td class="chg down">-0.92%</td>
+            <td>16.62</td>
+            <td>-</td>
+            <td>1.75</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>16</td>
+            <td>01211</td>
+            <td class="name">比亚迪股份</td>
+            <td><span class="flag overbought">104.58</span></td>
+            <td><span class="flag overbought">99.67</span></td>
+            <td><span class="flag normal">57.55</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">93.60</td>
+            <td class="chg up">+0.86%</td>
+            <td>27.69</td>
+            <td>-</td>
+            <td>3.25</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>17</td>
+            <td>02628</td>
+            <td class="name">中国人寿</td>
+            <td><span class="flag overbought">94.09</span></td>
+            <td><span class="flag normal">41.51</span></td>
+            <td><span class="flag normal">25.13</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">28.12</td>
+            <td class="chg down">-1.88%</td>
+            <td>4.92</td>
+            <td>-</td>
+            <td>1.17</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>18</td>
+            <td>01299</td>
+            <td class="name">友邦保险</td>
+            <td><span class="flag overbought">93.54</span></td>
+            <td><span class="flag normal">45.38</span></td>
+            <td><span class="flag oversold">10.72</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">74.35</td>
+            <td class="chg down">-0.34%</td>
+            <td>12.35</td>
+            <td>-</td>
+            <td>2.41</td>
+            <td>-</td>
+        </tr><tr data-signal="overbought_resonance">
+            <td>19</td>
+            <td>00300</td>
+            <td class="name">美的集团</td>
+            <td><span class="flag overbought">96.66</span></td>
+            <td><span class="flag overbought">98.41</span></td>
+            <td><span class="flag overbought">92.69</span></td>
+            <td><span class="signal overbought_resonance">三周期共振超买</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">98.65</td>
+            <td class="chg up">+0.31%</td>
+            <td>15.19</td>
+            <td>-</td>
+            <td>2.85</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>20</td>
+            <td>01810</td>
+            <td class="name">小米集团-W</td>
+            <td><span class="flag overbought">85.92</span></td>
+            <td><span class="flag normal">68.16</span></td>
+            <td><span class="flag normal">26.16</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">27.76</td>
+            <td class="chg down">-0.22%</td>
+            <td>19.12</td>
+            <td>-</td>
+            <td>2.31</td>
+            <td>-</td>
+        </tr><tr data-signal="overbought_resonance">
+            <td>21</td>
+            <td>03328</td>
+            <td class="name">交通银行</td>
+            <td><span class="flag overbought">97.83</span></td>
+            <td><span class="flag overbought">96.64</span></td>
+            <td><span class="flag overbought">83.48</span></td>
+            <td><span class="signal overbought_resonance">三周期共振超买</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">7.54</td>
+            <td class="chg down">-0.26%</td>
+            <td>6.16</td>
+            <td>-</td>
+            <td>0.5</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>22</td>
+            <td>09999</td>
+            <td class="name">网易</td>
+            <td><span class="flag normal">79.12</span></td>
+            <td><span class="flag normal">41.38</span></td>
+            <td><span class="flag normal">51.04</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">199.00</td>
+            <td class="chg up">+2.10%</td>
+            <td>17.27</td>
+            <td>-</td>
+            <td>3.32</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>23</td>
+            <td>02359</td>
+            <td class="name">药明康德</td>
+            <td><span class="flag normal">31.81</span></td>
+            <td><span class="flag overbought">94.56</span></td>
+            <td><span class="flag overbought">95.47</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">204.20</td>
+            <td class="chg up">+3.29%</td>
+            <td>24.28</td>
+            <td>-</td>
+            <td>6.31</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>24</td>
+            <td>01658</td>
+            <td class="name">邮储银行</td>
+            <td><span class="flag overbought">89.35</span></td>
+            <td><span class="flag normal">73.87</span></td>
+            <td><span class="flag normal">38.87</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">4.95</td>
+            <td class="chg down">-0.90%</td>
+            <td>6.03</td>
+            <td>-</td>
+            <td>0.51</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>25</td>
+            <td>00981</td>
+            <td class="name">中芯国际</td>
+            <td><span class="flag oversold">6.68</span></td>
+            <td><span class="flag normal">22.7</span></td>
+            <td><span class="flag normal">41.25</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td class="price">67.85</td>
+            <td class="chg up">+1.65%</td>
+            <td>71.52</td>
+            <td>-</td>
+            <td>2.95</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>26</td>
+            <td>00386</td>
+            <td class="name">中国石油化工股份</td>
+            <td><span class="flag overbought">111.55</span></td>
+            <td><span class="flag overbought">105.29</span></td>
+            <td><span class="flag normal">22.95</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">4.70</td>
+            <td class="chg up">+0.75%</td>
+            <td>14.03</td>
+            <td>-</td>
+            <td>0.59</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>27</td>
+            <td>02388</td>
+            <td class="name">中银香港</td>
+            <td><span class="flag normal">69.27</span></td>
+            <td><span class="flag overbought">87.41</span></td>
+            <td><span class="flag overbought">84.88</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">50.40</td>
+            <td class="chg up">+0.10%</td>
+            <td>13.28</td>
+            <td>-</td>
+            <td>1.49</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>28</td>
+            <td>00388</td>
+            <td class="name">香港交易所</td>
+            <td><span class="flag overbought">88.12</span></td>
+            <td><span class="flag overbought">108.72</span></td>
+            <td><span class="flag normal">55.79</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">417.80</td>
+            <td class="chg flat">+0.00%</td>
+            <td>26.75</td>
+            <td>-</td>
+            <td>8.73</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>29</td>
+            <td>02888</td>
+            <td class="name">渣打集团</td>
+            <td><span class="flag normal">45.88</span></td>
+            <td><span class="flag overbought">86.65</span></td>
+            <td><span class="flag overbought">98.93</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">236.40</td>
+            <td class="chg up">+2.16%</td>
+            <td>12.23</td>
+            <td>-</td>
+            <td>1.43</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>30</td>
+            <td>02513</td>
+            <td class="name">智谱</td>
+            <td><span class="flag oversold">3.5</span></td>
+            <td><span class="flag oversold">7.78</span></td>
+            <td><span class="flag normal">24.52</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td class="price">1059.00</td>
+            <td class="chg up">+5.16%</td>
+            <td>-94.8</td>
+            <td>-</td>
+            <td>-4.76</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>31</td>
+            <td>09633</td>
+            <td class="name">农夫山泉</td>
+            <td><span class="flag overbought">81.26</span></td>
+            <td><span class="flag normal">62.04</span></td>
+            <td><span class="flag oversold">12.67</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">43.04</td>
+            <td class="chg down">-0.23%</td>
+            <td>27.55</td>
+            <td>-</td>
+            <td>11.08</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>32</td>
+            <td>03690</td>
+            <td class="name">美团-W</td>
+            <td><span class="flag newlow">-5.64</span></td>
+            <td><span class="flag normal">49.95</span></td>
+            <td><span class="flag normal">45.98</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">77.20</td>
+            <td class="chg down">-6.65%</td>
+            <td>-10.72</td>
+            <td>-</td>
+            <td>2.81</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>33</td>
+            <td>02475</td>
+            <td class="name">立讯精密</td>
+            <td><span class="flag normal">23.74</span></td>
+            <td><span class="flag normal">56.7</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">59.40</td>
+            <td class="chg up">+0.93%</td>
+            <td>22.84</td>
+            <td>-</td>
+            <td>4.06</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>34</td>
+            <td>00728</td>
+            <td class="name">中国电信</td>
+            <td><span class="flag overbought">110.06</span></td>
+            <td><span class="flag overbought">116.79</span></td>
+            <td><span class="flag normal">31.96</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">4.94</td>
+            <td class="chg up">+2.07%</td>
+            <td>13.27</td>
+            <td>-</td>
+            <td>0.83</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>35</td>
+            <td>00998</td>
+            <td class="name">中信银行</td>
+            <td><span class="flag overbought">98.23</span></td>
+            <td><span class="flag overbought">106.36</span></td>
+            <td><span class="flag normal">54.42</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">7.92</td>
+            <td class="chg down">-1.06%</td>
+            <td>5.52</td>
+            <td>-</td>
+            <td>0.52</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>36</td>
+            <td>02259</td>
+            <td class="name">紫金黄金国际</td>
+            <td><span class="flag overbought">94.12</span></td>
+            <td><span class="flag overbought">112.49</span></td>
+            <td><span class="flag oversold">18.55</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">159.50</td>
+            <td class="chg up">+0.06%</td>
+            <td>21.61</td>
+            <td>-</td>
+            <td>5.83</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>37</td>
+            <td>06030</td>
+            <td class="name">中信证券</td>
+            <td><span class="flag oversold">8.78</span></td>
+            <td><span class="flag newlow">-5.76</span></td>
+            <td><span class="flag normal">36.13</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td class="price">25.98</td>
+            <td class="chg down">-0.38%</td>
+            <td>9.0</td>
+            <td>-</td>
+            <td>1.13</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>38</td>
+            <td>00992</td>
+            <td class="name">联想集团</td>
+            <td><span class="flag oversold">7.27</span></td>
+            <td><span class="flag normal">66.12</span></td>
+            <td><span class="flag overbought">94.33</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">30.80</td>
+            <td class="chg up">+3.91%</td>
+            <td>61.19</td>
+            <td>-</td>
+            <td>6.75</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>39</td>
+            <td>00267</td>
+            <td class="name">中信股份</td>
+            <td><span class="flag overbought">95.85</span></td>
+            <td><span class="flag overbought">104.7</span></td>
+            <td><span class="flag normal">54.11</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">12.92</td>
+            <td class="chg down">-0.77%</td>
+            <td>5.78</td>
+            <td>-</td>
+            <td>0.43</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>40</td>
+            <td>00016</td>
+            <td class="name">新鸿基地产</td>
+            <td><span class="flag overbought">90.2</span></td>
+            <td><span class="flag overbought">94.66</span></td>
+            <td><span class="flag normal">45.29</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">125.00</td>
+            <td class="chg down">-1.03%</td>
+            <td>16.46</td>
+            <td>-</td>
+            <td>0.58</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>41</td>
+            <td>03993</td>
+            <td class="name">洛阳钼业</td>
+            <td><span class="flag normal">34.83</span></td>
+            <td><span class="flag normal">55.58</span></td>
+            <td><span class="flag oversold">5.14</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">16.86</td>
+            <td class="chg down">-2.54%</td>
+            <td>11.41</td>
+            <td>-</td>
+            <td>3.49</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>42</td>
+            <td>02328</td>
+            <td class="name">中国财险</td>
+            <td><span class="flag overbought">97.81</span></td>
+            <td><span class="flag overbought">83.88</span></td>
+            <td><span class="flag normal">50.62</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">16.16</td>
+            <td class="chg down">-0.55%</td>
+            <td>8.52</td>
+            <td>-</td>
+            <td>1.08</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>43</td>
+            <td>03986</td>
+            <td class="name">兆易创新</td>
+            <td><span class="flag oversold">16.59</span></td>
+            <td><span class="flag oversold">0.81</span></td>
+            <td><span class="flag normal">20.52</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td class="price">494.20</td>
+            <td class="chg up">+4.93%</td>
+            <td>38.16</td>
+            <td>-</td>
+            <td>8.08</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>44</td>
+            <td>06160</td>
+            <td class="name">百济神州</td>
+            <td><span class="flag normal">44.58</span></td>
+            <td><span class="flag overbought">93.03</span></td>
+            <td><span class="flag normal">69.51</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">223.20</td>
+            <td class="chg up">+0.81%</td>
+            <td>67.18</td>
+            <td>-</td>
+            <td>10.13</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>45</td>
+            <td>06809</td>
+            <td class="name">澜起科技</td>
+            <td><span class="flag oversold">7.28</span></td>
+            <td><span class="flag oversold">1.58</span></td>
+            <td><span class="flag normal">36.51</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">262.40</td>
+            <td class="chg up">+4.96%</td>
+            <td>111.76</td>
+            <td>-</td>
+            <td>13.58</td>
+            <td>-</td>
+        </tr><tr data-signal="oversold_resonance">
+            <td>46</td>
+            <td>01276</td>
+            <td class="name">恒瑞医药</td>
+            <td><span class="flag newlow">-1.63</span></td>
+            <td><span class="flag newlow">-0.6</span></td>
+            <td><span class="flag newlow">-2.76</span></td>
+            <td><span class="signal oversold_resonance">三周期共振超卖</span></td>
+            <td><span class="signal oversold_resonance">三周期共振超卖</span></td>
+            <td class="price">46.50</td>
+            <td class="chg up">+0.09%</td>
+            <td>35.08</td>
+            <td>-</td>
+            <td>4.16</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>47</td>
+            <td>02601</td>
+            <td class="name">中国太保</td>
+            <td><span class="flag overbought">95.74</span></td>
+            <td><span class="flag normal">64.23</span></td>
+            <td><span class="flag oversold">5.45</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">29.32</td>
+            <td class="chg down">-0.27%</td>
+            <td>4.69</td>
+            <td>-</td>
+            <td>0.78</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>48</td>
+            <td>02378</td>
+            <td class="name">保诚</td>
+            <td><span class="flag overbought">107.35</span></td>
+            <td><span class="flag normal">48.69</span></td>
+            <td><span class="flag normal">37.56</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">111.80</td>
+            <td class="chg up">+1.64%</td>
+            <td>9.02</td>
+            <td>-</td>
+            <td>1.82</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>49</td>
+            <td>02338</td>
+            <td class="name">潍柴动力</td>
+            <td><span class="flag newlow">-6.61</span></td>
+            <td><span class="flag normal">29.59</span></td>
+            <td><span class="flag normal">47.14</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">31.50</td>
+            <td class="chg up">+1.03%</td>
+            <td>21.5</td>
+            <td>-</td>
+            <td>2.54</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>50</td>
+            <td>00001</td>
+            <td class="name">长和</td>
+            <td><span class="flag normal">48.38</span></td>
+            <td><span class="flag normal">61.79</span></td>
+            <td><span class="flag overbought">83.97</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">69.90</td>
+            <td class="chg down">-0.07%</td>
+            <td>7.08</td>
+            <td>-</td>
+            <td>0.46</td>
+            <td>-</td>
+        </tr><tr data-signal="overbought_resonance">
+            <td>51</td>
+            <td>01919</td>
+            <td class="name">中远海控</td>
+            <td><span class="flag overbought">95.02</span></td>
+            <td><span class="flag overbought">106.53</span></td>
+            <td><span class="flag overbought">82.82</span></td>
+            <td><span class="signal overbought_resonance">三周期共振超买</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">17.49</td>
+            <td class="chg down">-2.51%</td>
+            <td>9.49</td>
+            <td>-</td>
+            <td>1.0</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>52</td>
+            <td>02611</td>
+            <td class="name">国泰海通</td>
+            <td><span class="flag overbought">111.17</span></td>
+            <td><span class="flag normal">37.18</span></td>
+            <td><span class="flag normal">33.63</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">15.16</td>
+            <td class="chg down">-0.13%</td>
+            <td>7.23</td>
+            <td>-</td>
+            <td>0.7</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>53</td>
+            <td>00669</td>
+            <td class="name">创科实业</td>
+            <td><span class="flag normal">35.94</span></td>
+            <td><span class="flag normal">72.44</span></td>
+            <td><span class="flag overbought">94.28</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">140.00</td>
+            <td class="chg down">-1.89%</td>
+            <td>25.13</td>
+            <td>-</td>
+            <td>4.38</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>54</td>
+            <td>01109</td>
+            <td class="name">华润置地</td>
+            <td><span class="flag normal">32.59</span></td>
+            <td><span class="flag overbought">84.39</span></td>
+            <td><span class="flag normal">49.75</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">34.28</td>
+            <td class="chg up">+0.18%</td>
+            <td>8.69</td>
+            <td>-</td>
+            <td>0.76</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>55</td>
+            <td>01339</td>
+            <td class="name">中国人民保险集团</td>
+            <td><span class="flag overbought">109.38</span></td>
+            <td><span class="flag normal">76.1</span></td>
+            <td><span class="flag oversold">7.59</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">5.31</td>
+            <td class="chg up">+0.38%</td>
+            <td>4.97</td>
+            <td>-</td>
+            <td>0.65</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>56</td>
+            <td>01378</td>
+            <td class="name">中国宏桥</td>
+            <td><span class="flag normal">65.54</span></td>
+            <td><span class="flag overbought">80.41</span></td>
+            <td><span class="flag newlow">-3.38</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">23.48</td>
+            <td class="chg down">-1.76%</td>
+            <td>7.36</td>
+            <td>-</td>
+            <td>1.5</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>57</td>
+            <td>02476</td>
+            <td class="name">胜宏科技</td>
+            <td><span class="flag oversold">6.43</span></td>
+            <td><span class="flag normal">32.86</span></td>
+            <td><span class="flag oversold">7.52</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">228.00</td>
+            <td class="chg up">+2.24%</td>
+            <td>42.8</td>
+            <td>-</td>
+            <td>10.09</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>58</td>
+            <td>06951</td>
+            <td class="name">三环集团</td>
+            <td><span class="flag newlow">-7.93</span></td>
+            <td><span class="flag normal">62.43</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">108.40</td>
+            <td class="chg up">+2.94%</td>
+            <td>67.27</td>
+            <td>-</td>
+            <td>8.19</td>
+            <td>-</td>
+        </tr><tr data-signal="overbought_resonance">
+            <td>59</td>
+            <td>02269</td>
+            <td class="name">药明生物</td>
+            <td><span class="flag overbought">88.18</span></td>
+            <td><span class="flag overbought">107.0</span></td>
+            <td><span class="flag overbought">86.09</span></td>
+            <td><span class="signal overbought_resonance">三周期共振超买</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">52.20</td>
+            <td class="chg up">+7.41%</td>
+            <td>39.82</td>
+            <td>-</td>
+            <td>4.12</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>60</td>
+            <td>00066</td>
+            <td class="name">港铁公司</td>
+            <td><span class="flag overbought">90.84</span></td>
+            <td><span class="flag overbought">106.22</span></td>
+            <td><span class="flag normal">37.85</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">33.42</td>
+            <td class="chg down">-0.77%</td>
+            <td>9.11</td>
+            <td>-</td>
+            <td>1.02</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>61</td>
+            <td>09992</td>
+            <td class="name">泡泡玛特</td>
+            <td><span class="flag overbought">95.19</span></td>
+            <td><span class="flag normal">37.26</span></td>
+            <td><span class="flag oversold">3.29</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">155.20</td>
+            <td class="chg up">+0.13%</td>
+            <td>13.84</td>
+            <td>-</td>
+            <td>7.79</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>62</td>
+            <td>00175</td>
+            <td class="name">吉利汽车</td>
+            <td><span class="flag overbought">96.31</span></td>
+            <td><span class="flag normal">58.89</span></td>
+            <td><span class="flag normal">32.14</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">18.98</td>
+            <td class="chg up">+2.76%</td>
+            <td>10.79</td>
+            <td>-</td>
+            <td>1.88</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>63</td>
+            <td>06690</td>
+            <td class="name">海尔智家</td>
+            <td><span class="flag overbought">95.7</span></td>
+            <td><span class="flag normal">57.66</span></td>
+            <td><span class="flag normal">20.02</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">21.56</td>
+            <td class="chg up">+1.32%</td>
+            <td>9.64</td>
+            <td>-</td>
+            <td>1.43</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>64</td>
+            <td>02020</td>
+            <td class="name">安踏体育</td>
+            <td><span class="flag normal">27.87</span></td>
+            <td><span class="flag normal">31.75</span></td>
+            <td><span class="flag normal">31.38</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">71.90</td>
+            <td class="chg down">-1.10%</td>
+            <td>13.37</td>
+            <td>-</td>
+            <td>2.76</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>65</td>
+            <td>00002</td>
+            <td class="name">中电控股</td>
+            <td><span class="flag normal">58.0</span></td>
+            <td><span class="flag overbought">101.05</span></td>
+            <td><span class="flag overbought">95.61</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">78.80</td>
+            <td class="chg down">-0.19%</td>
+            <td>18.36</td>
+            <td>-</td>
+            <td>1.8</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>66</td>
+            <td>02714</td>
+            <td class="name">牧原股份</td>
+            <td><span class="flag oversold">9.58</span></td>
+            <td><span class="flag overbought">83.0</span></td>
+            <td><span class="flag oversold">13.27</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">33.36</td>
+            <td class="chg up">+1.65%</td>
+            <td>-137.77</td>
+            <td>-</td>
+            <td>2.11</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>67</td>
+            <td>01347</td>
+            <td class="name">华虹宏力</td>
+            <td><span class="flag newlow">-2.95</span></td>
+            <td><span class="flag newlow">-10.58</span></td>
+            <td><span class="flag normal">31.41</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">110.40</td>
+            <td class="chg up">+1.47%</td>
+            <td>239.11</td>
+            <td>-</td>
+            <td>3.43</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>68</td>
+            <td>03692</td>
+            <td class="name">翰森制药</td>
+            <td><span class="flag oversold">4.4</span></td>
+            <td><span class="flag normal">49.31</span></td>
+            <td><span class="flag oversold">5.52</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">31.58</td>
+            <td class="chg up">+1.67%</td>
+            <td>31.14</td>
+            <td>-</td>
+            <td>4.88</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>69</td>
+            <td>03288</td>
+            <td class="name">海天味业</td>
+            <td><span class="flag normal">66.52</span></td>
+            <td><span class="flag normal">76.23</span></td>
+            <td><span class="flag normal">38.5</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">32.36</td>
+            <td class="chg up">+0.87%</td>
+            <td>23.16</td>
+            <td>-</td>
+            <td>3.98</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>70</td>
+            <td>06818</td>
+            <td class="name">中国光大银行</td>
+            <td><span class="flag normal">74.87</span></td>
+            <td><span class="flag normal">41.13</span></td>
+            <td><span class="flag oversold">15.55</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">3.04</td>
+            <td class="chg down">-1.46%</td>
+            <td>4.23</td>
+            <td>-</td>
+            <td>0.31</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>71</td>
+            <td>06031</td>
+            <td class="name">三一重工</td>
+            <td><span class="flag overbought">83.49</span></td>
+            <td><span class="flag normal">39.39</span></td>
+            <td><span class="flag oversold">11.12</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td class="price">19.31</td>
+            <td class="chg up">+4.04%</td>
+            <td>18.8</td>
+            <td>-</td>
+            <td>1.73</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>72</td>
+            <td>00762</td>
+            <td class="name">中国联通</td>
+            <td><span class="flag normal">40.33</span></td>
+            <td><span class="flag normal">25.57</span></td>
+            <td><span class="flag oversold">6.28</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td class="price">5.78</td>
+            <td class="chg down">-0.43%</td>
+            <td>9.79</td>
+            <td>-</td>
+            <td>0.41</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>73</td>
+            <td>01801</td>
+            <td class="name">信达生物</td>
+            <td><span class="flag normal">55.36</span></td>
+            <td><span class="flag overbought">94.95</span></td>
+            <td><span class="flag normal">72.95</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">100.10</td>
+            <td class="chg up">+0.60%</td>
+            <td>193.78</td>
+            <td>-</td>
+            <td>8.1</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>74</td>
+            <td>06936</td>
+            <td class="name">顺丰控股</td>
+            <td><span class="flag normal">33.26</span></td>
+            <td><span class="flag normal">76.93</span></td>
+            <td><span class="flag normal">49.93</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">32.28</td>
+            <td class="chg down">-0.68%</td>
+            <td>13.31</td>
+            <td>-</td>
+            <td>1.43</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>75</td>
+            <td>01038</td>
+            <td class="name">长江基建集团</td>
+            <td><span class="flag overbought">96.41</span></td>
+            <td><span class="flag overbought">105.43</span></td>
+            <td><span class="flag normal">78.38</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">65.80</td>
+            <td class="chg down">-1.05%</td>
+            <td>6.59</td>
+            <td>-</td>
+            <td>1.12</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>76</td>
+            <td>01113</td>
+            <td class="name">长实集团</td>
+            <td><span class="flag normal">75.8</span></td>
+            <td><span class="flag normal">72.79</span></td>
+            <td><span class="flag normal">54.52</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">46.90</td>
+            <td class="chg down">-0.89%</td>
+            <td>12.41</td>
+            <td>-</td>
+            <td>0.41</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>77</td>
+            <td>00788</td>
+            <td class="name">中国铁塔</td>
+            <td><span class="flag normal">34.97</span></td>
+            <td><span class="flag normal">48.24</span></td>
+            <td><span class="flag oversold">7.3</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">9.26</td>
+            <td class="chg down">-0.96%</td>
+            <td>10.73</td>
+            <td>-</td>
+            <td>0.69</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>78</td>
+            <td>02423</td>
+            <td class="name">贝壳-W</td>
+            <td><span class="flag normal">68.21</span></td>
+            <td><span class="flag overbought">94.38</span></td>
+            <td><span class="flag normal">59.45</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">45.72</td>
+            <td class="chg down">-2.72%</td>
+            <td>29.01</td>
+            <td>-</td>
+            <td>2.1</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>79</td>
+            <td>01898</td>
+            <td class="name">中煤能源</td>
+            <td><span class="flag overbought">88.48</span></td>
+            <td><span class="flag overbought">107.8</span></td>
+            <td><span class="flag oversold">13.59</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">11.64</td>
+            <td class="chg up">+0.95%</td>
+            <td>8.85</td>
+            <td>-</td>
+            <td>0.81</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>80</td>
+            <td>09973</td>
+            <td class="name">奇瑞汽车</td>
+            <td><span class="flag normal">72.45</span></td>
+            <td><span class="flag overbought">86.06</span></td>
+            <td><span class="flag normal">26.96</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">26.34</td>
+            <td class="chg down">-0.60%</td>
+            <td>7.54</td>
+            <td>-</td>
+            <td>2.46</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>81</td>
+            <td>01988</td>
+            <td class="name">民生银行</td>
+            <td><span class="flag overbought">100.98</span></td>
+            <td><span class="flag normal">73.41</span></td>
+            <td><span class="flag normal">27.42</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">3.48</td>
+            <td class="chg down">-0.71%</td>
+            <td>4.6</td>
+            <td>-</td>
+            <td>0.23</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>82</td>
+            <td>00027</td>
+            <td class="name">银河娱乐</td>
+            <td><span class="flag normal">61.44</span></td>
+            <td><span class="flag overbought">102.92</span></td>
+            <td><span class="flag normal">24.13</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">34.74</td>
+            <td class="chg down">-3.18%</td>
+            <td>14.2</td>
+            <td>-</td>
+            <td>1.8</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>83</td>
+            <td>01766</td>
+            <td class="name">中国中车</td>
+            <td><span class="flag overbought">88.45</span></td>
+            <td><span class="flag overbought">98.14</span></td>
+            <td><span class="flag normal">34.14</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">5.28</td>
+            <td class="chg up">+0.76%</td>
+            <td>9.56</td>
+            <td>-</td>
+            <td>0.75</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>84</td>
+            <td>06886</td>
+            <td class="name">华泰证券</td>
+            <td><span class="flag normal">44.14</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">16.73</td>
+            <td class="chg down">-0.48%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>85</td>
+            <td>00688</td>
+            <td class="name">中国海外发展</td>
+            <td><span class="flag normal">39.85</span></td>
+            <td><span class="flag normal">74.15</span></td>
+            <td><span class="flag normal">40.71</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">13.79</td>
+            <td class="chg down">-0.29%</td>
+            <td>10.74</td>
+            <td>-</td>
+            <td>0.35</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>86</td>
+            <td>01377</td>
+            <td class="name">鼎泰高科</td>
+            <td><span class="flag normal">32.19</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">352.80</td>
+            <td class="chg up">+1.38%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>87</td>
+            <td>01336</td>
+            <td class="name">新华保险</td>
+            <td><span class="flag overbought">92.67</span></td>
+            <td><span class="flag normal">62.67</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">47.22</td>
+            <td class="chg down">-1.05%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>88</td>
+            <td>03606</td>
+            <td class="name">福耀玻璃</td>
+            <td><span class="flag normal">24.84</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">55.95</td>
+            <td class="chg up">+0.63%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>89</td>
+            <td>02600</td>
+            <td class="name">中国铝业</td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">-</td>
+            <td class="chg flat">-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>90</td>
+            <td>01024</td>
+            <td class="name">快手-W</td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">-</td>
+            <td class="chg flat">-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>91</td>
+            <td>01972</td>
+            <td class="name">太古地产</td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">-</td>
+            <td class="chg flat">-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>92</td>
+            <td>00012</td>
+            <td class="name">恒基地产</td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">-</td>
+            <td class="chg flat">-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>93</td>
+            <td>01816</td>
+            <td class="name">中广核电力</td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">-</td>
+            <td class="chg flat">-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>94</td>
+            <td>00003</td>
+            <td class="name">香港中华煤气</td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">-</td>
+            <td class="chg flat">-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>95</td>
+            <td>01776</td>
+            <td class="name">广发证券</td>
+            <td><span class="flag normal">77.77</span></td>
+            <td><span class="flag normal">67.28</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">17.45</td>
+            <td class="chg down">-1.02%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>96</td>
+            <td>06869</td>
+            <td class="name">长飞光纤光缆</td>
+            <td><span class="flag normal">74.75</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">162.50</td>
+            <td class="chg up">+15.41%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>97</td>
+            <td>01929</td>
+            <td class="name">周大福</td>
+            <td><span class="flag overbought">92.78</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">13.61</td>
+            <td class="chg up">+0.59%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>98</td>
+            <td>01171</td>
+            <td class="name">兖矿能源</td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">-</td>
+            <td class="chg flat">-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>99</td>
+            <td>01308</td>
+            <td class="name">海丰国际</td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">-</td>
+            <td class="chg flat">-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="insufficient">
+            <td>100</td>
+            <td>00006</td>
+            <td class="name">电能实业</td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="flag normal">-</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td><span class="signal insufficient">数据不足</span></td>
+            <td class="price">-</td>
+            <td class="chg flat">-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr>
+        </tbody>
+    </table>
+    </div>
+
+    <div class="footer">
+        本报告由 每周自动指标 系统生成 ｜ 仅供参考，不构成投资建议
+    </div>
+</div>
+<script>
+(function() {
+    var filterBar = document.getElementById('filterBar');
+    var rows = document.querySelectorAll('tbody tr');
+    var btns = filterBar.querySelectorAll('.filter-btn');
+
+    btns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            btns.forEach(function(b) { b.classList.remove('active'); });
+            this.classList.add('active');
+            var filter = this.getAttribute('data-filter');
+            rows.forEach(function(row) {
+                if (filter === 'all') {
+                    row.style.display = '';
+                } else {
+                    row.style.display = row.getAttribute('data-signal') === filter ? '' : 'none';
+                }
+            });
+        });
+    });
+})();
+</script>
+</body>
+</html>

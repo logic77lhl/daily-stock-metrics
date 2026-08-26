@@ -1,0 +1,114 @@
+2026-08-24 18:34:06  ===== 开始每日港股通指标任务 2026-08-24 =====
+2026-08-24 18:34:06  步骤1: 获取港股通总市值前100标的...
+获取港股通标的列表(共取市值前 100 只)...
+接口返回 100 只港股通标的
+2026-08-24 18:34:07  步骤1完成 -> C:\Users\hailo\Desktop\每周自动指标\output_hk\2026-08-24\hk_list_2026-08-24.csv
+2026-08-24 18:34:07  步骤2: 计算 KDJ-J(日/周/月)...
+2026-08-24 18:34:10  [  1] 00700 腾讯控股  完成  日J=22.01 周J=38.63 月J=3.42 价=440.0 涨=-3.72%  PE=15.01(None%) PB=3.06(None%)
+2026-08-24 18:34:11  [  2] 03750 宁德时代  完成  日J=34.52 周J=46.23 月J=52.12 价=638.5 涨=-2.15%  PE=30.66(None%) PB=6.76(None%)
+2026-08-24 18:34:13  [  3] 00005 汇丰控股  完成  日J=52.97 周J=61.05 月J=91.89 价=161.5 涨=-0.86%  PE=14.71(None%) PB=2.05(None%)
+2026-08-24 18:34:14  [  4] 01398 工商银行  完成  日J=94.91 周J=92.77 月J=84.55 价=7.46 涨=-0.2%  PE=6.4(None%) PB=0.6(None%)
+2026-08-24 18:34:15  [  5] 00939 建设银行  完成  日J=102.04 周J=99.15 月J=89.45 价=9.18 涨=-0.76%  PE=6.27(None%) PB=0.6(None%)
+2026-08-24 18:34:17  [  6] 01288 农业银行  完成  日J=100.1 周J=87.62 月J=79.29 价=6.24 涨=-0.72%  PE=6.62(None%) PB=0.68(None%)
+2026-08-24 18:34:18  [  7] 09988 阿里巴巴-W  完成  日J=18.29 周J=76.6 月J=16.64 价=112.5 涨=-8.54%  PE=25.39(None%) PB=1.78(None%)
+2026-08-24 18:34:19  [  8] 00857 中国石油股份  完成  日J=99.41 周J=104.25 月J=36.76 价=10.14 涨=0.1%  PE=10.46(None%) PB=1.01(None%)
+2026-08-24 18:34:21  [  9] 00941 中国移动  完成  日J=52.32 周J=85.4 月J=51.89 价=82.35 涨=-0.54%  PE=11.88(None%) PB=1.06(None%)
+2026-08-24 18:34:22  [ 10] 03988 中国银行  完成  日J=109.16 周J=95.85 月J=91.21 价=5.49 涨=-0.36%  PE=6.44(None%) PB=0.57(None%)
+2026-08-24 18:34:23  [ 11] 03968 招商银行  完成  日J=114.96 周J=83.53 月J=59.1 价=49.52 涨=0.16%  PE=7.4(None%) PB=0.97(None%)
+2026-08-24 18:34:25  [ 12] 00883 中国海洋石油  完成  日J=106.13 周J=118.24 月J=30.4 价=25.4 涨=0.87%  PE=8.63(None%) PB=1.27(None%)
+2026-08-24 18:34:26  [ 13] 02318 中国平安  完成  日J=90.78 周J=82.08 月J=11.67 价=56.6 涨=0.71%  PE=5.66(None%) PB=0.87(None%)
+2026-08-24 18:34:28  [ 14] 02899 紫金矿业  完成  日J=88.73 周J=108.8 月J=33.26 价=38.44 涨=-0.31%  PE=13.29(None%) PB=4.4(None%)
+2026-08-24 18:34:29  [ 15] 01088 中国神华  完成  日J=109.64 周J=115.06 月J=47.83 价=45.64 涨=1.38%  PE=16.78(None%) PB=1.77(None%)
+2026-08-24 18:34:30  [ 16] 01211 比亚迪股份  完成  日J=106.52 周J=97.21 月J=56.07 价=92.8 涨=-0.38%  PE=27.45(None%) PB=3.22(None%)
+2026-08-24 18:34:32  [ 17] 02628 中国人寿  完成  日J=99.92 周J=52.27 月J=28.57 价=28.66 涨=2.14%  PE=5.02(None%) PB=1.2(None%)
+2026-08-24 18:34:33  [ 18] 01299 友邦保险  完成  日J=98.36 周J=47.32 月J=11.56 价=74.6 涨=-0.73%  PE=12.39(None%) PB=2.42(None%)
+2026-08-24 18:34:34  [ 19] 00300 美的集团  完成  日J=100.84 周J=97.3 月J=91.8 价=98.35 涨=1.5%  PE=15.14(None%) PB=2.84(None%)
+2026-08-24 18:34:36  [ 20] 01810 小米集团-W  完成  日J=96.84 周J=68.58 月J=26.37 价=27.82 涨=-4.14%  PE=19.16(None%) PB=2.31(None%)
+2026-08-24 18:34:37  [ 21] 03328 交通银行  完成  日J=110.05 周J=97.95 月J=84.53 价=7.55 涨=-0.07%  PE=6.18(None%) PB=0.51(None%)
+2026-08-24 18:34:38  [ 22] 09999 网易  完成  日J=53.1 周J=30.93 月J=46.04 价=194.9 涨=-3.51%  PE=16.91(None%) PB=3.25(None%)
+2026-08-24 18:34:40  [ 23] 01658 邮储银行  完成  日J=113.12 周J=79.13 月J=42.21 价=4.99 涨=1.11%  PE=6.08(None%) PB=0.51(None%)
+2026-08-24 18:34:41  [ 24] 02359 药明康德  完成  日J=22.02 周J=87.17 月J=91.12 价=197.7 涨=-3.94%  PE=23.51(None%) PB=6.11(None%)
+2026-08-24 18:34:42  [ 25] 00981 中芯国际  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00981%2Cmonth%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:43  [ 26] 00386 中国石油化工股份  完成  日J=114.07 周J=108.75 月J=21.37 价=4.67 涨=5.9%  PE=13.93(None%) PB=0.58(None%)
+2026-08-24 18:34:44  [ 27] 02388 中银香港  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02388%2Cweek%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:45  [ 28] 00388 香港交易所  完成  日J=93.26 周J=108.72 月J=55.79 价=417.8 涨=-0.76%  PE=26.75(None%) PB=8.73(None%)
+2026-08-24 18:34:46  [ 29] 03690 美团-W  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk03690%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:46  [ 30] 02888 渣打集团  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02888%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:46  [ 31] 09633 农夫山泉  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk09633%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:47  [ 32] 02513 智谱  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02513%2Cweek%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:47  [ 33] 02475 立讯精密  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02475%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:48  [ 34] 00998 中信银行  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00998%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:48  [ 35] 00728 中国电信  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00728%2Cweek%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:49  [ 36] 02259 紫金黄金国际  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02259%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:49  [ 37] 06030 中信证券  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk06030%2Cweek%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:50  [ 38] 00267 中信股份  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00267%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:50  [ 39] 03993 洛阳钼业  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk03993%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:50  [ 40] 00992 联想集团  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00992%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:51  [ 41] 00016 新鸿基地产  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00016%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:51  [ 42] 02328 中国财险  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02328%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:52  [ 43] 06160 百济神州  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk06160%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:52  [ 44] 03986 兆易创新  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk03986%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:53  [ 45] 01276 恒瑞医药  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01276%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:53  [ 46] 06809 澜起科技  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk06809%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:53  [ 47] 02601 中国太保  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02601%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:54  [ 48] 02378 保诚  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02378%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:54  [ 49] 01919 中远海控  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01919%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:54  [ 50] 02338 潍柴动力  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02338%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:55  [ 51] 00001 长和  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00001%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:55  [ 52] 02611 国泰海通  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02611%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:55  [ 53] 00669 创科实业  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00669%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:56  [ 54] 01109 华润置地  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01109%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:56  [ 55] 01378 中国宏桥  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01378%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:56  [ 56] 01339 中国人民保险集团  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01339%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:57  [ 57] 02476 胜宏科技  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02476%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:57  [ 58] 06951 三环集团  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk06951%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:57  [ 59] 00066 港铁公司  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00066%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:58  [ 60] 09992 泡泡玛特  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk09992%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:58  [ 61] 02020 安踏体育  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02020%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:58  [ 62] 02269 药明生物  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02269%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:59  [ 63] 06690 海尔智家  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk06690%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:59  [ 64] 00002 中电控股  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00002%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:34:59  [ 65] 00175 吉利汽车  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00175%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:00  [ 66] 02714 牧原股份  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02714%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:00  [ 67] 01347 华虹宏力  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01347%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:00  [ 68] 03692 翰森制药  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk03692%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:01  [ 69] 03288 海天味业  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk03288%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:01  [ 70] 06818 中国光大银行  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk06818%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:01  [ 71] 00762 中国联通  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00762%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:02  [ 72] 01801 信达生物  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01801%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:02  [ 73] 06936 顺丰控股  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk06936%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:02  [ 74] 06031 三一重工  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk06031%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:03  [ 75] 01038 长江基建集团  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01038%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:03  [ 76] 01113 长实集团  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01113%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:03  [ 77] 00788 中国铁塔  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00788%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:04  [ 78] 02423 贝壳-W  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02423%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:04  [ 79] 00027 银河娱乐  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00027%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:04  [ 80] 09973 奇瑞汽车  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk09973%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:05  [ 81] 01988 民生银行  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01988%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:05  [ 82] 01898 中煤能源  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01898%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:05  [ 83] 06886 华泰证券  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk06886%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:06  [ 84] 00688 中国海外发展  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00688%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:06  [ 85] 01766 中国中车  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01766%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:06  [ 86] 01336 新华保险  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01336%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:07  [ 87] 01377 鼎泰高科  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01377%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:07  [ 88] 02600 中国铝业  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk02600%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:07  [ 89] 00012 恒基地产  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00012%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:08  [ 90] 01972 太古地产  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01972%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:08  [ 91] 03606 福耀玻璃  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk03606%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:08  [ 92] 01024 快手-W  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01024%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:09  [ 93] 01816 中广核电力  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01816%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:09  [ 94] 00003 香港中华煤气  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00003%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:09  [ 95] 01776 广发证券  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01776%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:10  [ 96] 01929 周大福  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01929%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:10  [ 97] 01308 海丰国际  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01308%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:10  [ 98] 00006 电能实业  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00006%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:11  [ 99] 01171 兖矿能源  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk01171%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:11  [100] 09987 百胜中国  失败: 501 Server Error: Not Implemented for url: https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk09987%2Cday%2C%2C%2C800%2Cqfq
+2026-08-24 18:35:11  全部完成，结果已写入 C:\Users\hailo\Desktop\每周自动指标\output_hk\2026-08-24\metrics_2026-08-24.csv
+2026-08-24 18:35:11  步骤2完成 -> C:\Users\hailo\Desktop\每周自动指标\output_hk\2026-08-24\metrics_2026-08-24.csv
+2026-08-24 18:35:11  步骤3: 生成 HTML 总结报告...
+2026-08-24 18:35:11  步骤3完成 -> C:\Users\hailo\Desktop\每周自动指标\output_hk\2026-08-24\report_2026-08-24.html
+2026-08-24 18:35:11  步骤4: 发送邮件报告...
+2026-08-24 18:35:13  步骤4完成: 邮件已发送
+2026-08-24 18:35:13  ===== 全部完成 2026-08-24 =====
+2026-08-24 19:00:12  今日(2026-08-24)已完成，跳过。结果目录: C:\Users\hailo\Desktop\每周自动指标\output_hk\2026-08-24

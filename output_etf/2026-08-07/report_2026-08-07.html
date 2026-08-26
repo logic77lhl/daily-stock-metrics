@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ETF KDJ 多周期信号报告 - 2026-08-07</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f0f2f5; color: #333; padding: 20px; }
+    .container { max-width: 1400px; margin: 0 auto; }
+    h1 { font-size: 24px; margin-bottom: 4px; color: #1a1a2e; }
+    .subtitle { color: #666; font-size: 14px; margin-bottom: 20px; }
+    .legend { background: #fff; border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); font-size: 14px; line-height: 1.8; }
+    .legend strong { color: #1a1a2e; }
+    .legend .tag { display: inline-block; padding: 0 8px; border-radius: 4px; font-size: 12px; font-weight: 600; margin: 0 2px; }
+    .tag-ob { background: #ffebee; color: #c62828; }
+    .tag-os { background: #e8f5e9; color: #2e7d32; }
+    .tag-nl { background: #fff3e0; color: #e65100; }
+    .tag-bull { background: #e3f2fd; color: #1565c0; }
+    .tag-bear { background: #f3e5f5; color: #6a1b9a; }
+    .tag-div { background: #fff8e1; color: #f57f17; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .summary-card { background: #fff; border-radius: 10px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .summary-card .num { font-size: 28px; font-weight: 700; }
+    .summary-card .label { font-size: 13px; color: #888; margin-top: 2px; }
+    .card-red .num { color: #c62828; }
+    .card-green .num { color: #2e7d32; }
+    .card-orange .num { color: #e65100; }
+    .card-blue .num { color: #1565c0; }
+    .card-purple .num { color: #6a1b9a; }
+    .card-gold .num { color: #f57f17; }
+    .card-gray .num { color: #666; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    th { background: #1a1a2e; color: #fff; padding: 12px 10px; font-size: 13px; font-weight: 600; text-align: center; white-space: nowrap; }
+    td { padding: 10px; text-align: center; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+    tr:hover { background: #f8f9ff; }
+    .name { text-align: left; font-weight: 500; }
+    .flag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; min-width: 50px; }
+    .flag.overbought { background: #ffebee; color: #c62828; }
+    .flag.oversold { background: #e8f5e9; color: #2e7d32; }
+    .flag.newlow { background: #fff3e0; color: #e65100; }
+    .flag.normal { background: #f5f5f5; color: #666; }
+    .signal { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .signal.resonance_strong { background: #e3f2fd; color: #1565c0; }
+    .signal.resonance_weak { background: #f3e5f5; color: #6a1b9a; }
+    .signal.overbought_resonance { background: #d32f2f; color: #fff; }
+    .signal.oversold_resonance { background: #2e7d32; color: #fff; }
+    .signal.newlow_resonance { background: #e65100; color: #fff; }
+    .signal.divergence_dw { background: #fff8e1; color: #f57f17; }
+    .signal.divergence_wd { background: #fff8e1; color: #f57f17; }
+    .signal.partial { background: #f5f5f5; color: #888; }
+    .signal.insufficient { background: #eceff1; color: #90a4ae; }
+    .price { font-weight: 600; }
+    .chg { font-weight: 600; }
+    .chg.up { color: #c62828; }
+    .chg.down { color: #2e7d32; }
+    .chg.flat { color: #666; }
+    .filter-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+    .filter-btn { padding: 5px 14px; border: 1px solid #ddd; border-radius: 16px; background: #fff; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+    .filter-btn:hover { border-color: #1a1a2e; }
+    .filter-btn.active { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
+    .footer { margin-top: 16px; font-size: 12px; color: #999; text-align: center; }
+    .section-title { font-size: 16px; font-weight: 600; margin: 20px 0 10px; color: #1a1a2e; }
+    @media (max-width: 768px) { table { font-size: 12px; } th, td { padding: 6px 4px; } }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>ETF KDJ 多周期信号报告</h1>
+    <div class="subtitle">数据日期：2026-08-07 ｜ 生成时间：2026-08-07 15:58:45 ｜ 样本数：61</div>
+
+    <div class="legend">
+        <strong>值解读：</strong>
+        <span class="tag tag-ob">>80 超买区</span>
+        <span class="tag tag-os">&lt;20 超卖区</span>
+        <span class="tag tag-nl">负值 近期新低</span>
+        <br>
+        <strong>信号分类：</strong>
+        <span class="tag tag-bull">三周期共振偏强（均>50）</span>
+        <span class="tag tag-bear">三周期共振偏弱（均&lt;50）</span>
+        <span class="tag tag-ob">三周期共振超买（均>80）</span>
+        <span class="tag tag-os">三周期共振超卖（均&lt;20）</span>
+        <span class="tag tag-nl">三周期共振新低（均&lt;0）</span>
+        <span class="tag tag-div">分化（日高周低 / 日低周高）</span>
+        <br>
+        <strong>三周期共振（同向）信号最强</strong>，分化说明趋势未确认，需结合成交量和大盘环境综合判断。
+    </div>
+
+    <div class="section-title">汇总统计</div>
+    <div class="summary-grid">
+        <div class="summary-card card-red">
+            <div class="num">46/17/1</div>
+            <div class="label">超买（日/周/月）</div>
+        </div>
+        <div class="summary-card card-green">
+            <div class="num">2/21/15</div>
+            <div class="label">超卖（日/周/月）</div>
+        </div>
+        <div class="summary-card card-orange">
+            <div class="num">5/0/2</div>
+            <div class="label">近期新低（日/周/月）</div>
+        </div>
+        <div class="summary-card card-blue">
+            <div class="num">2</div>
+            <div class="label">三周期共振偏强</div>
+        </div>
+        <div class="summary-card card-purple">
+            <div class="num">1</div>
+            <div class="label">三周期共振偏弱</div>
+        </div>
+        <div class="summary-card card-red">
+            <div class="num">1</div>
+            <div class="label">三周期共振超买</div>
+        </div>
+        <div class="summary-card card-green">
+            <div class="num">0</div>
+            <div class="label">三周期共振超卖</div>
+        </div>
+        <div class="summary-card card-orange">
+            <div class="num">0</div>
+            <div class="label">三周期共振新低</div>
+        </div>
+        <div class="summary-card card-gold">
+            <div class="num">47</div>
+            <div class="label">分化（日↕周）</div>
+        </div>
+        <div class="summary-card card-gray">
+            <div class="num">10</div>
+            <div class="label">部分分化</div>
+        </div>
+        <div class="summary-card card-gray">
+            <div class="num">0</div>
+            <div class="label">数据不足</div>
+        </div>
+    </div>
+
+    <div class="section-title">标的明细</div>
+    <div class="filter-bar" id="filterBar">
+        <button class="filter-btn active" data-filter="all">全部</button>
+        <button class="filter-btn" data-filter="overbought_resonance">三周期共振超买</button>
+        <button class="filter-btn" data-filter="oversold_resonance">三周期共振超卖</button>
+        <button class="filter-btn" data-filter="newlow_resonance">三周期共振新低</button>
+        <button class="filter-btn" data-filter="resonance_strong">三周期共振偏强</button>
+        <button class="filter-btn" data-filter="resonance_weak">三周期共振偏弱</button>
+        <button class="filter-btn" data-filter="divergence_dw">分化-日高周低</button>
+        <button class="filter-btn" data-filter="divergence_wd">分化-日低周高</button>
+        <button class="filter-btn" data-filter="partial">部分分化</button>
+        <button class="filter-btn" data-filter="insufficient">数据不足</button>
+    </div>
+    <div style="overflow-x: auto;">
+    <table>
+        <thead>
+            <tr>
+                <th>排名</th>
+                <th>代码</th>
+                <th>名称</th>
+                <th>日线J</th>
+                <th>周线J</th>
+                <th>月线J</th>
+                <th>信号</th>
+                <th>最新价</th>
+                <th>涨跌幅</th>
+                <th>PE_TTM</th>
+                <th>PE分位%</th>
+                <th>PB_MRQ</th>
+                <th>PB分位%</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr data-signal="divergence_dw">
+            <td>1</td>
+            <td>510300</td>
+            <td class="name">沪深300ETF华泰柏瑞</td>
+            <td><span class="flag overbought">103.2</span></td>
+            <td><span class="flag normal">21.5</span></td>
+            <td><span class="flag normal">40.73</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">4.75</td>
+            <td class="chg up">+0.87%</td>
+            <td>14.39</td>
+            <td>77.64</td>
+            <td>1.46</td>
+            <td>51.04</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>2</td>
+            <td>588000</td>
+            <td class="name">科创50ETF华夏</td>
+            <td><span class="flag overbought">83.03</span></td>
+            <td><span class="flag oversold">5.45</span></td>
+            <td><span class="flag normal">44.8</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.84</td>
+            <td class="chg up">+2.56%</td>
+            <td>80.71</td>
+            <td>89.36</td>
+            <td>8.05</td>
+            <td>95.63</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>3</td>
+            <td>159915</td>
+            <td class="name">创业板ETF易方达</td>
+            <td><span class="flag overbought">106.15</span></td>
+            <td><span class="flag oversold">10.75</span></td>
+            <td><span class="flag normal">34.04</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">3.59</td>
+            <td class="chg up">+1.41%</td>
+            <td>44.3</td>
+            <td>55.36</td>
+            <td>5.83</td>
+            <td>68.96</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>4</td>
+            <td>512880</td>
+            <td class="name">证券ETF国泰</td>
+            <td><span class="flag normal">46.45</span></td>
+            <td><span class="flag normal">56.24</span></td>
+            <td><span class="flag normal">33.24</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">1.10</td>
+            <td class="chg flat">+0.00%</td>
+            <td>15.25</td>
+            <td>9.71</td>
+            <td>1.3</td>
+            <td>20.4</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>5</td>
+            <td>588200</td>
+            <td class="name">科创芯片ETF嘉实</td>
+            <td><span class="flag overbought">83.69</span></td>
+            <td><span class="flag oversold">3.21</span></td>
+            <td><span class="flag normal">46.48</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.22</td>
+            <td class="chg up">+3.39%</td>
+            <td>122.7</td>
+            <td>82.39</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>6</td>
+            <td>510500</td>
+            <td class="name">中证500ETF南方</td>
+            <td><span class="flag overbought">118.01</span></td>
+            <td><span class="flag oversold">17.76</span></td>
+            <td><span class="flag normal">39.73</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">7.99</td>
+            <td class="chg up">+2.02%</td>
+            <td>27.87</td>
+            <td>72.5</td>
+            <td>2.48</td>
+            <td>79.48</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>7</td>
+            <td>563360</td>
+            <td class="name">A500ETF华泰柏瑞</td>
+            <td><span class="flag overbought">113.19</span></td>
+            <td><span class="flag normal">21.31</span></td>
+            <td><span class="flag normal">39.91</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.32</td>
+            <td class="chg up">+1.39%</td>
+            <td>16.34</td>
+            <td>77.09</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>8</td>
+            <td>515880</td>
+            <td class="name">通信ETF国泰</td>
+            <td><span class="flag overbought">106.12</span></td>
+            <td><span class="flag oversold">3.62</span></td>
+            <td><span class="flag normal">33.49</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">0.66</td>
+            <td class="chg up">+1.23%</td>
+            <td>49.27</td>
+            <td>93.47</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>9</td>
+            <td>159516</td>
+            <td class="name">半导体设备ETF国泰</td>
+            <td><span class="flag overbought">85.17</span></td>
+            <td><span class="flag oversold">15.11</span></td>
+            <td><span class="flag normal">52.36</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">0.74</td>
+            <td class="chg up">+3.06%</td>
+            <td>112.39</td>
+            <td>96.77</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>10</td>
+            <td>588170</td>
+            <td class="name">科创半导体ETF华夏</td>
+            <td><span class="flag overbought">84.14</span></td>
+            <td><span class="flag oversold">16.26</span></td>
+            <td><span class="flag normal">52.21</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.02</td>
+            <td class="chg up">+4.40%</td>
+            <td>41.55</td>
+            <td>81.0</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>11</td>
+            <td>512100</td>
+            <td class="name">中证1000ETF南方</td>
+            <td><span class="flag overbought">118.19</span></td>
+            <td><span class="flag normal">20.9</span></td>
+            <td><span class="flag normal">27.52</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">3.11</td>
+            <td class="chg up">+2.00%</td>
+            <td>31.8</td>
+            <td>68.46</td>
+            <td>2.42</td>
+            <td>47.44</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>12</td>
+            <td>512890</td>
+            <td class="name">红利低波ETF华泰柏瑞</td>
+            <td><span class="flag newlow">-2.27</span></td>
+            <td><span class="flag overbought">92.86</span></td>
+            <td><span class="flag normal">60.92</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">1.16</td>
+            <td class="chg down">-0.51%</td>
+            <td>7.65</td>
+            <td>66.79</td>
+            <td>0.84</td>
+            <td>55.28</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>13</td>
+            <td>159995</td>
+            <td class="name">芯片ETF华夏</td>
+            <td><span class="flag overbought">82.1</span></td>
+            <td><span class="flag oversold">0.72</span></td>
+            <td><span class="flag normal">38.94</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.21</td>
+            <td class="chg up">+2.80%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>14</td>
+            <td>512170</td>
+            <td class="name">医疗ETF华宝</td>
+            <td><span class="flag overbought">100.94</span></td>
+            <td><span class="flag overbought">109.49</span></td>
+            <td><span class="flag normal">44.89</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">0.35</td>
+            <td class="chg up">+5.74%</td>
+            <td>27.99</td>
+            <td>23.99</td>
+            <td>3.4</td>
+            <td>10.44</td>
+        </tr><tr data-signal="partial">
+            <td>15</td>
+            <td>512400</td>
+            <td class="name">有色金属ETF南方</td>
+            <td><span class="flag overbought">105.8</span></td>
+            <td><span class="flag normal">59.69</span></td>
+            <td><span class="flag oversold">13.3</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">1.99</td>
+            <td class="chg up">+3.81%</td>
+            <td>16.33</td>
+            <td>89.67</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>16</td>
+            <td>159949</td>
+            <td class="name">创业板50ETF华安</td>
+            <td><span class="flag overbought">100.83</span></td>
+            <td><span class="flag oversold">8.21</span></td>
+            <td><span class="flag normal">27.56</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.68</td>
+            <td class="chg up">+0.90%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>17</td>
+            <td>510050</td>
+            <td class="name">上证50ETF华夏</td>
+            <td><span class="flag overbought">83.83</span></td>
+            <td><span class="flag normal">77.97</span></td>
+            <td><span class="flag normal">43.82</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">3.07</td>
+            <td class="chg up">+1.35%</td>
+            <td>11.56</td>
+            <td>78.51</td>
+            <td>1.24</td>
+            <td>55.92</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>18</td>
+            <td>159819</td>
+            <td class="name">人工智能ETF易方达</td>
+            <td><span class="flag overbought">102.26</span></td>
+            <td><span class="flag oversold">13.85</span></td>
+            <td><span class="flag normal">47.83</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.87</td>
+            <td class="chg up">+1.14%</td>
+            <td>51.06</td>
+            <td>76.36</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>19</td>
+            <td>510880</td>
+            <td class="name">红利ETF华泰柏瑞</td>
+            <td><span class="flag normal">57.51</span></td>
+            <td><span class="flag overbought">101.14</span></td>
+            <td><span class="flag normal">66.79</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">3.28</td>
+            <td class="chg down">-0.24%</td>
+            <td>8.41</td>
+            <td>70.4</td>
+            <td>0.82</td>
+            <td>58.56</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>20</td>
+            <td>159326</td>
+            <td class="name">电网设备ETF华夏</td>
+            <td><span class="flag overbought">111.56</span></td>
+            <td><span class="flag oversold">9.73</span></td>
+            <td><span class="flag normal">26.02</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.70</td>
+            <td class="chg up">+1.31%</td>
+            <td>12.6</td>
+            <td>84.34</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>21</td>
+            <td>512480</td>
+            <td class="name">半导体ETF国联安</td>
+            <td><span class="flag overbought">87.71</span></td>
+            <td><span class="flag oversold">0.46</span></td>
+            <td><span class="flag normal">41.34</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.08</td>
+            <td class="chg up">+3.15%</td>
+            <td>91.64</td>
+            <td>88.56</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>22</td>
+            <td>515450</td>
+            <td class="name">红利低波50ETF南方</td>
+            <td><span class="flag newlow">-8.24</span></td>
+            <td><span class="flag overbought">87.05</span></td>
+            <td><span class="flag normal">63.75</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">1.40</td>
+            <td class="chg down">-0.43%</td>
+            <td>8.21</td>
+            <td>72.6</td>
+            <td>0.84</td>
+            <td>55.28</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>23</td>
+            <td>562500</td>
+            <td class="name">机器人ETF华夏</td>
+            <td><span class="flag overbought">119.05</span></td>
+            <td><span class="flag oversold">15.53</span></td>
+            <td><span class="flag normal">27.14</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.02</td>
+            <td class="chg up">+1.19%</td>
+            <td>55.73</td>
+            <td>65.9</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>24</td>
+            <td>159530</td>
+            <td class="name">机器人ETF易方达</td>
+            <td><span class="flag overbought">119.53</span></td>
+            <td><span class="flag oversold">12.41</span></td>
+            <td><span class="flag normal">21.47</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.42</td>
+            <td class="chg up">+1.07%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="overbought_resonance">
+            <td>25</td>
+            <td>159992</td>
+            <td class="name">创新药ETF银华</td>
+            <td><span class="flag overbought">105.94</span></td>
+            <td><span class="flag overbought">90.41</span></td>
+            <td><span class="flag overbought">83.19</span></td>
+            <td><span class="signal overbought_resonance">三周期共振超买</span></td>
+            <td class="price">0.91</td>
+            <td class="chg up">+6.56%</td>
+            <td>28.73</td>
+            <td>33.33</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>26</td>
+            <td>510210</td>
+            <td class="name">上证指数ETF富国</td>
+            <td><span class="flag overbought">99.65</span></td>
+            <td><span class="flag normal">38.37</span></td>
+            <td><span class="flag normal">24.93</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.00</td>
+            <td class="chg up">+0.50%</td>
+            <td>15.26</td>
+            <td>72.12</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>27</td>
+            <td>159781</td>
+            <td class="name">科创创业ETF易方达</td>
+            <td><span class="flag overbought">93.88</span></td>
+            <td><span class="flag oversold">2.82</span></td>
+            <td><span class="flag normal">39.11</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.15</td>
+            <td class="chg up">+1.60%</td>
+            <td>44.12</td>
+            <td>63.12</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>28</td>
+            <td>510180</td>
+            <td class="name">上证180ETF华安</td>
+            <td><span class="flag overbought">109.42</span></td>
+            <td><span class="flag normal">54.41</span></td>
+            <td><span class="flag normal">40.58</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">4.05</td>
+            <td class="chg up">+1.35%</td>
+            <td>12.14</td>
+            <td>69.22</td>
+            <td>1.23</td>
+            <td>43.24</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>29</td>
+            <td>515180</td>
+            <td class="name">红利ETF易方达</td>
+            <td><span class="flag normal">47.95</span></td>
+            <td><span class="flag overbought">100.13</span></td>
+            <td><span class="flag normal">49.48</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">1.41</td>
+            <td class="chg down">-0.49%</td>
+            <td>8.27</td>
+            <td>55.07</td>
+            <td>0.82</td>
+            <td>43.68</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>30</td>
+            <td>515050</td>
+            <td class="name">通信ETF华夏</td>
+            <td><span class="flag overbought">104.77</span></td>
+            <td><span class="flag oversold">4.24</span></td>
+            <td><span class="flag normal">39.39</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.04</td>
+            <td class="chg up">+2.56%</td>
+            <td>49.08</td>
+            <td>94.28</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_strong">
+            <td>31</td>
+            <td>512010</td>
+            <td class="name">医药ETF易方达</td>
+            <td><span class="flag overbought">96.12</span></td>
+            <td><span class="flag overbought">111.29</span></td>
+            <td><span class="flag normal">77.69</span></td>
+            <td><span class="signal resonance_strong">三周期共振偏强</span></td>
+            <td class="price">0.40</td>
+            <td class="chg up">+5.54%</td>
+            <td>23.6</td>
+            <td>4.75</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>32</td>
+            <td>159201</td>
+            <td class="name">自由现金流ETF华夏</td>
+            <td><span class="flag normal">37.69</span></td>
+            <td><span class="flag overbought">96.86</span></td>
+            <td><span class="flag oversold">13.46</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">1.17</td>
+            <td class="chg down">-0.09%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>33</td>
+            <td>159928</td>
+            <td class="name">消费ETF汇添富</td>
+            <td><span class="flag oversold">14.06</span></td>
+            <td><span class="flag overbought">98.52</span></td>
+            <td><span class="flag normal">31.73</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">0.67</td>
+            <td class="chg up">+0.15%</td>
+            <td>19.96</td>
+            <td>20.15</td>
+            <td>3.54</td>
+            <td>3.04</td>
+        </tr><tr data-signal="partial">
+            <td>34</td>
+            <td>517520</td>
+            <td class="name">黄金股ETF永赢</td>
+            <td><span class="flag overbought">90.79</span></td>
+            <td><span class="flag overbought">107.33</span></td>
+            <td><span class="flag oversold">8.95</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">2.11</td>
+            <td class="chg up">+3.99%</td>
+            <td>21.76</td>
+            <td>55.96</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>35</td>
+            <td>159206</td>
+            <td class="name">卫星ETF永赢</td>
+            <td><span class="flag overbought">118.61</span></td>
+            <td><span class="flag normal">23.1</span></td>
+            <td><span class="flag oversold">9.01</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.45</td>
+            <td class="chg up">+3.58%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>36</td>
+            <td>159870</td>
+            <td class="name">化工ETF鹏华</td>
+            <td><span class="flag overbought">106.19</span></td>
+            <td><span class="flag normal">45.31</span></td>
+            <td><span class="flag normal">23.19</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">0.83</td>
+            <td class="chg up">+0.98%</td>
+            <td>22.45</td>
+            <td>57.77</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>37</td>
+            <td>512070</td>
+            <td class="name">证券保险ETF易方达</td>
+            <td><span class="flag normal">20.62</span></td>
+            <td><span class="flag overbought">85.08</span></td>
+            <td><span class="flag oversold">14.58</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">0.80</td>
+            <td class="chg up">+0.25%</td>
+            <td>9.73</td>
+            <td>1.94</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>38</td>
+            <td>512690</td>
+            <td class="name">酒ETF鹏华</td>
+            <td><span class="flag normal">47.61</span></td>
+            <td><span class="flag overbought">101.75</span></td>
+            <td><span class="flag normal">29.07</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">0.44</td>
+            <td class="chg up">+1.38%</td>
+            <td>19.36</td>
+            <td>17.34</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>39</td>
+            <td>515220</td>
+            <td class="name">煤炭ETF国泰</td>
+            <td><span class="flag overbought">84.33</span></td>
+            <td><span class="flag normal">44.7</span></td>
+            <td><span class="flag normal">34.59</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.23</td>
+            <td class="chg down">-1.05%</td>
+            <td>18.23</td>
+            <td>85.75</td>
+            <td>1.73</td>
+            <td>93.84</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>40</td>
+            <td>513630</td>
+            <td class="name">港股低波红利ETF摩根</td>
+            <td><span class="flag newlow">-15.63</span></td>
+            <td><span class="flag normal">77.02</span></td>
+            <td><span class="flag normal">28.0</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">1.56</td>
+            <td class="chg down">-0.76%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>41</td>
+            <td>512760</td>
+            <td class="name">芯片ETF国泰</td>
+            <td><span class="flag overbought">82.93</span></td>
+            <td><span class="flag oversold">2.62</span></td>
+            <td><span class="flag normal">42.39</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.16</td>
+            <td class="chg up">+3.02%</td>
+            <td>91.28</td>
+            <td>80.13</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="resonance_weak">
+            <td>42</td>
+            <td>159611</td>
+            <td class="name">电力ETF广发</td>
+            <td><span class="flag normal">24.35</span></td>
+            <td><span class="flag normal">30.27</span></td>
+            <td><span class="flag oversold">12.74</span></td>
+            <td><span class="signal resonance_weak">三周期共振偏弱</span></td>
+            <td class="price">1.06</td>
+            <td class="chg flat">+0.00%</td>
+            <td>15.36</td>
+            <td>67.65</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>43</td>
+            <td>516650</td>
+            <td class="name">有色金属ETF华夏</td>
+            <td><span class="flag overbought">103.88</span></td>
+            <td><span class="flag normal">66.54</span></td>
+            <td><span class="flag oversold">8.52</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">1.93</td>
+            <td class="chg up">+3.32%</td>
+            <td>19.69</td>
+            <td>26.19</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>44</td>
+            <td>560860</td>
+            <td class="name">工业有色ETF万家</td>
+            <td><span class="flag overbought">104.89</span></td>
+            <td><span class="flag normal">47.81</span></td>
+            <td><span class="flag oversold">18.37</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.71</td>
+            <td class="chg up">+3.90%</td>
+            <td>63.3</td>
+            <td>35.89</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>45</td>
+            <td>512800</td>
+            <td class="name">银行ETF华宝</td>
+            <td><span class="flag newlow">-2.16</span></td>
+            <td><span class="flag overbought">88.51</span></td>
+            <td><span class="flag normal">65.95</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">0.80</td>
+            <td class="chg down">-0.62%</td>
+            <td>6.61</td>
+            <td>67.95</td>
+            <td>0.66</td>
+            <td>36.12</td>
+        </tr><tr data-signal="partial">
+            <td>46</td>
+            <td>159852</td>
+            <td class="name">软件ETF嘉实</td>
+            <td><span class="flag overbought">91.5</span></td>
+            <td><span class="flag normal">73.88</span></td>
+            <td><span class="flag oversold">6.12</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">0.73</td>
+            <td class="chg down">-1.08%</td>
+            <td>59.31</td>
+            <td>55.83</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>47</td>
+            <td>159869</td>
+            <td class="name">游戏ETF华夏</td>
+            <td><span class="flag overbought">87.83</span></td>
+            <td><span class="flag overbought">81.27</span></td>
+            <td><span class="flag oversold">3.11</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">1.13</td>
+            <td class="chg down">-0.35%</td>
+            <td>20.19</td>
+            <td>19.34</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>48</td>
+            <td>159755</td>
+            <td class="name">电池ETF广发</td>
+            <td><span class="flag overbought">100.31</span></td>
+            <td><span class="flag normal">23.67</span></td>
+            <td><span class="flag oversold">5.14</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">0.97</td>
+            <td class="chg up">+1.46%</td>
+            <td>25.53</td>
+            <td>37.4</td>
+            <td>3.47</td>
+            <td>49.4</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>49</td>
+            <td>563300</td>
+            <td class="name">中证2000ETF华泰柏瑞</td>
+            <td><span class="flag overbought">117.05</span></td>
+            <td><span class="flag normal">27.26</span></td>
+            <td><span class="flag normal">28.14</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.40</td>
+            <td class="chg up">+1.67%</td>
+            <td>38.93</td>
+            <td>67.15</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>50</td>
+            <td>159363</td>
+            <td class="name">创业板人工智能ETF华宝</td>
+            <td><span class="flag overbought">110.51</span></td>
+            <td><span class="flag oversold">15.7</span></td>
+            <td><span class="flag normal">43.37</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.24</td>
+            <td class="chg up">+0.65%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>51</td>
+            <td>512710</td>
+            <td class="name">军工龙头ETF富国</td>
+            <td><span class="flag overbought">108.2</span></td>
+            <td><span class="flag normal">37.94</span></td>
+            <td><span class="flag newlow">-6.4</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">0.63</td>
+            <td class="chg up">+1.61%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>52</td>
+            <td>159307</td>
+            <td class="name">红利低波100ETF博时</td>
+            <td><span class="flag newlow">-0.33</span></td>
+            <td><span class="flag overbought">94.04</span></td>
+            <td><span class="flag normal">56.8</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">1.03</td>
+            <td class="chg down">-0.10%</td>
+            <td>8.56</td>
+            <td>76.51</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>53</td>
+            <td>516150</td>
+            <td class="name">稀土ETF嘉实</td>
+            <td><span class="flag overbought">109.36</span></td>
+            <td><span class="flag normal">22.45</span></td>
+            <td><span class="flag oversold">17.8</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.82</td>
+            <td class="chg up">+3.53%</td>
+            <td>30.15</td>
+            <td>34.16</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>54</td>
+            <td>159851</td>
+            <td class="name">金融科技ETF华宝</td>
+            <td><span class="flag overbought">93.51</span></td>
+            <td><span class="flag normal">61.48</span></td>
+            <td><span class="flag oversold">6.28</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">0.65</td>
+            <td class="chg down">-0.46%</td>
+            <td>34.07</td>
+            <td>15.07</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>55</td>
+            <td>512660</td>
+            <td class="name">军工ETF国泰</td>
+            <td><span class="flag overbought">111.29</span></td>
+            <td><span class="flag normal">32.21</span></td>
+            <td><span class="flag newlow">-0.53</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.15</td>
+            <td class="chg up">+1.67%</td>
+            <td>46.65</td>
+            <td>15.58</td>
+            <td>3.32</td>
+            <td>58.56</td>
+        </tr><tr data-signal="divergence_wd">
+            <td>56</td>
+            <td>159263</td>
+            <td class="name">价值ETF易方达</td>
+            <td><span class="flag oversold">12.22</span></td>
+            <td><span class="flag overbought">98.61</span></td>
+            <td><span class="flag normal">46.38</span></td>
+            <td><span class="signal divergence_wd">分化-日低周高</span></td>
+            <td class="price">1.14</td>
+            <td class="chg down">-0.61%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>57</td>
+            <td>515980</td>
+            <td class="name">人工智能ETF华富</td>
+            <td><span class="flag overbought">104.99</span></td>
+            <td><span class="flag oversold">15.08</span></td>
+            <td><span class="flag normal">47.18</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.08</td>
+            <td class="chg up">+1.31%</td>
+            <td>54.64</td>
+            <td>87.78</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="partial">
+            <td>58</td>
+            <td>159865</td>
+            <td class="name">养殖ETF国泰</td>
+            <td><span class="flag normal">55.6</span></td>
+            <td><span class="flag overbought">94.0</span></td>
+            <td><span class="flag oversold">17.27</span></td>
+            <td><span class="signal partial">部分分化</span></td>
+            <td class="price">0.53</td>
+            <td class="chg down">-0.38%</td>
+            <td>22.8</td>
+            <td>53.02</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>59</td>
+            <td>512950</td>
+            <td class="name">央企改革ETF华夏</td>
+            <td><span class="flag overbought">108.96</span></td>
+            <td><span class="flag normal">37.36</span></td>
+            <td><span class="flag normal">40.38</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">1.53</td>
+            <td class="chg up">+1.33%</td>
+            <td>15.65</td>
+            <td>81.74</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>60</td>
+            <td>159796</td>
+            <td class="name">电池ETF汇添富</td>
+            <td><span class="flag overbought">101.11</span></td>
+            <td><span class="flag oversold">19.09</span></td>
+            <td><span class="flag oversold">9.56</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">0.87</td>
+            <td class="chg up">+1.40%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr><tr data-signal="divergence_dw">
+            <td>61</td>
+            <td>159967</td>
+            <td class="name">创业板成长ETF华夏</td>
+            <td><span class="flag overbought">102.8</span></td>
+            <td><span class="flag oversold">6.66</span></td>
+            <td><span class="flag normal">38.85</span></td>
+            <td><span class="signal divergence_dw">分化-日高周低</span></td>
+            <td class="price">0.81</td>
+            <td class="chg up">+2.02%</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+        </tr>
+        </tbody>
+    </table>
+    </div>
+
+    <div class="footer">
+        本报告由 每周自动指标 系统生成 ｜ 仅供参考，不构成投资建议
+    </div>
+</div>
+<script>
+(function() {
+    var filterBar = document.getElementById('filterBar');
+    var rows = document.querySelectorAll('tbody tr');
+    var btns = filterBar.querySelectorAll('.filter-btn');
+
+    btns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            btns.forEach(function(b) { b.classList.remove('active'); });
+            this.classList.add('active');
+            var filter = this.getAttribute('data-filter');
+            rows.forEach(function(row) {
+                if (filter === 'all') {
+                    row.style.display = '';
+                } else {
+                    row.style.display = row.getAttribute('data-signal') === filter ? '' : 'none';
+                }
+            });
+        });
+    });
+})();
+</script>
+</body>
+</html>
