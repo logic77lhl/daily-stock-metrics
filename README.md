@@ -80,6 +80,12 @@ powershell -ExecutionPolicy Bypass -File .\setup_autostart.ps1
 powershell -ExecutionPolicy Bypass -File .\remove_autostart.ps1
 ```
 
+## 在线浏览（GitHub Pages）
+
+每日报告自动发布为网站：**https://logic77lhl.github.io/daily-stock-metrics/**
+
+首页按日期倒序列出每天的报告，点开即可在手机/电脑浏览器直接查看，无需下载附件。
+
 ## 云端定时运行（GitHub Actions）
 
 项目已托管到 GitHub，由 `.github/workflows/daily.yml` 定时执行，无需开机：
