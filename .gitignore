@@ -1,3 +1,4 @@
 __pycache__/
 *.pyc
 autostart_errors.log
+backtest_results/kline_cache/

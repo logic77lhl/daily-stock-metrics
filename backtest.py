@@ -12,6 +12,7 @@ import glob
 import html as html_mod
 import os
 import sys
+import time
 
 import numpy as np
 import pandas as pd
@@ -26,29 +27,51 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 RESULT_DIR = os.path.join(BASE_DIR, "backtest_results")
 
 DEFAULT_HORIZONS = [1, 2, 3, 5, 10, 20]
-MAX_CARRY_DAYS = 60
 
 STRATEGIES = [
     ("全样本(基准)", None),
+    # ---- 均线趋势类 ----
+    ("双均线多头(MA20>MA60)", "MA20 > MA60"),
+    ("双均线空头(MA20<MA60)", "MA20 < MA60"),
+    ("价上MA20且多头排列", "最新价 > MA20 and MA20 > MA60"),
+    # ---- KDJ 三周期共振类 ----
     ("三周期共振偏强(均>50)", "日线J > 50 and 周线J > 50 and 月线J > 50"),
     ("三周期共振偏弱(均<50)", "日线J < 50 and 周线J < 50 and 月线J < 50"),
     ("三周期共振超买(均>80)", "日线J > 80 and 周线J > 80 and 月线J > 80"),
     ("三周期共振超卖(均<20)", "日线J < 20 and 周线J < 20 and 月线J < 20"),
     ("三周期共振新低(均<0)", "日线J < 0 and 周线J < 0 and 月线J < 0"),
+    # ---- 分化类 ----
     ("分化-日高周低", "日线J > 50 and 周线J < 50"),
     ("分化-日低周高", "日线J < 50 and 周线J > 50"),
+    # ---- 组合类（KDJ × 趋势/量能）----
+    ("超卖+多头排列", "日线J < 20 and MA20 > MA60"),
+    ("超买+空头排列", "日线J > 80 and MA20 < MA60"),
+    ("低位+放量(J<30且量比>1.5)", "日线J < 30 and 量比 > 1.5"),
 ]
 
+# 注意：长键在前，避免子串替换冲突（如 价距MA20% 先于 MA20）
 ALIASES = {
+    "价距MA20%": "px_ma20_gap",
+    "PE历史分位%": "pe_p",
+    "PB历史分位%": "pb_p",
+    "PE5年分位%": "pe_p5",
+    "PB5年分位%": "pb_p5",
     "日线J": "j_d",
     "周线J": "j_w",
     "月线J": "j_m",
-    "PE历史分位%": "pe_p",
-    "PB历史分位%": "pb_p",
     "PE_TTM": "pe",
     "PB_MRQ": "pb",
     "涨跌幅": "pct",
+    "最新价": "px_close",
+    "双均线多头": "ma_bull",
+    "MA20": "ma20",
+    "MA60": "ma60",
+    "量比": "vr",
 }
+
+EXPR_COLUMNS = ["日线J", "周线J", "月线J", "PE_TTM", "PE历史分位%", "PB_MRQ", "PB历史分位%",
+                "涨跌幅", "最新价", "MA20", "MA60", "双均线多头", "价距MA20%", "量比",
+                "PE5年分位%", "PB5年分位%"]
 
 
 MARKET_DIRS = {
@@ -78,47 +101,89 @@ def load_metrics(output_dir, market="个股"):
     return panel
 
 
-def build_trades(panel, horizons):
-    prices = panel.pivot_table(index="日期", columns="代码", values="最新价", aggfunc="first").sort_index()
-    dates = list(prices.index)
+def build_price_map(panel, market, cache_dir, log=print):
+    """现拉每只标的的 qfq 日线，构建全期一致的复权价格序列。
 
-    last_obs = pd.DataFrame(index=prices.index, columns=prices.columns, dtype="datetime64[ns]")
-    for code in prices.columns:
-        s = prices[code].dropna()
-        for idx in prices.index:
-            tmp = s[s.index <= idx]
-            if not tmp.empty:
-                last_obs.at[idx, code] = tmp.index[-1]
+    metrics 里存的最新价是各自抓取日的前复权价，跨日除权后不可比；
+    这里统一用当前时点的复权序列定价。结果缓存到 kline_cache/ 当天复用。
+    """
+    import fetch_metrics as fm
 
-    prices_ff = prices.ffill(limit=MAX_CARRY_DAYS)
+    os.makedirs(cache_dir, exist_ok=True)
+    session = fm.get_session()
+    px = {}
+    codes = sorted(panel["代码"].unique())
+    for n, code in enumerate(codes, 1):
+        raw = code.split("_", 1)[1] if "_" in code else code
+        cache = os.path.join(cache_dir, f"{market}_{raw}.csv")
+        s = None
+        if os.path.exists(cache):
+            try:
+                df = pd.read_csv(cache, parse_dates=["date"]).set_index("date")["close"]
+                if df.index.max() >= pd.Timestamp.now().normalize() - pd.Timedelta(days=5):
+                    s = df
+            except Exception:
+                s = None
+        if s is None:
+            for attempt in range(3):
+                try:
+                    df = fm.fetch_kline(session, raw, "daily", bars=800, market=market)
+                    s = df.set_index(pd.to_datetime(df["date"]))["close"]
+                    s.to_frame().reset_index().to_csv(cache, index=False)
+                    time.sleep(0.15)
+                    break
+                except Exception as e:
+                    if attempt == 2:
+                        log(f"[{market}] {raw} 价格获取失败，剔除该标的: {e}")
+                    time.sleep(1)
+        if s is not None:
+            px[code] = s.sort_index()
+    return px
+
+
+def _px_at(s, ts):
+    ts = pd.Timestamp(ts)
+    idx = s.index.searchsorted(ts, side="right") - 1
+    if idx < 0 or idx >= len(s):
+        return None
+    return float(s.iloc[idx])
+
+
+def build_trades(panel, horizons, px, cost_pct=0.15):
+    dates = sorted(panel["日期"].unique())
     info = panel.set_index(["日期", "代码"])
 
     rows = []
     for i, d in enumerate(dates):
+        day = panel[panel["日期"] == d]
         for h in horizons:
             j = i + h
             if j >= len(dates):
                 continue
-            sel = prices.iloc[i].dropna()
-            for code, buy in sel.items():
-                row_key = (d, code)
-                if row_key not in info.index:
+            sell_d = dates[j]
+            for _, r in day.iterrows():
+                code = r["代码"]
+                s = px.get(code)
+                if s is None:
                     continue
-                rec = info.loc[row_key]
+                rec_key = (d, code)
+                if rec_key not in info.index:
+                    continue
+                buy = _px_at(s, d)
+                sell = _px_at(s, sell_d)
+                if buy is None or sell is None or buy <= 0 or sell <= 0:
+                    continue
+                rec = info.loc[rec_key]
                 if isinstance(rec, pd.DataFrame):
                     rec = rec.iloc[0]
-                sell = prices_ff.iloc[j][code]
-                if pd.isna(sell):
-                    continue
-                lo = last_obs.iloc[j][code]
-                if pd.isna(lo):
-                    continue
-                hold_pos = prices.index.get_indexer([lo], method="pad")[0]
-                carry = lo < dates[j]
-                ret = sell / buy - 1.0
+
+                buy_pos = max(0, s.index.searchsorted(pd.Timestamp(d), side="right") - 1)
+                sell_pos = max(0, s.index.searchsorted(pd.Timestamp(sell_d), side="right") - 1)
+
+                ret = sell / buy - 1.0 - cost_pct / 100.0
                 orig_code = code.split("_", 1)[1] if "_" in code else code
                 rows.append({
-                    "市场": rec["市场"],
+                    "市场": r["市场"],
                     "信号日": d,
                     "代码": orig_code,
                     "名称": rec["名称"],
@@ -127,8 +192,7 @@ def build_trades(panel, horizons):
                     "买入价": round(float(buy), 2),
                     "卖出价": round(float(sell), 2),
                     "收益%": round(float(ret) * 100, 2),
-                    "实际持有交易日": int(hold_pos - i),
-                    "数据补齐": carry,
+                    "实际持有交易日": int(sell_pos - buy_pos),
                     "日线J": rec["日线J"],
                     "周线J": rec["周线J"],
                     "月线J": rec["月线J"],
@@ -136,12 +200,19 @@ def build_trades(panel, horizons):
                     "PE历史分位%": rec["PE历史分位%"],
                     "PB_MRQ": rec["PB_MRQ"],
                     "PB历史分位%": rec["PB历史分位%"],
+                    "MA20": rec.get("MA20"),
+                    "MA60": rec.get("MA60"),
+                    "量比": rec.get("量比"),
                 })
     return pd.DataFrame(rows)
 
 
 def eval_expr(df, expr):
-    ren = df[["日线J", "周线J", "月线J", "PE_TTM", "PE历史分位%", "PB_MRQ", "PB历史分位%", "涨跌幅"]].rename(columns=ALIASES)
+    cols = [c for c in EXPR_COLUMNS if c in df.columns]
+    ren = df[cols].rename(columns=ALIASES)
+    for c in EXPR_COLUMNS:
+        if c not in cols:
+            ren[ALIASES[c]] = float("nan")
     for k, v in ALIASES.items():
         expr = expr.replace(k, v)
     return ren.eval(expr).reindex(df.index)
@@ -179,7 +250,6 @@ def summarize(trades_df, horizons):
                 "中位数收益%": round(float(sub["收益%"].median()), 2),
                 "累计净值": round(float(nav.iloc[-1]), 4),
                 "最大回撤%": round(float(dd), 2) if h == 1 else None,
-                "数据补齐占比%": round(float(sub["数据补齐"].mean() * 100), 1),
             })
         if (grp["持有期"] == 1).any():
             d1 = grp[grp["持有期"] == 1].groupby("信号日")["收益%"].mean()
@@ -187,7 +257,7 @@ def summarize(trades_df, horizons):
     return pd.DataFrame(summary), equity
 
 
-def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_days):
+def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_days, cost_pct=0.15):
     def esc(v):
         if v is None or (isinstance(v, float) and pd.isna(v)):
             return "-"
@@ -225,7 +295,6 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
             <td class="chg {cls(r['中位数收益%'])}">{num(r['中位数收益%'], 2, sign=True)}%</td>
             <td>{num(r['累计净值'], 4)}</td>
             <td>{num(r['最大回撤%'], 2)}</td>
-            <td>{num(r['数据补齐占比%'], 1)}%</td>
         </tr>"""
 
     chart_svg = ""
@@ -282,7 +351,6 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
             <td class="price">{num(r['卖出价'])}</td>
             <td class="chg {cls(r['收益%'])}">{num(r['收益%'], 2, sign=True)}%</td>
             <td>{int(r['实际持有交易日'])}</td>
-            <td>{'<span class="flag carry">补齐</span>' if r['数据补齐'] else '<span class="flag normal">正常</span>'}</td>
             <td>{num(r['日线J'], 1)}</td>
             <td>{num(r['周线J'], 1)}</td>
             <td>{num(r['月线J'], 1)}</td>
@@ -348,7 +416,7 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
 <body>
 <div class="container">
     <h1>KDJ 三周期信号回测报告</h1>
-    <div class="subtitle">数据区间：{first_date} ~ {last_date}（{n_days} 个交易日）｜ 生成时间：{now_str}</div>
+    <div class="subtitle">数据区间：{first_date} ~ {last_date}（{n_days} 个交易日）｜ 单边交易成本 {cost_pct}% ｜ 生成时间：{now_str}</div>
 
     <div class="section-title">概览</div>
     <div class="summary-grid">
@@ -376,7 +444,6 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
             <th class="sortable" data-col="5" data-type="num">中位数收益%</th>
             <th class="sortable" data-col="6" data-type="num">累计净值</th>
             <th class="sortable" data-col="7" data-type="num">最大回撤%</th>
-            <th class="sortable" data-col="8" data-type="num">数据补齐占比%</th>
         </tr></thead>
         <tbody>{sum_rows}</tbody>
     </table>
@@ -406,20 +473,19 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
             <th class="sortable" data-col="6" data-type="num">卖出价</th>
             <th class="sortable" data-col="7" data-type="num">收益%</th>
             <th class="sortable" data-col="8" data-type="num">实际持有</th>
-            <th class="sortable" data-col="9" data-type="str">数据</th>
-            <th class="sortable" data-col="10" data-type="num">日线J</th>
-            <th class="sortable" data-col="11" data-type="num">周线J</th>
-            <th class="sortable" data-col="12" data-type="num">月线J</th>
-            <th class="sortable" data-col="13" data-type="num">PE分位%</th>
-            <th class="sortable" data-col="14" data-type="num">PB分位%</th>
+            <th class="sortable" data-col="9" data-type="num">日线J</th>
+            <th class="sortable" data-col="10" data-type="num">周线J</th>
+            <th class="sortable" data-col="11" data-type="num">月线J</th>
+            <th class="sortable" data-col="12" data-type="num">PE分位%</th>
+            <th class="sortable" data-col="13" data-type="num">PB分位%</th>
         </tr></thead>
         <tbody>{trade_rows}</tbody>
     </table>
     </div>
 
     <div class="footer">
-        回测假设：买入=信号日收盘价，卖出=持有期结束日收盘价；未计手续费/滑点；跌出市值前100的股票用其后最近收盘价补齐；
-        价格未做除权除息调整；持有期&gt;1天时交易重叠，累计净值仅供参考 ｜ 本报告由 backtest.py 生成，仅供研究，不构成投资建议
+        回测假设：买入=信号日收盘价，卖出=持有期结束日收盘价（统一采用最新前复权序列，跨日可比）；收益已按单边成本 {cost_pct}% 扣减；
+        持有期&gt;1天时交易重叠，累计净值仅供参考 ｜ 本报告由 backtest.py 生成，仅供研究，不构成投资建议
     </div>
 </div>
 <script>
@@ -531,6 +597,7 @@ def main():
     ap.add_argument("--market", default="all", help="市场: all(默认), 个股, ETF, HK, 或逗号分隔如 个股,ETF")
     ap.add_argument("--input", default=None, help="数据目录(仅单市场时使用, 覆盖 --market)")
     ap.add_argument("--horizons", default="1,2,3,5,10,20", help="持有期(交易日), 逗号分隔")
+    ap.add_argument("--cost", type=float, default=0.15, help="单边交易成本%%(佣金+税费+滑点), 默认0.15")
     ap.add_argument("--strategy", action="append", default=[], help="自定义策略, 格式: 名称=日线J<0 and 周线J<0, 可多次传入")
     ap.add_argument("--outdir", default=RESULT_DIR, help="结果输出目录")
     args = ap.parse_args()
@@ -570,11 +637,15 @@ def main():
             code_map[code] = f"{mkt_name}_{code}"
         panel["代码"] = panel["代码"].map(code_map)
 
-        trades = build_trades(panel, horizons)
+        print(f"[{mkt_name}] 重建统一复权价格序列（缓存: {os.path.join(args.outdir, 'kline_cache')}）…")
+        px = build_price_map(panel, mkt_name, os.path.join(args.outdir, "kline_cache"))
+        print(f"[{mkt_name}] 价格序列就绪: {len(px)}/{panel['代码'].nunique()} 只")
+
+        trades = build_trades(panel, horizons, px, cost_pct=args.cost)
         if trades.empty:
             print(f"[{mkt_name}] 数据不足，跳过")
             continue
-        print(f"[{mkt_name}] 共生成 {len(trades)} 条潜在交易记录")
+        print(f"[{mkt_name}] 共生成 {len(trades)} 条潜在交易记录（单边成本 {args.cost}%）")
 
         panel_orig = panel.copy()
         panel_orig["代码"] = panel_orig["代码"].map(lambda x: x.split("_", 1)[1] if "_" in x else x)
@@ -598,10 +669,10 @@ def main():
             pd.DataFrame(equity).to_csv(os.path.join(mkt_outdir, "equity_1d.csv"), encoding="utf-8-sig")
 
         dates_all = sorted(panel["日期"].dt.strftime("%Y-%m-%d").unique())
-        html_path = generate_html(summary, all_trades, equity, mkt_outdir, dates_all[0], dates_all[-1], len(dates_all))
+        html_path = generate_html(summary, all_trades, equity, mkt_outdir, dates_all[0], dates_all[-1], len(dates_all), cost_pct=args.cost)
         print(f"[{mkt_name}] HTML报告已生成: {html_path}")
 
-        cols = ["策略", "持有期(交易日)", "交易次数", "胜率%", "平均收益%", "中位数收益%", "累计净值", "最大回撤%", "数据补齐占比%"]
+        cols = ["策略", "持有期(交易日)", "交易次数", "胜率%", "平均收益%", "中位数收益%", "累计净值", "最大回撤%"]
         pd.set_option("display.width", 200)
         pd.set_option("display.max_rows", 200)
         print(f"\n--- {mkt_name} 回测结果 ---")

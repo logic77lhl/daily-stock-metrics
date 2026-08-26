@@ -36,7 +36,7 @@ def fetch_top100(retries=8):
         "invt": 2,
         "fid": "f20",
         "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048",
-        "fields": "f12,f14,f2,f20,f21",
+        "fields": "f12,f14,f2,f20,f21,f100",
     }
     last_err = None
     for i in range(retries):
@@ -64,6 +64,7 @@ def build_dataframe():
             "最新价": item.get("f2"),
             "总市值": item.get("f20"),
             "流通市值": item.get("f21"),
+            "行业": item.get("f100"),
         })
     df = pd.DataFrame(rows)
     df = df.sort_values("总市值", ascending=False).head(100).reset_index(drop=True)
