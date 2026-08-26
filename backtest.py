@@ -282,17 +282,74 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
     best1_name = best1.iloc[0]["策略"] if len(best1) else "-"
     best3_name = best3.iloc[0]["策略"] if len(best3) else "-"
 
+    # 盈亏比 + 今日信号数
+    pl_map, today_cnt = {}, {}
+    for (sname, h), sub in trades.groupby(["策略", "持有期"]):
+        w = sub.loc[sub["收益%"] > 0, "收益%"]
+        l = sub.loc[sub["收益%"] <= 0, "收益%"]
+        if len(w) and len(l) and abs(l.mean()) > 1e-9:
+            pl_map[(sname, int(h))] = round(float(w.mean() / abs(l.mean())), 2)
+    tt = trades[trades["信号日"] == last_date]
+    for (sname, h), sub in tt.groupby(["策略", "持有期"]):
+        today_cnt[(sname, int(h))] = len(sub)
+
+    rules_map = dict((n, e) for n, e in STRATEGIES)
+    top_picks = summary[(summary["持有期(交易日)"] == 3) & (summary["交易次数"] >= 10)] \
+        .sort_values("胜率%", ascending=False).head(3)
+    pick_cards = ""
+    for _, pr in top_picks.iterrows():
+        pname, phold = pr["策略"], int(pr["持有期(交易日)"])
+        rule = rules_map.get(pname, "自定义策略")
+        tcnt = today_cnt.get((pname, phold), 0)
+        recent5 = trades[(trades["策略"] == pname) & (trades["持有期"] == phold)] \
+            .sort_values("信号日").tail(5)
+        r5 = "".join(
+            f"<span class='chip'>{str(t['信号日'])[5:10]} {esc(str(t['名称']))} "
+            f"<b class='chg {cls(t['收益%'])}'>{num(t['收益%'],1,sign=True)}%</b></span> "
+            for _, t in recent5.iterrows())
+        pick_cards += f"""<div class="pick-card">
+            <div class="pk-head"><b>{esc(pname)}</b>
+            <span class="flag {'carry' if tcnt else 'normal'}">{'今日信号 ' + str(tcnt) + ' 笔' if tcnt else '今日无'}</span></div>
+            <div class="pk-rule">{esc(rule)}</div>
+            <div class="pk-stats">胜率 <b>{num(pr['胜率%'],1)}%</b> ｜ 平均 <b class='chg {cls(pr['平均收益%'])}'>{num(pr['平均收益%'],2,sign=True)}%</b>
+            ｜ 盈亏比 <b>{num(pl_map.get((pname, phold)), 2)}</b> ｜ 样本 {int(pr['交易次数'])}</div>
+            <div class="pk-recent">{r5 or '<span style="color:#999">暂无近期交易</span>'}</div></div>"""
+    pick_section = f'<div class="section-title">⭐ 重点策略参考（按3日持有胜率取前3）</div><div class="picks">{pick_cards}</div>' if pick_cards else ""
+
+    recent_days = sorted(trades["信号日"].unique())[-10:]
+    recent = trades[trades["信号日"].isin(set(recent_days))] \
+        .sort_values(["信号日", "策略"], ascending=[False, True]).head(300)
+    recent_rows = ""
+    for _, r in recent.iterrows():
+        recent_rows += f"""<tr>
+            <td class="name">{esc(r['策略'])}</td>
+            <td>{r['信号日']}</td>
+            <td>{esc(r['代码'])}</td>
+            <td class="name">{esc(r['名称'])}</td>
+            <td>{int(r['持有期'])}</td>
+            <td class="price">{num(r['买入价'])}</td>
+            <td class="chg {cls(r['收益%'])}">{num(r['收益%'], 2, sign=True)}%</td>
+        </tr>"""
+
+    rules_html = "".join(
+        f"<div class='rule-line'><b>{esc(n)}</b>：{esc(e)}</div>" for n, e in STRATEGIES)
+
     sum_rows = ""
     for _, r in summary.iterrows():
         wr = r["胜率%"]
         wr_cls = "good" if (pd.notna(wr) and wr >= 60) else "bad" if (pd.notna(wr) and wr <= 40) else ""
+        key = (r['策略'], int(r['持有期(交易日)']))
+        pl = pl_map.get(key)
+        tc = today_cnt.get(key, 0)
         sum_rows += f"""<tr data-wr="{num(r['胜率%'], 1)}">
-            <td class="name">{esc(r['策略'])}</td>
+            <td class="name" title="{esc(rules_map.get(r['策略'], '自定义策略'))}">{esc(r['策略'])}</td>
             <td>{int(r['持有期(交易日)'])}</td>
             <td>{int(r['交易次数'])}</td>
             <td class="win {wr_cls}">{num(r['胜率%'], 1)}%</td>
             <td class="chg {cls(r['平均收益%'])}">{num(r['平均收益%'], 2, sign=True)}%</td>
             <td class="chg {cls(r['中位数收益%'])}">{num(r['中位数收益%'], 2, sign=True)}%</td>
+            <td>{pl if pl is not None else '-'}</td>
+            <td>{f'<span class="flag carry">✓{tc}</span>' if tc else '<span class="flag normal">-</span>'}</td>
             <td>{num(r['累计净值'], 4)}</td>
             <td>{num(r['最大回撤%'], 2)}</td>
         </tr>"""
@@ -328,35 +385,6 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
             chart_svg = f"""<svg viewBox="0 0 {W} {H}" width="100%" preserveAspectRatio="none" style="background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
                 {grid}{''.join(lines)}</svg>
                 <div class="legend-box">{legend_html}</div>"""
-
-    strat_names = trades["策略"].unique()
-    strat_btns = "".join(f'<button class="filter-btn active" data-s="all">全部</button>')
-    for name in strat_names:
-        strat_btns += f'<button class="filter-btn" data-s="{esc(name)}">{esc(name)}</button>'
-    holds = sorted(trades["持有期"].unique())
-    hold_btns = '<button class="filter-btn active" data-h="all">全部</button>'
-    for h in holds:
-        hold_btns += f'<button class="filter-btn" data-h="{h}">{h}天</button>'
-
-    trades = trades.sort_values(["信号日", "策略", "持有期"])
-    trade_rows = ""
-    for _, r in trades.iterrows():
-        trade_rows += f"""<tr data-s="{esc(r['策略'])}" data-h="{int(r['持有期'])}">
-            <td class="name">{esc(r['策略'])}</td>
-            <td>{r['信号日']}</td>
-            <td>{esc(r['代码'])}</td>
-            <td class="name">{esc(r['名称'])}</td>
-            <td>{int(r['持有期'])}</td>
-            <td class="price">{num(r['买入价'])}</td>
-            <td class="price">{num(r['卖出价'])}</td>
-            <td class="chg {cls(r['收益%'])}">{num(r['收益%'], 2, sign=True)}%</td>
-            <td>{int(r['实际持有交易日'])}</td>
-            <td>{num(r['日线J'], 1)}</td>
-            <td>{num(r['周线J'], 1)}</td>
-            <td>{num(r['月线J'], 1)}</td>
-            <td>{num(r['PE历史分位%'], 1)}</td>
-            <td>{num(r['PB历史分位%'], 1)}</td>
-        </tr>"""
 
     now_str = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -411,6 +439,14 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
     th.sortable::after {{ content: ' ⇅'; font-size: 11px; opacity: 0.4; }}
     th.sort-asc::after {{ content: ' ↑'; opacity: 1; }}
     th.sort-desc::after {{ content: ' ↓'; opacity: 1; }}
+    .picks {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }}
+    .pick-card {{ background: #fff; border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-top: 3px solid #f59f00; }}
+    .pk-head {{ display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }}
+    .pk-rule {{ color: #666; font-size: 12.5px; margin: 6px 0; font-family: Consolas, monospace; }}
+    .pk-stats {{ font-size: 13px; margin-bottom: 8px; }}
+    .pk-recent {{ font-size: 12px; line-height: 2; }}
+    .chip {{ background: #f5f6fa; border-radius: 8px; padding: 2px 8px; margin-right: 4px; white-space: nowrap; display: inline-block; }}
+    .rule-line {{ font-size: 12.5px; padding: 4px 0; border-bottom: 1px dashed #eee; color: #555; }}
 </style>
 </head>
 <body>
@@ -442,8 +478,10 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
             <th class="sortable" data-col="3" data-type="num">胜率%</th>
             <th class="sortable" data-col="4" data-type="num">平均收益%</th>
             <th class="sortable" data-col="5" data-type="num">中位数收益%</th>
-            <th class="sortable" data-col="6" data-type="num">累计净值</th>
-            <th class="sortable" data-col="7" data-type="num">最大回撤%</th>
+            <th class="sortable" data-col="6" data-type="num">盈亏比</th>
+            <th class="sortable" data-col="7" data-type="num">今日信号</th>
+            <th class="sortable" data-col="8" data-type="num">累计净值</th>
+            <th class="sortable" data-col="9" data-type="num">最大回撤%</th>
         </tr></thead>
         <tbody>{sum_rows}</tbody>
     </table>
@@ -452,54 +490,33 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
     <div class="section-title">持有1日净值曲线（每日等权组合）</div>
     {chart_svg}
 
-    <div class="section-title">交易明细（{len(trades)} 笔）</div>
-    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px;">
-        <div class="filter-label">策略:</div>
-        <div class="filter-bar" id="stratBar">{strat_btns}</div>
-    </div>
-    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px;">
-        <div class="filter-label">持有期:</div>
-        <div class="filter-bar" id="holdBar">{hold_btns}</div>
-    </div>
+    {pick_section}
+
+    <div class="section-title">近10个交易日信号（最新{len(recent)}笔，完整数据请下载CSV）</div>
     <div style="overflow-x: auto;">
-    <table id="tradeTable">
+    <table>
         <thead><tr>
-            <th class="sortable" data-col="0" data-type="str">策略</th>
-            <th class="sortable" data-col="1" data-type="str">信号日</th>
-            <th class="sortable" data-col="2" data-type="str">代码</th>
-            <th class="sortable" data-col="3" data-type="str">名称</th>
-            <th class="sortable" data-col="4" data-type="num">持有期</th>
-            <th class="sortable" data-col="5" data-type="num">买入价</th>
-            <th class="sortable" data-col="6" data-type="num">卖出价</th>
-            <th class="sortable" data-col="7" data-type="num">收益%</th>
-            <th class="sortable" data-col="8" data-type="num">实际持有</th>
-            <th class="sortable" data-col="9" data-type="num">日线J</th>
-            <th class="sortable" data-col="10" data-type="num">周线J</th>
-            <th class="sortable" data-col="11" data-type="num">月线J</th>
-            <th class="sortable" data-col="12" data-type="num">PE分位%</th>
-            <th class="sortable" data-col="13" data-type="num">PB分位%</th>
+            <th>策略</th><th>信号日</th><th>代码</th><th>名称</th><th>持有期</th><th>买入价</th><th>收益%</th>
         </tr></thead>
-        <tbody>{trade_rows}</tbody>
+        <tbody>{recent_rows}</tbody>
     </table>
     </div>
 
+    <details style="margin-top:14px;background:#fff;border-radius:10px;padding:12px 16px;box-shadow:0 1px 3px rgba(0,0,0,0.08)">
+    <summary style="cursor:pointer;font-weight:600;font-size:14px">📖 内置策略规则说明（悬停汇总表中的策略名也可查看）</summary>
+    <div style="margin-top:10px">{rules_html}</div>
+    </details>
+
     <div class="footer">
         回测假设：买入=信号日收盘价，卖出=持有期结束日收盘价（统一采用最新前复权序列，跨日可比）；收益已按单边成本 {cost_pct}% 扣减；
-        持有期&gt;1天时交易重叠，累计净值仅供参考 ｜ 本报告由 backtest.py 生成，仅供研究，不构成投资建议
+        持有期&gt;1天时交易重叠，累计净值仅供参考 ｜ 盈亏比 = 平均盈利 ÷ 平均亏损绝对值，&gt;1 表示赚多亏小<br>
+        完整历史数据：<a href="backtest_report_trades.csv" download>下载全部交易明细CSV</a> ｜ 本报告由 backtest.py 生成，仅供研究，不构成投资建议
     </div>
 </div>
 <script>
 (function() {{
-    var tradeRows = document.querySelectorAll('#tradeTable tbody tr');
     var sumRows = document.querySelectorAll('#sumTable tbody tr');
-    var curS = 'all', curH = 'all', curWR = 0;
-    function applyTrade() {{
-        tradeRows.forEach(function(row) {{
-            var okS = curS === 'all' || row.getAttribute('data-s') === curS;
-            var okH = curH === 'all' || row.getAttribute('data-h') === curH;
-            row.style.display = okS && okH ? '' : 'none';
-        }});
-    }}
+    var curWR = 0;
     function applySummary() {{
         var shown = 0;
         sumRows.forEach(function(row) {{
@@ -510,20 +527,6 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
         }});
         document.getElementById('wrCount').textContent = shown + '/' + sumRows.length + ' 条';
     }}
-    function bind(barId, attr, setter) {{
-        var bar = document.getElementById(barId);
-        bar.querySelectorAll('.filter-btn').forEach(function(btn) {{
-            btn.addEventListener('click', function() {{
-                bar.querySelectorAll('.filter-btn').forEach(function(b) {{ b.classList.remove('active'); }});
-                this.classList.add('active');
-                setter(this.getAttribute(attr));
-                applyTrade();
-            }});
-        }});
-    }}
-    bind('stratBar', 'data-s', function(v) {{ curS = v; }});
-    bind('holdBar', 'data-h', function(v) {{ curH = v; }});
-
     var slider = document.getElementById('wrFilter');
     var label = document.getElementById('wrVal');
     slider.addEventListener('input', function() {{
@@ -538,29 +541,6 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
 document.querySelectorAll('#sumTable th.sortable').forEach(function(th) {{
     th.addEventListener('click', function() {{
         var table = document.getElementById('sumTable');
-        var col = parseInt(this.getAttribute('data-col'));
-        var type = this.getAttribute('data-type');
-        var asc = this.classList.contains('sort-asc');
-        table.querySelectorAll('th.sortable').forEach(function(h) {{ h.classList.remove('sort-asc', 'sort-desc'); }});
-        this.classList.add(asc ? 'sort-desc' : 'sort-asc');
-        var tbody = table.querySelector('tbody');
-        var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
-        rows.sort(function(a, b) {{
-            var av = a.children[col].textContent.replace(/[%↑↓ ⇅]/g, '').trim();
-            var bv = b.children[col].textContent.replace(/[%↑↓ ⇅]/g, '').trim();
-            if (type === 'num') {{
-                av = parseFloat(av) || 0;
-                bv = parseFloat(bv) || 0;
-                return asc ? av - bv : bv - av;
-            }}
-            return asc ? av.localeCompare(bv, 'zh') : bv.localeCompare(av, 'zh');
-        }});
-        rows.forEach(function(r) {{ tbody.appendChild(r); }});
-    }});
-}});
-document.querySelectorAll('#tradeTable th.sortable').forEach(function(th) {{
-    th.addEventListener('click', function() {{
-        var table = document.getElementById('tradeTable');
         var col = parseInt(this.getAttribute('data-col'));
         var type = this.getAttribute('data-type');
         var asc = this.classList.contains('sort-asc');
@@ -670,6 +650,7 @@ def main():
 
         dates_all = sorted(panel["日期"].dt.strftime("%Y-%m-%d").unique())
         html_path = generate_html(summary, all_trades, equity, mkt_outdir, dates_all[0], dates_all[-1], len(dates_all), cost_pct=args.cost)
+        all_trades.to_csv(os.path.join(mkt_outdir, "backtest_report_trades.csv"), index=False, encoding="utf-8-sig")
         print(f"[{mkt_name}] HTML报告已生成: {html_path}")
 
         cols = ["策略", "持有期(交易日)", "交易次数", "胜率%", "平均收益%", "中位数收益%", "累计净值", "最大回撤%"]

@@ -51,6 +51,9 @@ def collect_extras():
         if os.path.exists(src):
             shutil.copy(src, os.path.join(DOCS_DIR, f"backtest-{dst_key}.html"))
             extras.append(f"backtest-{dst_key}.html")
+        csv_src = os.path.join(BASE_DIR, "backtest_results", src_key, "backtest_report_trades.csv")
+        if os.path.exists(csv_src):
+            shutil.copy(csv_src, os.path.join(DOCS_DIR, f"backtest-{dst_key}-trades.csv"))
     bl = _latest("buylist_*.html")
     if bl:
         shutil.copy(bl, os.path.join(DOCS_DIR, "buylist.html"))
