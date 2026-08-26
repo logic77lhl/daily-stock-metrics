@@ -51,7 +51,7 @@ def html_escape(val):
     return str(val)
 
 
-def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信号报告"):
+def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信号报告", extra_html=None, extra_md=None):
     df = pd.read_csv(csv_path, dtype={"代码": str})
     today = os.path.basename(out_dir)
     has_yesterday = "昨日日线J" in df.columns
@@ -215,13 +215,29 @@ def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信�
     .filter-btn.active {{ background: #1a1a2e; color: #fff; border-color: #1a1a2e; }}
     .footer {{ margin-top: 16px; font-size: 12px; color: #999; text-align: center; }}
     .section-title {{ font-size: 16px; font-weight: 600; margin: 20px 0 10px; color: #1a1a2e; }}
-    @media (max-width: 768px) {{ table {{ font-size: 12px; }} th, td {{ padding: 6px 4px; }} }}
+    @media (max-width: 768px) {{
+        body {{ padding: 8px; }}
+        h1 {{ font-size: 18px; }}
+        .subtitle {{ font-size: 12px; }}
+        .legend {{ padding: 10px 12px; font-size: 12px; }}
+        .summary-grid {{ grid-template-columns: repeat(2, 1fr); gap: 8px; }}
+        .summary-card {{ padding: 10px 12px; }}
+        .summary-card .num {{ font-size: 20px; }}
+        .summary-card .label {{ font-size: 11px; }}
+        table {{ font-size: 11px; }}
+        th, td {{ padding: 5px 3px; white-space: nowrap; }}
+        .filter-bar {{ gap: 4px; }}
+        .filter-btn {{ padding: 4px 10px; font-size: 11px; }}
+        .section-title {{ font-size: 14px; }}
+    }}
 </style>
 </head>
 <body>
 <div class="container">
     <h1>{title}</h1>
     <div class="subtitle">数据日期：{today} ｜ 生成时间：{now_str} ｜ 样本数：{total}</div>
+
+    {extra_html or ""}
 
     <div class="legend">
         <strong>值解读：</strong>
@@ -360,8 +376,34 @@ def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信�
     out_path = os.path.join(out_dir, f"report_{today}.html")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html)
+
+    md_path = os.path.join(out_dir, f"report_{today}.md")
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write(f"# {title}（{today}）\n\n")
+        if extra_md:
+            f.write(extra_md + "\n\n")
+        f.write(_markdown_table(df))
+        f.write("\n> 仅供参考，不构成投资建议\n")
+
     print(f"报告已生成: {out_path}")
     return out_path
+
+
+def _markdown_table(df):
+    cols = [c for c in ["排名", "代码", "名称", "日线J", "周线J", "月线J",
+                        "最新价", "涨跌幅", "PE_TTM", "PE历史分位%",
+                        "PB_MRQ", "PB历史分位%", "MA20", "MA60", "双均线多头",
+                        "量比", "PE5年分位%", "PB5年分位%", "行业"] if c in df.columns]
+    def cell(c, v):
+        if pd.isna(v):
+            return "-"
+        if isinstance(v, float):
+            return f"{v:g}"
+        return str(v).replace("|", "\\|")
+    lines = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
+    for _, r in df[cols].iterrows():
+        lines.append("| " + " | ".join(cell(c, r[c]) for c in cols) + " |")
+    return "\n".join(lines)
 
 
 def run(in_csv=None, out_dir=None):

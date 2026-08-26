@@ -85,7 +85,12 @@ powershell -ExecutionPolicy Bypass -File .\remove_autostart.ps1
 项目已托管到 GitHub，由 `.github/workflows/daily.yml` 定时执行，无需开机：
 
 - **时间**：工作日北京时间约 17:30（GitHub 定时任务可能有几分钟到半小时延迟）
-- **流程**：A股 → ETF → 港股 → 自动把 `output*` 结果提交回仓库（历史走势图持续累积）
+- **流程**：A股 → ETF → 港股 → **买入参考邮件** → 自动把 `output*` 结果提交回仓库（历史走势图持续累积）
+- **邮件**：3 封市场报告（含"📌 今日速览"动态策略摘要，按近20日次日胜率自动选优）
+  + 1 封跨市场「今日买入参考」（按胜率排序，最多10只，无命中不发）
+- **GitHub 预览**：根目录 `摘要-A股.md` / `摘要-ETF.md` / `摘要-港股.md` / `摘要-买入参考.md` 每日自动更新；
+  各日期目录下有完整 Markdown 版报告 `report_日期.md`
+- **手机适配**：报告 HTML 已针对移动端优化（窄屏字体/布局自适应）
 - **手动触发**：仓库页 Actions → daily-metrics → Run workflow
 - **日志查看**：Actions 运行记录里可看每步输出
 - **邮件配置**：通过仓库 Secrets（`SENDER_EMAIL` / `SENDER_AUTH_CODE` / `RECIPIENT_EMAIL`）注入，

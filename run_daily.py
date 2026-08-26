@@ -8,6 +8,7 @@ import fetch_metrics
 import generate_report
 import generate_stock_charts
 import send_email
+import strategy_summary
 
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
@@ -65,7 +66,13 @@ def main():
         wlog(f"步骤2完成 -> {metrics_csv}")
 
         wlog("步骤3: 生成 HTML 总结报告…")
-        html_path = generate_report.generate_report(metrics_csv, day_dir)
+        summ = strategy_summary.build_summary(metrics_csv, OUTPUT_DIR, "A股")
+        if summ:
+            strategy_summary.write_root_summary("摘要-A股.md", summ["md"], today)
+        html_path = generate_report.generate_report(
+            metrics_csv, day_dir,
+            extra_html=summ["html"] if summ else None,
+            extra_md=summ["md"] if summ else None)
         wlog(f"步骤3完成 -> {html_path}")
 
         wlog("步骤4: 生成个股股价走势图（含每日信号）…")

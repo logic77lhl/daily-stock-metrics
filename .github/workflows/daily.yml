@@ -49,6 +49,10 @@ jobs:
         continue-on-error: true
         run: python run_hk_daily.py
 
+      - name: Build buy list email
+        continue-on-error: true
+        run: python run_buy_daily.py
+
       - name: Commit outputs
         run: |
           git config user.name "github-actions[bot]"

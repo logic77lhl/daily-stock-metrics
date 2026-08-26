@@ -15,6 +15,8 @@ echo run_daily exit=%errorlevel% >> "%ERRLOG%"
 echo run_etf_daily exit=%errorlevel% >> "%ERRLOG%"
 "%PYW%" run_hk_daily.py 2>> "%ERRLOG%"
 echo run_hk_daily exit=%errorlevel% >> "%ERRLOG%"
+"%PYW%" run_buy_daily.py 2>> "%ERRLOG%"
+echo run_buy_daily exit=%errorlevel% >> "%ERRLOG%"
 echo ===== end ===== >> "%ERRLOG%"
 
 endlocal

@@ -20,6 +20,7 @@ import fetch_hk
 import fetch_metrics
 import generate_report
 import send_email
+import strategy_summary
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output_hk")
@@ -80,7 +81,13 @@ def main():
         wlog(f"步骤2完成 -> {metrics_csv}")
 
         wlog("步骤3: 生成 HTML 总结报告...")
-        html_path = generate_report.generate_report(metrics_csv, day_dir, title="港股通 KDJ 多周期信号报告")
+        summ = strategy_summary.build_summary(metrics_csv, OUTPUT_DIR, "港股通")
+        if summ:
+            strategy_summary.write_root_summary("摘要-港股.md", summ["md"], today)
+        html_path = generate_report.generate_report(
+            metrics_csv, day_dir, title="港股通 KDJ 多周期信号报告",
+            extra_html=summ["html"] if summ else None,
+            extra_md=summ["md"] if summ else None)
         wlog(f"步骤3完成 -> {html_path}")
 
         wlog("步骤4: 发送邮件报告...")

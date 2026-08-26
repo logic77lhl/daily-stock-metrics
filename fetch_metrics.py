@@ -23,7 +23,8 @@ FIELDS = [
     "最新价", "涨跌幅",
     "PE_TTM", "PE历史分位%", "PB_MRQ", "PB历史分位%",
     "MA20", "MA60", "双均线多头", "价距MA20%",
-    "量比",
+    "量比", "量比30",
+    "成交额(亿)",
     "PE5年分位%", "PB5年分位%",
     "行业",
 ]
@@ -260,6 +261,26 @@ def _industry_of(row, top_columns):
     return None
 
 
+def _amount_of(row, col_names):
+    """从输入列表取成交额，统一换算为亿元。"""
+    if "成交额(亿)" in col_names or "成交额(亿港元)" in col_names:
+        col = "成交额(亿)" if "成交额(亿)" in col_names else "成交额(亿港元)"
+        v = row.get(col)
+        if v is not None and pd.notna(v):
+            try:
+                return round(float(v), 2)
+            except (TypeError, ValueError):
+                return None
+    if "成交额" in col_names:
+        v = row.get("成交额")
+        if v is not None and pd.notna(v):
+            try:
+                return round(float(v) / 1e8, 2)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
 def _process_one(row, market, col_names, out_csv, log_file, write_lock):
     session = get_session()
     code = str(row["代码"]) if market == "HK" else str(row["代码"]).zfill(6)
@@ -292,6 +313,8 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock):
         if daily_df is not None and len(daily_df) >= 2:
             rec["MA20"], rec["MA60"], rec["双均线多头"], rec["价距MA20%"] = ma_values(daily_df)
             rec["量比"] = volume_ratio(daily_df)
+            rec["量比30"] = volume_ratio(daily_df, n=30)
+        rec["成交额(亿)"] = _amount_of(row, col_names)
 
         if market == "HK":
             if row.get("PE_TTM") is not None and pd.notna(row.get("PE_TTM")):
