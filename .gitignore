@@ -4,3 +4,4 @@ autostart_errors.log
 backtest_results/kline_cache/
 
 docs/
+backtest_results/
