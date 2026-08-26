@@ -34,6 +34,12 @@ def main():
         return 0
 
     markets = []
+    done_marker = os.path.join(BASE_DIR, "output", f"BUY_DONE_{today}")
+    if os.path.exists(done_marker):
+        print("买入参考今日已处理，跳过")
+        return 0
+
+    markets = []
     for label, out_dir, prefix in MARKETS:
         mcsv = os.path.join(out_dir, today, f"{prefix}_{today}.csv")
         if os.path.exists(mcsv):
@@ -65,6 +71,11 @@ def main():
     print("邮件已发送" if ok else "邮件发送失败(请检查邮箱配置)")
 
     strategy_summary.write_root_summary("摘要-买入参考.md", result["md"], today)
+    try:
+        os.makedirs(os.path.dirname(done_marker), exist_ok=True)
+        open(done_marker, "w").close()
+    except OSError:
+        pass
     return 0
 
 

@@ -55,6 +55,10 @@ jobs:
         continue-on-error: true
         run: python run_buy_daily.py
 
+      - name: Run backtest
+        continue-on-error: true
+        run: python backtest.py
+
       - name: Build site
         if: always()
         run: python build_pages.py
