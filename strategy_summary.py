@@ -192,7 +192,12 @@ def build_buy_list(markets):
 
     df = pd.DataFrame(entries)
     df = df.sort_values(["胜率%", "样本数"], ascending=False)
-    df = df.drop_duplicates(subset=["市场", "代码"], keep="first").head(10)
+    df = df.drop_duplicates(subset=["市场", "代码"], keep="first")
+    # 每个市场最多 4 只，保证 A股/ETF/港股 均衡出现
+    main_pool = df.groupby("市场", sort=False).head(4)
+    rest_pool = df.drop(main_pool.index)
+    df = pd.concat([main_pool, rest_pool]).head(10)
+    df = df.sort_values(["胜率%", "样本数"], ascending=False)
 
     md_lines = ["| 市场 | 名称 | 代码 | 今日涨跌 | 入选策略 | 近20日胜率 | 样本 |",
                 "|---|---|---|---|---|---|---|"]

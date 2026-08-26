@@ -39,7 +39,7 @@ HOSTS = [
 ]
 
 FS = "b:MK0144"
-FIELDS = "f12,f14,f2,f3,f9,f20,f23,f6"
+FIELDS = "f12,f14,f2,f3,f9,f20,f23,f6,f37,f41,f45,f46,f49"
 
 
 def get_session():
@@ -93,6 +93,11 @@ def build_dataframe(top=100, log_file=None):
             "成交额(亿港元)": round((it.get("f6") or 0) / 1e8, 2),
             "PE_TTM": it.get("f9"),
             "PB_MRQ": it.get("f23"),
+            "ROE%": it.get("f37"),
+            "营收同比%": it.get("f41"),
+            "净利润(亿)": round(it["f45"] / 1e8, 2) if isinstance(it.get("f45"), (int, float)) else None,
+            "净利同比%": it.get("f46"),
+            "毛利率%": it.get("f49"),
         })
 
     df = pd.DataFrame(rows).sort_values("总市值(亿港元)", ascending=False)

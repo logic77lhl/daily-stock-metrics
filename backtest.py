@@ -275,7 +275,7 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
             return "flat"
         return "up" if float(v) > 0 else "down" if float(v) < 0 else "flat"
 
-    summary = summary.sort_values(["策略", "持有期(交易日)"])
+    summary = summary.sort_values(["持有期(交易日)", "胜率%"], ascending=[True, False])
 
     best1 = summary[(summary["持有期(交易日)"] == 1) & (summary["交易次数"] >= 10)].sort_values("平均收益%", ascending=False).head(1)
     best3 = summary[(summary["持有期(交易日)"] == 3) & (summary["交易次数"] >= 10)].sort_values("平均收益%", ascending=False).head(1)

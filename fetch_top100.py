@@ -36,7 +36,7 @@ def fetch_top100(retries=8):
         "invt": 2,
         "fid": "f20",
         "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048",
-        "fields": "f12,f14,f2,f20,f21,f100,f6",
+        "fields": "f12,f14,f2,f20,f21,f100,f6,f37,f41,f45,f46,f49",
     }
     last_err = None
     for i in range(retries):
@@ -66,6 +66,11 @@ def build_dataframe():
             "流通市值": item.get("f21"),
             "行业": item.get("f100"),
             "成交额": item.get("f6"),
+            "ROE%": item.get("f37"),
+            "营收同比%": item.get("f41"),
+            "净利润(亿)": round(item["f45"] / 1e8, 2) if isinstance(item.get("f45"), (int, float)) else None,
+            "净利同比%": item.get("f46"),
+            "毛利率%": item.get("f49"),
         })
     df = pd.DataFrame(rows)
     df = df.sort_values("总市值", ascending=False).head(100).reset_index(drop=True)
