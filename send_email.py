@@ -19,6 +19,8 @@ except ImportError:
     SENDER_AUTH_CODE = ""
     RECIPIENT_EMAIL = ""
 
+SOURCE_TAG = os.environ.get("EMAIL_SOURCE_TAG") or ""
+
 
 def send_report(html_path, subject=None, attach_html=True):
     if not os.path.exists(html_path):
@@ -35,7 +37,7 @@ def send_report(html_path, subject=None, attach_html=True):
         date_str = datetime.now().strftime("%Y-%m-%d")
         if subject is None:
             subject = f"A股核心资产 KDJ 多周期信号报告 - {date_str}"
-        msg["Subject"] = subject
+        msg["Subject"] = f"[{SOURCE_TAG}] {subject}" if SOURCE_TAG else subject
 
         with open(html_path, "r", encoding="utf-8") as f:
             html_content = f.read()

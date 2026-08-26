@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 60
     env:
       TZ: Asia/Shanghai
+      EMAIL_SOURCE_TAG: GitHub
       SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
       SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
       SENDER_AUTH_CODE: ${{ secrets.SENDER_AUTH_CODE }}
