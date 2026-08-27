@@ -105,3 +105,12 @@
 2026-08-27 17:33:21  [ 99] 002352 顺丰控股  完成  日J=104.47 周J=62.08 月J=39.21 MA20=33.401 MA60=33.159 多头=1 价=33.41 涨=-0.51%  PE=15.42(1.86%) PB=1.75(1.86%)
 2026-08-27 17:33:22  [100] 600487 亨通光电  完成  日J=94.13 周J=27.54 月J=36.97 MA20=59.342 MA60=77.102 多头=0 价=71.3 涨=9.98%  PE=42.0(95.05%) PB=5.22(96.48%)
 2026-08-27 17:33:23  任务失败: ValueError: cannot convert float NaN to integer
+2026-08-27 18:05:56  ===== 开始每日指标任务 2026-08-27 =====
+2026-08-27 18:05:56  步骤1已存在，跳过 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-08-27/top100_2026-08-27.csv
+2026-08-27 18:05:56  步骤2: 计算 KDJ-J(日/周/月) 及 PE/PB 历史分位…
+2026-08-27 18:05:56  观察池: 共102只(含历史追踪2只) -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-08-27/tracked_2026-08-27.csv
+2026-08-27 18:05:56  检测到已完成 102 条，跳过续跑
+2026-08-27 18:05:56  全部完成，结果已写入 /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-08-27/metrics_2026-08-27.csv
+2026-08-27 18:05:56  步骤2完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-08-27/metrics_2026-08-27.csv
+2026-08-27 18:05:56  步骤3: 生成 HTML 总结报告…
+2026-08-27 18:05:57  任务失败: ValueError: cannot convert float NaN to integer
