@@ -19,6 +19,16 @@ except ImportError:
     SENDER_AUTH_CODE = ""
     RECIPIENT_EMAIL = ""
 
+# 环境变量覆盖（GitHub Actions 等 CI 环境）
+if os.environ.get("SENDER_EMAIL"):
+    SENDER_EMAIL = os.environ["SENDER_EMAIL"]
+if os.environ.get("SENDER_AUTH_CODE"):
+    SENDER_AUTH_CODE = os.environ["SENDER_AUTH_CODE"]
+if os.environ.get("RECIPIENT_EMAIL"):
+    RECIPIENT_EMAIL = os.environ["RECIPIENT_EMAIL"]
+if os.environ.get("SMTP_SERVER"):
+    SMTP_SERVER = os.environ["SMTP_SERVER"]
+
 SOURCE_TAG = os.environ.get("EMAIL_SOURCE_TAG") or ""
 
 

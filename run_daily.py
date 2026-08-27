@@ -10,6 +10,7 @@ import generate_stock_charts
 import send_email
 import stock_pool
 import strategy_summary
+import run_buy_daily
 
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
@@ -82,6 +83,19 @@ def main():
         wlog("步骤4: 生成个股股价走势图（含每日信号）…")
         charts_path = generate_stock_charts.run(OUTPUT_DIR)
         wlog(f"步骤4完成 -> {charts_path}")
+
+        wlog("步骤4.5: 生成昨日推荐回顾…")
+        hist = run_buy_daily._load_hist()
+        review_html, review_md = run_buy_daily.build_review(hist, today)
+        if review_html:
+            with open(html_path, "r", encoding="utf-8") as f:
+                html_content = f.read()
+            html_content = html_content.replace("</body>", review_html + "</body>")
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html_content)
+            wlog(f"步骤4.5完成 -> 已追加昨日推荐回顾")
+        else:
+            wlog(f"步骤4.5完成 -> 暂无历史推荐数据")
 
         wlog("步骤5: 发送邮件报告…")
         ok = send_email.send_report(html_path)
