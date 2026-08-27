@@ -63,6 +63,9 @@ def _detect_proxy():
     return None
 
 
+_session_local = threading.local()
+
+
 def get_session():
     global _PROXY
     if _PROXY is None:
@@ -71,6 +74,15 @@ def get_session():
     s.headers.update(HEADERS)
     if _PROXY:
         s.proxies.update({"http": _PROXY, "https": _PROXY})
+    return s
+
+
+def thread_session():
+    """每个工作线程复用同一个 Session，避免反复 TCP/TLS 握手。"""
+    s = getattr(_session_local, "session", None)
+    if s is None:
+        s = get_session()
+        _session_local.session = s
     return s
 
 
@@ -282,7 +294,7 @@ def _amount_of(row, col_names):
 
 
 def _process_one(row, market, col_names, out_csv, log_file, write_lock):
-    session = get_session()
+    session = thread_session()
     code = str(row["代码"]) if market == "HK" else str(row["代码"]).zfill(6)
     name = row["名称"]
     track = row.get("跟踪标的") if "跟踪标的" in col_names else None
@@ -373,7 +385,7 @@ def sort_output_by_rank(out_csv):
         print(f"排序输出失败(不影响结果): {e}")
 
 
-def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FILE, market="A", workers=5):
+def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FILE, market="A", workers=8):
     top = pd.read_csv(in_csv, dtype={"代码": str})
 
     done = load_done_codes(out_csv, market)
