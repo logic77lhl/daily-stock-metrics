@@ -2,8 +2,8 @@ name: daily-metrics
 
 on:
   schedule:
-    # UTC 09:30 = 北京时间 17:30，仅工作日（GitHub 定时任务可能延迟几分钟到半小时）
-    - cron: "30 9 * * 1-5"
+    # UTC 08:30 = 北京时间 16:30
+    - cron: "30 8 * * 1-5"
   workflow_dispatch:
 
 concurrency:
