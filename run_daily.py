@@ -5,6 +5,7 @@ import datetime
 
 import fetch_top100
 import fetch_metrics
+import fetch_market_breadth
 import generate_report
 import generate_stock_charts
 import send_email
@@ -72,13 +73,24 @@ def main():
         fetch_metrics.run(in_csv=tracked_csv, out_csv=metrics_csv, log_file=log_file)
         wlog(f"步骤2完成 -> {metrics_csv}")
 
+        temp_card = ""
+        try:
+            wlog("步骤2.5: 获取全市场大盘温度（活跃市值指标）…")
+            temp_data = fetch_market_breadth.run(day_dir=day_dir, date_str=today)
+            if temp_data:
+                temp_card = fetch_market_breadth.render_card(temp_data)
+            wlog("步骤2.5完成")
+        except Exception as e:
+            wlog(f"步骤2.5失败(不影响主流程): {type(e).__name__}: {e}")
+
         wlog("步骤3: 生成 HTML 总结报告…")
         summ = strategy_summary.build_summary(metrics_csv, OUTPUT_DIR, "A股")
         if summ:
             strategy_summary.write_root_summary("摘要-A股.md", summ["md"], today)
+        extra_html = temp_card + (summ["html"] if summ else "")
         html_path = generate_report.generate_report(
             metrics_csv, day_dir,
-            extra_html=summ["html"] if summ else None,
+            extra_html=extra_html or None,
             extra_md=summ["md"] if summ else None)
         wlog(f"步骤3完成 -> {html_path}")
 
