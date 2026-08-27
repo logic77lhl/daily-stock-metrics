@@ -65,7 +65,18 @@ def collect_extras():
     return extras
 
 
-def build_index(dates, extras):
+def collect_buy_fragments():
+    """读取 run_buy_daily.py 写出的「今日推荐」与「昨日回归」HTML 片段。"""
+    def _read(name):
+        p = os.path.join(BASE_DIR, "output", name)
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
+                return f.read().strip()
+        return ""
+    return _read("buy_today.html"), _read("buy_review.html")
+
+
+def build_index(dates, extras, buy_today="", buy_review=""):
     total_reports = sum(len(k) for _, k in dates)
     latest = dates[0][0] if dates else None
     cards = ""
@@ -90,6 +101,15 @@ def build_index(dates, extras):
         if f"backtest-{dst_key}.html" in extras:
             nav += f'<a class="pill bt" href="backtest-{dst_key}.html">🧪 回测·{label}</a>'
     nav_html = f'<nav>{nav}</nav>' if nav else ""
+
+    buy_html = ""
+    if buy_today or buy_review:
+        blocks = []
+        if buy_today:
+            blocks.append(f'<div class="spot">{buy_today}</div>')
+        if buy_review:
+            blocks.append(f'<div class="spot">{buy_review}</div>')
+        buy_html = '<div class="spotlight">' + "".join(blocks) + "</div>"
 
     return f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">
@@ -118,6 +138,11 @@ font-size:13px;font-weight:600;box-shadow:0 3px 10px rgba(0,0,0,.22);transition:
 .pill.buy{{background:linear-gradient(90deg,#e8590c,#fa5252)}}
 .pill.bt{{background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.22);backdrop-filter:blur(6px);box-shadow:none;font-weight:500}}
 main{{max-width:980px;margin:22px auto 30px;padding:0 14px}}
+.spotlight{{display:flex;flex-direction:column;gap:14px;margin-bottom:22px}}
+.spot{{
+background:#fff;border-radius:14px;padding:2px;border:1px solid #eceef4;
+box-shadow:0 1px 3px rgba(28,35,51,.05)}}
+.spot>div{{border-radius:12px}}
 .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}}
 .day{{background:#fff;border-radius:14px;padding:15px 18px;display:flex;align-items:center;
 justify-content:space-between;flex-wrap:wrap;gap:10px;border:1px solid #eceef4;
@@ -145,7 +170,7 @@ footer{{text-align:center;color:#98a1b3;font-size:12px;padding:18px 12px 30px;li
 <div class="stats"><span class="chip">📅 已收录 {len(dates)} 个交易日</span>
 <span class="chip">📊 {total_reports} 份报告</span><span class="chip">🔄 每交易日约 17:30 更新</span></div>
 {nav_html}</header>
-<main><div class="grid">
+<main>{buy_html}<div class="grid">
 {body}</div></main>
 <footer>由 GitHub Actions 每个交易日自动构建部署<br>数据仅供研究参考，不构成任何投资建议</footer>
 </body></html>"""
@@ -163,8 +188,9 @@ def main():
         for key, src in keys.items():
             shutil.copy(src, os.path.join(dst, f"{key}.html"))
     extras = collect_extras()
+    buy_today, buy_review = collect_buy_fragments()
     with open(os.path.join(DOCS_DIR, "index.html"), "w", encoding="utf-8") as f:
-        f.write(build_index(dates, extras))
+        f.write(build_index(dates, extras, buy_today, buy_review))
     n_reports = sum(len(k) for _, k in dates)
     print(f"站点已生成: {len(dates)} 天 / {n_reports} 份报告 + {len(extras)} 个附加页 -> {DOCS_DIR}")
     return 0

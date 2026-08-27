@@ -119,7 +119,7 @@ def main():
         print("今日暂无任何市场数据，跳过买入参考")
         return 0
 
-    result = strategy_summary.build_buy_list(markets)
+    result = strategy_summary.build_buy_list(markets, date_str=today)
     if result["count"] == 0:
         print("今日无命中标的，跳过发送")
         strategy_summary.write_root_summary(
@@ -139,12 +139,19 @@ def main():
     with open(html_path, "w", encoding="utf-8") as f:
         f.write("<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">"
                 "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
-                "<title>今日买入参考</title></head>"
+                f"<title>今日买入参考 - {today}</title></head>"
                 "<body style=\"font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;"
                 "background:#f0f2f5;padding:12px;margin:0\">"
                 "<div style=\"max-width:720px;margin:0 auto\">"
                 + result["html"] + review_html + "</div></body></html>")
     print(f"买入参考已生成({result['count']}只): {html_path}")
+
+    # 供 build_pages.py 嵌入首页的片段（今日推荐 + 昨日回归）
+    for fname, frag in (("buy_today.html", result["html"]), ("buy_review.html", review_html)):
+        frag_path = os.path.join(BASE_DIR, "output", fname)
+        with open(frag_path, "w", encoding="utf-8") as f:
+            f.write(frag)
+        print(f"片段已写入: {frag_path}")
 
     ok = send_email.send_report(html_path, subject=f"今日买入参考 TOP{result['count']} - {today}")
     print("邮件已发送" if ok else "邮件发送失败(请检查邮箱配置)")

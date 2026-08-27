@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
-"""价值投资标的筛选：A股 + 港股通市值前100，按 质量/成长/估值/规模 综合评分取 TOP20。
+"""价值投资标的筛选：A股 + 港股通 + ETF，按 质量/估值/成长/规模 综合评分取 TOP。
 
 评分(各0-100，市场内百分位排名)：
-  质量30% = ROE 60% + 毛利率 40%
-  成长25% = 净利同比 70% + 营收同比 30%
+  质量35% = ROE 60% + 毛利率 40%
   估值35% = PE5年分位(越低越好) 50% + PB5年分位 50%
-  规模10% = 总市值
-缺失数据按中性值50处理。仅保留盈利且总市值>=300亿的标的。
+  成长20% = 净利同比 70% + 营收同比 30%（winsorize 到 [-50%, 100%]）
+  规模10% = 总市值/规模
+缺失数据按中性值50处理。仅保留市值>=300亿；股票市场要求 0<PE_TTM<=60 且 PB_MRQ<=12
+（排除亏损、投机性高估值及市净率过高的纯题材股）。
 
 用法:
     python build_value.py [日期]
@@ -20,6 +21,9 @@ import pandas as pd
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MIN_MKT_CAP = 300   # 亿
+MAX_PE = 60          # 股票市场 PE_TTM 上限，排除亏损及投机性高估值
+MAX_PB = 12          # 股票市场 PB_MRQ 上限，排除市净率过高的纯题材股
+GROWTH_CLIP = (-50.0, 100.0)   # 成长数据 winsorize 区间(%)，避免基期效应极值
 TOP_N = {"A股": 30, "港股": 30, "ETF": 10}
 
 
@@ -40,19 +44,26 @@ def load_market(today, label, list_dir, metrics_dir, list_prefix, mcap_col):
         return None
     lf = pd.read_csv(lp, dtype={"代码": str})
     mf = pd.read_csv(mp, dtype={"代码": str})
-    keep = ["代码", "名称", "PE_TTM", "PE5年分位%", "PB5年分位%", "行业"]
-    mf = mf[[c for c in keep if c in mf.columns]]
-    df = lf.merge(mf.drop(columns=["名称"], errors="ignore"), on="代码", how="left")
-    df["市场"] = label
-    if mcap_col not in df.columns:
+    if mcap_col not in lf.columns:
         print(f"[{label}] 缺少市值列 {mcap_col}，跳过")
         return None
+    # 显式选择两侧列，避免列表(list)与指标(metrics)同名列(如港股 PE_TTM)merge 后产生 _x/_y 冲突
+    list_cols = ["代码", "名称", mcap_col]
+    for c in ["ROE%", "毛利率%", "净利同比%", "营收同比%"]:
+        if c in lf.columns:
+            list_cols.append(c)
+    metric_cols = ["代码"]
+    for c in ["PE_TTM", "PB_MRQ", "PE5年分位%", "PB5年分位%", "行业"]:
+        if c in mf.columns:
+            metric_cols.append(c)
+    df = lf[list_cols].merge(mf[metric_cols], on="代码", how="left")
+    df["市场"] = label
     df["市值(亿)"] = _num(df[mcap_col])
-    # A股列表的市值单位是元，ETF是亿
+    # A股列表的市值单位是元，ETF/HK 本身已是亿
     if mcap_col == "总市值":
         df["市值(亿)"] = df["市值(亿)"] / 1e8
     for c in ["ROE%", "毛利率%", "净利同比%", "营收同比%",
-              "PE_TTM", "PE5年分位%", "PB5年分位%"]:
+              "PE_TTM", "PB_MRQ", "PE5年分位%", "PB5年分位%"]:
         if c in df.columns:
             df[c] = _num(df[c])
         else:
@@ -75,8 +86,16 @@ def build(today=None):
         print(f"{today} 无可用数据，跳过价值筛选")
         return None
 
-    df = df[(_num(df["市值(亿)"]) >= MIN_MKT_CAP) &
-            (_num(df["PE_TTM"]).fillna(-1) > 0)].copy()
+    df = df[_num(df["市值(亿)"]) >= MIN_MKT_CAP].copy()
+    df["PE_TTM"] = _num(df["PE_TTM"])
+    # 股票市场：仅保留盈利且估值合理(0<PE<=MAX_PE 且 PB<=MAX_PB)，排除亏损及投机性高估值；ETF 不做过滤
+    stock = df["市场"] != "ETF"
+    stock_ok = (df["PE_TTM"] > 0) & (df["PE_TTM"] <= MAX_PE) & (df["PB_MRQ"] <= MAX_PB)
+    df = df[~stock | stock_ok].copy()
+    # 成长数据 winsorize，避免基期效应造成的失真极值(如净利同比+1000%)主导排序
+    for c in ["净利同比%", "营收同比%"]:
+        if c in df.columns:
+            df[c] = df[c].clip(lower=GROWTH_CLIP[0], upper=GROWTH_CLIP[1])
     if df.empty:
         print(f"{today} 过滤后无标的")
         return None
@@ -94,7 +113,7 @@ def build(today=None):
         g["成长分"] = growth.round(0).astype(int)
         g["估值分"] = value.round(0).astype(int)
         g["规模分"] = scale.round(0).astype(int)
-        g["综合分"] = (quality * 0.30 + growth * 0.25 + value * 0.35 + scale * 0.10).round(1)
+        g["综合分"] = (quality * 0.35 + growth * 0.20 + value * 0.35 + scale * 0.10).round(1)
         g = g.sort_values("综合分", ascending=False).head(top_n).reset_index(drop=True)
         result_frames.append(g)
     
@@ -137,6 +156,10 @@ def main():
     if df is None:
         return 0
 
+    a_cnt = int((df["市场"] == "A股").sum())
+    h_cnt = int((df["市场"] == "港股").sum())
+    e_cnt = int((df["市场"] == "ETF").sum())
+
     md_lines = ["| 排名 | 市场 | 名称 | 代码 | 综合分 | ROE% | 净利同比% | PE | PE5年分位 | 市值(亿) | 行业 |",
                 "|---|---|---|---|---|---|---|---|---|---|---|"]
     for _, r in df.iterrows():
@@ -147,8 +170,8 @@ def main():
             f"{round(r['PE5年分位%']) if pd.notna(r['PE5年分位%']) else '-'} | {r['市值(亿)']:,.0f} | "
             f"{'-' if pd.isna(r.get('行业')) or not r.get('行业') else r['行业']} |")
     md = ("## 💎 价值投资标的 (A股%d只/港股%d只/ETF%d只)\n\n%s\n\n"
-          "> 综合分 = 质量30%%(ROE/毛利率) + 成长25%%(净利/营收增速) + 估值35%%(PE/PB五年分位，越低越好) + 规模10%%；"
-          "仅保留盈利且市值≥300亿；仅供研究参考，不构成投资建议" % (30, 30, 10, "\n".join(md_lines)))
+          "> 综合分 = 质量35%%(ROE/毛利率) + 估值35%%(PE/PB五年分位，越低越好) + 成长20%%(净利/营收增速) + 规模10%%；"
+          "仅保留市值≥300亿，股票市场要求 0<PE≤60 且 PB≤12；仅供研究参考，不构成投资建议" % (a_cnt, h_cnt, e_cnt, "\n".join(md_lines)))
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">
@@ -167,10 +190,10 @@ tr:hover td{{background:#f8f9fd}}
 .note{{color:#999;font-size:12px;margin-top:12px;line-height:1.7}}
 @media(max-width:768px){{body{{padding:8px}}table{{font-size:11px}}td,th{{padding:6px 3px}}}}
 </style></head><body><div class="wrap">
-<h1>💎 价值投资标的 (A股30/港股30/ETF10) <span style="font-size:13px;color:#888">{today}</span></h1>
-<div class="sub">分市场独立评分：A股+港股通+ETF市值≥300亿中筛选 · 质量30% + 成长25% + 估值35% + 规模10%（市况内百分位计分）</div>
+<h1>💎 价值投资标的 (A股{a_cnt}/港股{h_cnt}/ETF{e_cnt}) <span style="font-size:13px;color:#888">{today}</span></h1>
+<div class="sub">分市场独立评分：市值≥300亿，股票要求 0&lt;PE≤60 且 PB≤12 · 质量35% + 估值35% + 成长20% + 规模10%（市场内百分位计分）</div>
 {_html_table(df)}
-<div class="note">说明：ROE 为最新报告期值；港股成长数据部分缺失时按中性处理；估分基于五年历史分位（低=便宜）。<br>
+<div class="note">说明：ROE 为最新报告期值；估值分基于五年历史分位（低=便宜）；股票市场已剔除 PE&gt;60 或 PB&gt;12 的高估值/纯题材标的。<br>
 仅供研究参考，不构成任何投资建议。</div>
 </div></body></html>"""
 

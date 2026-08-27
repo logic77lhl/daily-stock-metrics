@@ -157,10 +157,11 @@ def write_root_summary(filename, md_text, date_str):
     return path
 
 
-def build_buy_list(markets):
+def build_buy_list(markets, date_str=None):
     """跨市场"今日买入参考"：按策略胜率从高到低，合并去重取前10。
 
     markets: [(市场标签, 今日metrics_csv路径, 历史output目录), ...]
+    date_str: 可选，展示用日期，会写入标题。
     返回 {"html":..., "md":..., "count":N}；无命中或历史不足时 count=0。
     """
     entries = []
@@ -216,12 +217,13 @@ def build_buy_list(markets):
                       f"<td><b>{r['胜率%']}%</b></td>"
                       f"<td>{r['样本数']}</td></tr>")
 
-    md = ("## 🎯 今日买入参考（按胜率排序 TOP%d）\n\n%s\n\n"
-          "> 胜率为该入选策略近20个交易日的次日胜率，仅供研究参考，不构成投资建议\n" % (len(df), "\n".join(md_lines)))
+    date_inner = f"{date_str}，" if date_str else ""
+    md = ("## 🎯 今日买入参考（%s按胜率排序 TOP%d）\n\n%s\n\n"
+          "> 胜率为该入选策略近20个交易日的次日胜率，仅供研究参考，不构成投资建议\n" % (date_inner, len(df), "\n".join(md_lines)))
 
     html = ("<div style=\"background:#fff;border-radius:10px;padding:14px 16px;"
             "box-shadow:0 1px 3px rgba(0,0,0,0.08);font-size:14px\">"
-            "<div style=\"font-weight:700;color:#1a1a2e;margin-bottom:10px\">🎯 今日买入参考（按胜率排序）</div>"
+            f"<div style=\"font-weight:700;color:#1a1a2e;margin-bottom:10px\">🎯 今日买入参考（{date_inner}按胜率排序）</div>"
             "<div style=\"overflow-x:auto\"><table style=\"width:100%;border-collapse:collapse;font-size:13px\">"
             "<thead><tr style=\"background:#1a1a2e;color:#fff\">"
             "<th style=\"padding:7px 6px\">市场</th><th style=\"padding:7px 6px\">名称</th>"
