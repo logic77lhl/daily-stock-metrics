@@ -123,7 +123,7 @@ def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信�
             chg_str = "-"
 
         rows_html += f"""<tr data-signal="{sig_cls}">
-            <td>{int(row['排名'])}</td>
+            <td>{int(row['排名']) if pd.notna(row.get('排名')) else '-'}</td>
             <td>{row['代码']}</td>
             <td class="name">{row['名称']}</td>
             <td>{d_cell}</td>
