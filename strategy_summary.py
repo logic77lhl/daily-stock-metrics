@@ -105,7 +105,7 @@ def _overview(today_df):
         bits.append(f"上涨{(chg > 0).sum()}家/下跌{(chg < 0).sum()}家，平均{chg.mean():+.2f}%")
     dj = _col(today_df, "日线J")
     if dj is not None and dj.notna().any():
-        bits.append(f"日线超卖{int((dj < 20).sum())}家/超买{int((dj > 80).sum())}家")
+        bits.append(f"日线超卖{int((dj.dropna() < 20).sum())}家/超买{int((dj.dropna() > 80).sum())}家")
     bull = _col(today_df, "双均线多头")
     if bull is not None and bull.notna().any():
         bits.append(f"均线多头占比{bull.mean() * 100:.0f}%")
