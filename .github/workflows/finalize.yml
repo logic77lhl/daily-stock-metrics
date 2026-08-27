@@ -1,13 +1,13 @@
-name: daily-metrics
+name: finalize
 
 on:
   schedule:
-    # UTC 08:30 = 北京时间 16:30
-    - cron: "30 8 * * 1-5"
+    # UTC 08:45 = 北京时间 16:45（A股/ETF 15:10、港股 16:20 均已完成后）
+    - cron: "45 8 * * 1-5"
   workflow_dispatch:
 
 concurrency:
-  group: daily-metrics
+  group: finalize
   cancel-in-progress: false
 
 permissions:
@@ -16,7 +16,7 @@ permissions:
   id-token: write
 
 jobs:
-  run-daily:
+  finalize:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -38,18 +38,6 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
-
-      - name: Run A股 daily
-        continue-on-error: true
-        run: python run_daily.py
-
-      - name: Run ETF daily
-        continue-on-error: true
-        run: python run_etf_daily.py
-
-      - name: Run 港股 daily
-        continue-on-error: true
-        run: python run_hk_daily.py
 
       - name: Build buy list email
         continue-on-error: true
@@ -97,13 +85,15 @@ jobs:
           echo "全部市场任务均已完成"
 
       - name: Commit outputs
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add output output_etf output_hk "摘要-*.md"
+          git add output "摘要-*.md"
           if git diff --cached --quiet; then
             echo "没有新的输出需要提交"
           else
-            git commit -m "daily results $(date +%Y-%m-%d)"
+            git commit -m "daily results $(date +%Y-%m-%d) 收尾"
+            git pull --rebase origin main || true
             git push
           fi

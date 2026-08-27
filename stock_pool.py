@@ -51,15 +51,26 @@ def merge(path, list_df, today):
 
 
 def expand(list_df, pool):
-    """今日列表在前，池内历史标的追加在后（保持Top100排序优先）。"""
+    """今日列表在前，池内历史标的追加在后（保持Top100排序优先）。
+
+    追踪标的没有当日排名，这里按今日列表最大排名往后顺延编号，
+    避免写入 None 后在 CSV 中变成 NaN，导致下游 int() 转换崩溃。
+    """
     today_codes = set(list_df["代码"].astype(str))
     extra_rows = []
+    next_rank = None
+    if "排名" in list_df.columns:
+        ranks = pd.to_numeric(list_df["排名"], errors="coerce")
+        next_rank = int(ranks.max()) + 1 if ranks.notna().any() else 1
     for code, ent in pool.items():
         if code in today_codes:
             continue
         row = {"代码": code, "名称": ent.get("名称", "")}
         for c in list_df.columns:
             row.setdefault(c, None)
+        if next_rank is not None:
+            row["排名"] = next_rank
+            next_rank += 1
         extra_rows.append(row)
     if not extra_rows:
         return list_df
