@@ -78,11 +78,29 @@ jobs:
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
 
+      - name: Check daily completion
+        run: |
+          WEEKDAY=$(TZ=Asia/Shanghai date +%u)
+          if [ "$WEEKDAY" -gt 5 ]; then
+            echo "周末，跳过完成检查"
+            exit 0
+          fi
+          TODAY=$(TZ=Asia/Shanghai date +%F)
+          MISSING=""
+          for d in output output_etf output_hk; do
+            [ -s "$d/$TODAY/DONE" ] || MISSING="$MISSING $d"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::以下市场未完成(缺少 DONE 标记):$MISSING"
+            exit 1
+          fi
+          echo "全部市场任务均已完成"
+
       - name: Commit outputs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add output output_etf output_hk
+          git add output output_etf output_hk "摘要-*.md"
           if git diff --cached --quiet; then
             echo "没有新的输出需要提交"
           else

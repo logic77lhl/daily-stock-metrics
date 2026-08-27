@@ -3,5 +3,8 @@ __pycache__/
 autostart_errors.log
 backtest_results/kline_cache/
 
+# build_pages.py 生成的站点，经 GitHub Pages artifact 部署，不入库
 docs/
+
+# 回测产物与 kline 缓存，每次重跑覆盖，不入库
 backtest_results/

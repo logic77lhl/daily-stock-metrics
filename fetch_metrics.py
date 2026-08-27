@@ -293,6 +293,10 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock):
     rec["名称"] = name
     rec["行业"] = _industry_of(row, col_names)
 
+    rank_raw = row.get("排名")
+    rank_tag = f"{int(rank_raw):>3}" if pd.notna(rank_raw) else " ---"
+    written = False
+
     try:
         daily_df = None
         for period, col in [("daily", "日线J"), ("weekly", "周线J"), ("monthly", "月线J")]:
@@ -343,15 +347,17 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock):
                 rec["PB历史分位%"] = pb_pct
 
         append_record(rec, out_csv, lock=write_lock)
+        written = True
         close_str = f" 价={rec['最新价']} 涨={rec['涨跌幅']}%" if rec['最新价'] is not None else ""
         ma_str = f" MA20={rec['MA20']} MA60={rec['MA60']} 多头={rec['双均线多头']}"
-        log(f"[{int(row['排名']):>3}] {code} {name}  完成  "
+        log(f"[{rank_tag}] {code} {name}  完成  "
             f"日J={rec['日线J']} 周J={rec['周线J']} 月J={rec['月线J']}{ma_str}{close_str}  "
             f"PE={rec['PE_TTM']}({rec['PE历史分位%']}%) PB={rec['PB_MRQ']}({rec['PB历史分位%']}%)", log_file)
         return True
     except Exception as e:
-        append_record(rec, out_csv, lock=write_lock)
-        log(f"[{int(row['排名']):>3}] {code} {name}  失败: {e}", log_file)
+        if not written:
+            append_record(rec, out_csv, lock=write_lock)
+        log(f"[{rank_tag}] {code} {name}  失败: {e}", log_file)
         return False
 
 
@@ -387,8 +393,8 @@ def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FIL
                        for row in todo]
             for f in as_completed(futures):
                 f.result()
-        sort_output_by_rank(out_csv)
 
+    sort_output_by_rank(out_csv)
     log(f"全部完成，结果已写入 {out_csv}", log_file)
     return out_csv
 

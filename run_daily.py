@@ -14,6 +14,8 @@ import run_buy_daily
 
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
+elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")

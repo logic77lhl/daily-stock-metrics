@@ -64,7 +64,8 @@ def build_stocks(days):
     latest_rank = {}
     if dates:
         for _, row in days[dates[-1]].iterrows():
-            latest_rank[str(row["代码"])] = int(row["排名"])
+            rank = row.get("排名")
+            latest_rank[str(row["代码"])] = int(rank) if pd.notna(rank) else 9999
 
     for date in dates:
         df = days[date]

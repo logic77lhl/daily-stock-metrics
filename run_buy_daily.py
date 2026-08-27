@@ -105,7 +105,6 @@ def main():
         print(f"{today} 为周末，跳过买入参考")
         return 0
 
-    markets = []
     done_marker = os.path.join(BASE_DIR, "output", f"BUY_DONE_{today}")
     if os.path.exists(done_marker):
         print("买入参考今日已处理，跳过")
@@ -168,12 +167,6 @@ def main():
     except OSError:
         pass
 
-    try:
-        os.makedirs(os.path.dirname(done_marker), exist_ok=True)
-        open(done_marker, "w").close()
-    except OSError:
-        pass
-    return 0
     try:
         os.makedirs(os.path.dirname(done_marker), exist_ok=True)
         open(done_marker, "w").close()
