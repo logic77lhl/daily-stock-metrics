@@ -115,7 +115,8 @@ def build_price_map(panel, market, cache_dir, log=print):
     session = fm.get_session()
     px = {}
     codes = sorted(panel["代码"].unique())
-    for n, code in enumerate(codes, 1):
+
+    def _fetch_one(code):
         raw = code.split("_", 1)[1] if "_" in code else code
         cache = os.path.join(cache_dir, f"{market}_{raw}.csv")
         s = None
@@ -138,8 +139,17 @@ def build_price_map(panel, market, cache_dir, log=print):
                     if attempt == 2:
                         log(f"[{market}] {raw} 价格获取失败，剔除该标的: {e}")
                     time.sleep(1)
-        if s is not None:
-            px[code] = s.sort_index()
+        return code, s
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    max_workers = min(10, len(codes))
+    print(f"  并行获取 {len(codes)} 只标的前复权价 (workers={max_workers})...")
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {ex.submit(_fetch_one, c): c for c in codes}
+        for fut in as_completed(futures):
+            code, s = fut.result()
+            if s is not None:
+                px[code] = s.sort_index()
     return px
 
 

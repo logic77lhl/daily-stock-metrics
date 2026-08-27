@@ -225,7 +225,7 @@ def build_dataframe(top=100, log_file=None):
             "主题": theme,
         })
         wlog(f"[{i:>3}] {code} {name}  规模={round(scale, 2)}亿  跟踪={track or '-'}  主题={theme}")
-        time.sleep(0.3)
+        time.sleep(0.15)
 
     df = pd.DataFrame(rows)
     if "跟踪标的" in df.columns:
