@@ -114,3 +114,12 @@
 2026-08-27 18:05:56  步骤2完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-08-27/metrics_2026-08-27.csv
 2026-08-27 18:05:56  步骤3: 生成 HTML 总结报告…
 2026-08-27 18:05:57  任务失败: ValueError: cannot convert float NaN to integer
+2026-08-27 18:24:50  ===== 开始每日指标任务 2026-08-27 =====
+2026-08-27 18:24:50  步骤1已存在，跳过 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-08-27/top100_2026-08-27.csv
+2026-08-27 18:24:50  步骤2: 计算 KDJ-J(日/周/月) 及 PE/PB 历史分位…
+2026-08-27 18:24:50  观察池: 共102只(含历史追踪2只) -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-08-27/tracked_2026-08-27.csv
+2026-08-27 18:24:50  检测到已完成 102 条，跳过续跑
+2026-08-27 18:24:50  全部完成，结果已写入 /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-08-27/metrics_2026-08-27.csv
+2026-08-27 18:24:50  步骤2完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-08-27/metrics_2026-08-27.csv
+2026-08-27 18:24:50  步骤3: 生成 HTML 总结报告…
+2026-08-27 18:24:51  任务失败: ValueError: cannot convert float NaN to integer
