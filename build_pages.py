@@ -856,6 +856,13 @@ def main():
                 f.write(insights_body)
             extras.append("insights.html")
 
+    # 每日报告归档页（全部日期 + 搜索/市场筛选），供首页导航直达
+    if dates:
+        apath = os.path.join(DOCS_DIR, "archive.html")
+        with open(apath, "w", encoding="utf-8") as f:
+            f.write(build_archive_page(dates))
+        extras.append("archive.html")
+
     ctx = build_dashboard_ctx(latest)
     with open(os.path.join(DOCS_DIR, "index.html"), "w", encoding="utf-8") as f:
         f.write(build_index(dates, extras, ctx))
