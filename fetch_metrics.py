@@ -197,24 +197,12 @@ def volume_ratio(df, n=5):
     return round(float(vol.iloc[-1] / base), 2)
 
 
-def resample_ohlc(df, rule):
-    """把日线按规则重采样为周/月线，返回含 high/low/close 的 DataFrame（用于 KDJ）。
-
-    周线用 W-FRI（周一到周五聚合），月线用 ME（自然月末），与行情软件口径一致。
-    """
-    d = df.copy()
-    d["date"] = pd.to_datetime(d["date"])
-    d = d.set_index("date")
-    agg = d.resample(rule).agg({"high": "max", "low": "min", "close": "last"})
-    return agg.dropna(subset=["close"]).reset_index(drop=True)
-
-
 def fetch_valuation(session, code):
     params = {
         "reportName": "RPT_VALUEANALYSIS_DET",
         "columns": "TRADE_DATE,PE_TTM,PB_MRQ",
         "filter": f'(SECUCODE="{secucode(code)}")',
-        "pageSize": "1500",
+        "pageSize": "6000",
         "sortColumns": "TRADE_DATE",
         "sortTypes": "1",
         "source": "WEB",
@@ -323,28 +311,20 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock):
 
     try:
         daily_df = None
-        # 只拉一次日线，周/月线 J 由日线重采样推导，kline 请求从 3 次降到 1 次
-        daily_df = fetch_kline(session, code, "daily", market=market)
-        time.sleep(0.15)
-        if daily_df is not None and len(daily_df) >= 5:
-            rec["日线J"] = kdj_j(daily_df)
-            if len(daily_df) >= 6:
-                rec["昨日日线J"] = kdj_j(daily_df.iloc[:-1])
-            rec["最新价"] = round(float(daily_df["close"].iloc[-1]), 2)
-            if len(daily_df) >= 2:
-                pct = (daily_df["close"].iloc[-1] - daily_df["close"].iloc[-2]) / daily_df["close"].iloc[-2] * 100
-                rec["涨跌幅"] = round(float(pct), 2)
-
-            weekly = resample_ohlc(daily_df, "W-FRI")
-            if len(weekly) >= 5:
-                rec["周线J"] = kdj_j(weekly)
-                if len(weekly) >= 6:
-                    rec["昨日周线J"] = kdj_j(weekly.iloc[:-1])
-            monthly = resample_ohlc(daily_df, "ME")
-            if len(monthly) >= 5:
-                rec["月线J"] = kdj_j(monthly)
-                if len(monthly) >= 6:
-                    rec["昨日月线J"] = kdj_j(monthly.iloc[:-1])
+        for period, col in [("daily", "日线J"), ("weekly", "周线J"), ("monthly", "月线J")]:
+            prev_col = {"日线J": "昨日日线J", "周线J": "昨日周线J", "月线J": "昨日月线J"}[col]
+            df = fetch_kline(session, code, period, market=market)
+            if df is not None and len(df) >= 5:
+                rec[col] = kdj_j(df)
+                if len(df) >= 6:
+                    rec[prev_col] = kdj_j(df.iloc[:-1])
+                if period == "daily":
+                    daily_df = df
+                    rec["最新价"] = round(float(df["close"].iloc[-1]), 2)
+                    if len(df) >= 2:
+                        pct = (df["close"].iloc[-1] - df["close"].iloc[-2]) / df["close"].iloc[-2] * 100
+                        rec["涨跌幅"] = round(float(pct), 2)
+            time.sleep(0.15)
 
         if daily_df is not None and len(daily_df) >= 2:
             rec["MA20"], rec["MA60"], rec["双均线多头"], rec["价距MA20%"] = ma_values(daily_df)

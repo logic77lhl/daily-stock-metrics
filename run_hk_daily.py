@@ -45,10 +45,6 @@ def main():
         print(f"{today} 为周末，收盘数据与周五一致，跳过本次运行")
         return 0
 
-    now = datetime.datetime.now()
-    if now.strftime("%H:%M") < "16:15":
-        print(f"{today} 当前时间 {now:%H:%M} 早于 16:15，港股收盘数据尚未更新，跳过本次运行")
-        return 0
     day_dir = os.path.join(OUTPUT_DIR, today)
     os.makedirs(day_dir, exist_ok=True)
 
