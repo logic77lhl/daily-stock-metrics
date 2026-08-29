@@ -629,8 +629,43 @@ def collect_extras():
     return extras
 
 
+def _insight_card(title, icon, body, tone=""):
+    """统一外壳：覆盖 market_insights 内联 margin/border-radius/box-shadow，视觉对齐。"""
+    tone_border = ""
+    tone_accent = ""
+    if tone == "cool":
+        tone_border = ";border-left:3px solid #4dabf7"
+        tone_accent = "#1971c2"
+    elif tone == "hot":
+        tone_border = ";border-left:3px solid #fa5252"
+        tone_accent = "#d9480f"
+    elif tone == "value":
+        tone_border = ";border-left:3px solid #7048e8"
+        tone_accent = "#5f3dc4"
+    else:
+        tone_accent = "#1c2333"
+    if not body:
+        body = '<div class="empty-line">暂无数据</div>'
+    # 覆盖内联 margin-bottom / border-radius / box-shadow / padding
+    wrapper = (f'<section class="icard" style="background:#fff;border-radius:14px;padding:0;'
+               f'box-shadow:0 1px 3px rgba(28,35,51,.06);border:1px solid #eceef4{tone_border};">'
+               f'<div class="icard-head">{icon} <span class="icard-title">{title}</span></div>'
+               f'<div class="icard-body">{body}</div></section>')
+    return wrapper
+
+
+def _strip_outer_div(body):
+    """market_insights 返回的 body 外层 div 自带内联样式，去掉它交给外层 _insight_card。"""
+    import re as _re
+    # 匹配最外层 <div style="...">...</div> 并剥掉
+    m = _re.match(r'^\s*<div\s+style="[^"]*">(.*)</div>\s*$', body, _re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    return body.strip()
+
+
 def build_index(dates, extras, ctx):
-    """首页 = 市场洞察仪表盘（Tab 分块，首屏大盘宽度）+ 今日摘要卡；历史报告入口收敛到归档页。"""
+    """首页 = 单页流式仪表盘：KPI 摘要带 + 市场洞察（大盘宽度/板块温度/超跌+超买双列）+ 今日摘要。"""
     total_reports = sum(len(k) for _, k in dates)
 
     nav = ""
@@ -648,30 +683,21 @@ def build_index(dates, extras, ctx):
         nav += '<a class="pill arch" href="archive.html">🗂 报告归档</a>'
     nav_html = f'<nav>{nav}</nav>' if nav else ""
 
-    # ---- 市场洞察 Tab（与 insights 页同款交互，首屏默认大盘宽度）----
-    tab_items = [
-        ("breadth", "📡 大盘宽度",
-         ctx.get("breadth") or '<div class="muted">暂无大盘宽度数据，等待下一个交易日生成</div>'),
-        ("sector", "🏭 板块温度",
-         ctx.get("sector") or '<div class="muted">暂无板块温度数据</div>'),
-        ("oversell", "🧊 超跌机会",
-         ctx.get("oversold") or '<div class="muted">今日无符合条件的超跌标的</div>'),
-        ("overbuy", "🔥 超买观察",
-         ctx.get("overbuy") or '<div class="muted">今日无符合条件的超买标的</div>'),
-    ]
-    tabs_html = ""
-    panels_html = ""
-    for i, (tid, tlabel, tcontent) in enumerate(tab_items):
-        active_cls = " active" if i == 0 else ""
-        show_style = "" if i == 0 else ' style="display:none"'
-        tabs_html += (f'<button class="tab-btn{active_cls}" data-tabtarget="{tid}" '
-                      f'onclick="switchTab(this)">{tlabel}</button>')
-        panels_html += f'<section class="panel" data-tab="{tid}"{show_style}>{tcontent}</section>'
+    # ---- 洞察区：大盘宽度（宽卡）+ 板块温度（宽卡）+ 超跌/超买双列 ----
+    breadth_card = _insight_card("大盘宽度仪表盘", "📡",
+                                  _strip_outer_div(ctx.get("breadth", "")), tone="value")
+    sector_card = _insight_card("行业板块温度榜", "🏭",
+                                _strip_outer_div(ctx.get("sector", "")), tone="hot")
+    oversell_card = _insight_card("超跌机会", "🧊",
+                                  _strip_outer_div(ctx.get("oversold", "")), tone="cool")
+    overbuy_card = _insight_card("超买观察", "🔥",
+                                 _strip_outer_div(ctx.get("overbuy", "")), tone="hot")
+    opp_grid = f'<div class="opp-grid">{oversell_card}{overbuy_card}</div>'
 
-    # ---- 今日摘要卡（策略 / 价值 / 回测，空块自动跳过）----
+    # ---- 今日摘要（策略 / 价值 / 回测，空块自动跳过）----
     summary_blocks = [b for b in [ctx.get("strategy", ""), ctx.get("value", ""),
                                   ctx.get("backtest", "")] if b]
-    summary_html = "".join(summary_blocks) or '<div class="empty">暂无摘要数据，等待下一个交易日生成</div>'
+    summary_html = "".join(summary_blocks) or '<div class="empty-line">暂无摘要数据，等待下一个交易日生成</div>'
 
     return f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">
@@ -679,25 +705,25 @@ def build_index(dates, extras, ctx):
 <title>市场洞察 · 每日指标</title>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-body{{background:linear-gradient(180deg,#eef1f7 0%,#f7f8fc 280px);color:#1c2333;
-font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;min-height:100vh}}
+body{{background:linear-gradient(180deg,#eef1f7 0%,#f7f8fc 260px);color:#1c2333;
+font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;min-height:100vh;line-height:1.5}}
 a{{text-decoration:none;color:inherit}}
 header{{background:linear-gradient(135deg,#141e30 0%,#243b55 60%,#2d4a6e 100%);
-padding:36px 16px 30px;text-align:center;position:relative;overflow:hidden}}
+padding:34px 16px 24px;text-align:center;position:relative;overflow:hidden}}
 header:before{{content:"";position:absolute;inset:0;
 background:radial-gradient(ellipse at 20% 0%,rgba(255,255,255,.10),transparent 55%),
 radial-gradient(ellipse at 85% 100%,rgba(77,171,247,.18),transparent 50%)}}
 header .head-wrap{{max-width:1080px;margin:0 auto;position:relative}}
-header h1{{margin:0;font-size:26px;color:#fff;letter-spacing:1px}}
+header h1{{margin:0;font-size:24px;color:#fff;letter-spacing:.5px}}
 header h1 span{{background:linear-gradient(90deg,#ffd43b,#ff922b);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}}
-header p{{margin:10px 0 0;color:#aab4cf;font-size:13.5px}}
-.stats{{display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap}}
+header p{{margin:8px 0 0;color:#aab4cf;font-size:13px}}
+.stats{{display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap}}
 .chip{{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.14);
-border-radius:99px;padding:5px 14px;color:#dbe4f3;font-size:12px;backdrop-filter:blur(6px)}}
-nav{{margin-top:18px;display:flex;gap:9px;justify-content:center;flex-wrap:wrap}}
-.pill{{display:inline-block;padding:8px 20px;border-radius:99px;color:#fff;
-font-size:13px;font-weight:600;box-shadow:0 3px 10px rgba(0,0,0,.22);transition:transform .15s}}
-.pill:hover{{transform:translateY(-2px)}}
+border-radius:99px;padding:4px 12px;color:#dbe4f3;font-size:11.5px;backdrop-filter:blur(6px)}}
+nav{{margin-top:14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}}
+.pill{{display:inline-block;padding:6px 16px;border-radius:99px;color:#fff;
+font-size:12.5px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.18);transition:transform .15s}}
+.pill:hover{{transform:translateY(-1px)}}
 .pill.ins{{background:linear-gradient(90deg,#5f3dc4,#7048e8)}}
 .pill.val{{background:linear-gradient(90deg,#f59f00,#fd7e14)}}
 .pill.buy{{background:linear-gradient(90deg,#e8590c,#fa5252)}}
@@ -708,70 +734,78 @@ main{{max-width:1080px;margin:0 auto 30px;padding:0 14px}}
 
 /* ---- KPI band ---- */
 .kpi-row{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;
-margin:-26px auto 16px;position:relative;z-index:2}}
-.kpi{{background:#fff;border-radius:12px;padding:12px 14px;
-box-shadow:0 4px 16px rgba(28,35,51,.08);border:1px solid #eceef4;min-height:66px}}
+margin:-24px auto 14px;position:relative;z-index:2}}
+.kpi{{background:#fff;border-radius:12px;padding:11px 13px;
+box-shadow:0 4px 14px rgba(28,35,51,.07);border:1px solid #eceef4;min-height:62px}}
 .k-label{{font-size:11px;color:#8791a8}}
-.k-value{{margin-top:6px;font-size:15.5px;font-weight:700;line-height:1.25}}
+.k-value{{margin-top:5px;font-size:14.5px;font-weight:700;line-height:1.25}}
 @media(max-width:780px){{.kpi-row{{grid-template-columns:repeat(2,1fr)}}}}
 
-/* ---- insight tabs ---- */
-.tabs{{background:#fff;border-radius:12px;padding:6px;
-box-shadow:0 1px 4px rgba(28,35,51,.05);border:1px solid #eceef4;
-display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}}
-.tabs::-webkit-scrollbar{{display:none}}
-.tab-btn{{flex:1 0 auto;min-width:110px;border:none;background:transparent;cursor:pointer;
-border-radius:8px;padding:9px 14px;font-size:13.5px;font-weight:600;color:#657289;
-transition:all .2s;white-space:nowrap}}
-.tab-btn:hover{{background:#f5f7fb;color:#1c2333}}
-.tab-btn.active{{background:linear-gradient(135deg,#5f3dc4,#7048e8);color:#fff;
-box-shadow:0 3px 10px rgba(95,61,196,.30)}}
-.panel{{animation:fade .22s ease}}
-@keyframes fade{{from{{opacity:0;transform:translateY(4px)}}to{{opacity:1;transform:none}}}}
-.panel > div[style*="border-radius"]{{margin-bottom:0 !important}}
-.muted{{color:#8791a8;padding:30px 10px;text-align:center;font-size:13px;
-background:#fff;border-radius:12px;border:1px dashed #dee2e6}}
+/* ---- insight cards (统一外壳，覆盖内联样式) ---- */
+.icard{{margin-bottom:14px}}
+.icard-head{{display:flex;align-items:center;gap:6px;padding:12px 18px;
+border-bottom:1px solid #f0f2f8;font-size:14px;font-weight:700;color:#1c2333}}
+.icard-title{{font-size:14px}}
+.icard-body{{padding:14px 18px;font-size:13px}}
+/* 覆盖 market_insights 内联 margin/border-radius/box-shadow */
+.icard-body > div[style*="border-radius"],
+.icard-body > div[style*="box-shadow"],
+.icard-body > div[style*="margin-bottom"]{{
+    margin-bottom:0 !important;border-radius:0 !important;box-shadow:none !important;
+    background:transparent !important;padding:0 !important;
+}}
+/* 覆盖 chip2 */
+.icard-body .chip2{{display:inline-block;padding:3px 9px;border-radius:99px;
+font-size:11.5px;background:#f1f3f9;color:#495057;border:1px solid #e5e8f0;
+margin:0 4px 4px 0}}
 
-/* ---- summary grid ---- */
-.sum-title{{margin:20px 0 10px;font-size:15px;font-weight:700;color:#1a1a2e;
+/* ---- opp grid (超跌 + 超买双列) ---- */
+.opp-grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:0}}
+@media(max-width:780px){{.opp-grid{{grid-template-columns:1fr}}}}
+.opp-grid .icard{{margin-bottom:0}}
+
+/* ---- summary section ---- */
+.sec-title{{margin:22px 0 12px;font-size:14.5px;font-weight:700;color:#1a1a2e;
 display:flex;align-items:center;gap:8px}}
-.sum-title:after{{content:"";flex:1;height:1px;background:linear-gradient(90deg,#e9ecef,transparent)}}
-.dash{{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}}
-@media(max-width:860px){{.dash{{grid-template-columns:1fr}}}}
+.sec-title:after{{content:"";flex:1;height:1px;background:linear-gradient(90deg,#e9ecef,transparent)}}
+.dash{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;align-items:start}}
+@media(max-width:900px){{.dash{{grid-template-columns:1fr 1fr}}}}
+@media(max-width:580px){{.dash{{grid-template-columns:1fr}}}}
 .dash > div{{margin-bottom:0 !important}}
-.empty{{grid-column:1 / -1;text-align:center;color:#8791a8;padding:36px 10px;
-background:#fff;border-radius:14px;border:1px dashed #dee2e6}}
+.empty-line{{text-align:center;color:#8791a8;padding:24px 10px;font-size:12.5px}}
 
 /* ---- mini cards (strategy / value / backtest) ---- */
-.mini-card{{background:#fff;border-radius:12px;padding:14px 18px;
+.mini-card{{background:#fff;border-radius:12px;padding:13px 16px;
 box-shadow:0 1px 3px rgba(28,35,51,.05);border:1px solid #eceef4}}
-.mini-title{{font-weight:700;color:#1a1a2e;margin-bottom:10px;font-size:14.5px;
+.mini-title{{font-weight:700;color:#1a1a2e;margin-bottom:8px;font-size:13.5px;
 display:flex;align-items:center;justify-content:space-between}}
-.mini-title .more{{font-size:12px;color:#7048e8;font-weight:600}}
-.mini-tbl{{width:100%;border-collapse:collapse;font-size:13px}}
-.mini-tbl td{{padding:6.5px 4px;border-bottom:1px dashed #eef1f7}}
+.mini-title .more{{font-size:11.5px;color:#7048e8;font-weight:600}}
+.mini-tbl{{width:100%;border-collapse:collapse;font-size:12.5px}}
+.mini-tbl td{{padding:5.5px 4px;border-bottom:1px dashed #eef1f7}}
 .mini-tbl tr:last-child td{{border-bottom:0}}
 .mini-tbl .tl{{color:#657289}}
 .mini-tbl .tr{{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}}
-.v-row{{display:flex;align-items:center;gap:8px;padding:6px 0;flex-wrap:wrap;
+.v-row{{display:flex;align-items:center;gap:8px;padding:5px 0;flex-wrap:wrap;
 border-bottom:1px dashed #eef1f7}}
 .v-row:last-of-type{{border-bottom:0}}
-.v-mkt{{display:inline-block;min-width:44px;text-align:center;border-radius:8px;
-color:#fff;font-size:11.5px;font-weight:700;padding:3px 0}}
+.v-mkt{{display:inline-block;min-width:38px;text-align:center;border-radius:7px;
+color:#fff;font-size:11px;font-weight:700;padding:2.5px 0}}
 .v-mkt.a{{background:linear-gradient(90deg,#e03131,#f76707)}}
 .v-mkt.etf{{background:linear-gradient(90deg,#1971c2,#4dabf7)}}
 .v-mkt.hk{{background:linear-gradient(90deg,#d9480f,#f08c00)}}
-.v-item{{display:inline-flex;align-items:center;gap:6px;font-size:13px}}
-.v-item em{{font-style:normal;color:#7048e8;font-weight:700;font-size:12px;
-background:#f3f0ff;border-radius:6px;padding:1px 6px}}
-.mini-note{{margin-top:8px;font-size:11px;color:#98a1b3}}
+.v-item{{display:inline-flex;align-items:center;gap:5px;font-size:12.5px}}
+.v-item em{{font-style:normal;color:#7048e8;font-weight:700;font-size:11.5px;
+background:#f3f0ff;border-radius:5px;padding:1px 5px}}
+.mini-note{{margin-top:6px;font-size:10.5px;color:#98a1b3}}
 
-footer{{text-align:center;color:#98a1b3;font-size:12px;padding:18px 12px 30px;line-height:1.8}}
+footer{{text-align:center;color:#98a1b3;font-size:11.5px;padding:16px 12px 28px;line-height:1.8}}
 @media(max-width:640px){{
-    header h1{{font-size:21px}}
+    header h1{{font-size:20px}}
     main{{padding:0 10px}}
-    .kpi{{padding:10px 12px;min-height:58px}}
-    .k-value{{font-size:13.5px}}
+    .kpi{{padding:9px 11px;min-height:56px}}
+    .k-value{{font-size:13px}}
+    .icard-body{{padding:12px 14px}}
+    .icard-head{{padding:10px 14px}}
 }}
 </style></head><body>
 <header><div class="head-wrap">
@@ -786,33 +820,13 @@ footer{{text-align:center;color:#98a1b3;font-size:12px;padding:18px 12px 30px;li
 </div></header>
 <main>
 <div class="kpi-row">{ctx.get("kpi_chips", "")}</div>
-<div class="tabs" role="tablist">{tabs_html}</div>
-{panels_html}
-<div class="sum-title">📌 今日摘要</div>
-<div class="dash">
-{summary_html}
-</div>
+{breadth_card}
+{sector_card}
+{opp_grid}
+<div class="sec-title">📌 今日摘要</div>
+<div class="dash">{summary_html}</div>
 </main>
 <footer>由 GitHub Actions 每个交易日自动构建部署<br>数据仅供研究参考，不构成任何投资建议</footer>
-<script>
-function switchTab(btn){{
-    var tid = btn.getAttribute('data-tabtarget');
-    document.querySelectorAll('.tab-btn').forEach(function(b){{
-        b.classList.toggle('active', b === btn);
-    }});
-    document.querySelectorAll('.panel').forEach(function(p){{
-        var show = p.getAttribute('data-tab') === tid;
-        p.style.display = show ? '' : 'none';
-    }});
-    history.replaceState(null, '', '#' + tid);
-}}
-(function(){{
-    var map = {{}};
-    document.querySelectorAll('.tab-btn').forEach(function(b){{ map[b.getAttribute('data-tabtarget')] = b; }});
-    var h = (location.hash || '').replace('#','');
-    if (h && map[h]) switchTab(map[h]);
-}})();
-</script>
 </body></html>"""
 
 
