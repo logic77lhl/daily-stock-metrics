@@ -8,6 +8,7 @@ import fetch_metrics
 import fetch_market_breadth
 import generate_report
 import generate_stock_charts
+import market_insights
 import send_email
 import stock_pool
 import strategy_summary
@@ -70,6 +71,7 @@ def main():
         wlog(f"步骤2完成 -> {metrics_csv}")
 
         temp_card = ""
+        market_breadth_csv = os.path.join(day_dir, f"market_breadth_{today}.csv")
         try:
             wlog("步骤2.5: 获取全市场大盘温度（活跃市值指标）…")
             temp_data = fetch_market_breadth.run(day_dir=day_dir, date_str=today)
@@ -79,15 +81,59 @@ def main():
         except Exception as e:
             wlog(f"步骤2.5失败(不影响主流程): {type(e).__name__}: {e}")
 
+        # ---------- 步骤 2.6 本地聚合洞察（不抓取新数据，全部 try/except 兜底） ----------
+        sector_html = sector_md = ""
+        breadth_html = breadth_md = ""
+        opp_html = opp_md = ""
+        picks_html = picks_md = ""
+        opp_df_s = opp_df_b = None
+        try:
+            wlog("步骤2.6: 本地聚合 → 行业板块温度 / 大盘宽度仪表盘 / 机会榜")
+            sector = market_insights.sector_temperature(metrics_csv, market="A")
+            sector_html, sector_md = sector["html"], sector["md"]
+            wlog(f"  - 板块温度: {len(sector['data'])} 个行业")
+
+            breadth = market_insights.market_breadth_dashboard(
+                market_breadth_csv, metrics_csv, market="A")
+            breadth_html, breadth_md = breadth["html"], breadth["md"]
+
+            opp = market_insights.opportunity_board(metrics_csv, market="A", top_n=30, email_picks=5)
+            opp_html, opp_md = opp["html"], opp["md"]
+            picks_html, picks_md = opp.get("email_picks_html", ""), opp.get("email_picks_md", "")
+            opp_df_s, opp_df_b = opp.get("oversold_df"), opp.get("overbought_df")
+            wlog(f"  - 机会榜: 超跌 {len(opp_df_s) if opp_df_s is not None else 0} / "
+                 f"超买 {len(opp_df_b) if opp_df_b is not None else 0}")
+            # 把机会榜 CSV 落盘，build_pages 可直接复用
+            if opp_df_s is not None and not opp_df_s.empty:
+                p = os.path.join(day_dir, f"opportunities_oversold_{today}.csv")
+                opp_df_s.to_csv(p, index=False, encoding="utf-8-sig")
+            if opp_df_b is not None and not opp_df_b.empty:
+                p = os.path.join(day_dir, f"opportunities_overbought_{today}.csv")
+                opp_df_b.to_csv(p, index=False, encoding="utf-8-sig")
+            wlog("步骤2.6完成")
+        except Exception as e:
+            wlog(f"步骤2.6失败(不影响主流程): {type(e).__name__}: {e}")
+
         wlog("步骤3: 生成 HTML 总结报告…")
         summ = strategy_summary.build_summary(metrics_csv, OUTPUT_DIR, "A股")
+        summ_html = summ["html"] if summ else ""
+        summ_md = summ["md"] if summ else ""
         if summ:
-            strategy_summary.write_root_summary("摘要-A股.md", summ["md"], today)
-        extra_html = temp_card + (summ["html"] if summ else "")
+            strategy_summary.write_root_summary("摘要-A股.md", summ_md, today)
+
+        # 顶部顺序: 温度卡 → 大盘宽度 → 板块温度 → 策略速览
+        top_html = temp_card + breadth_html + sector_html + summ_html
+        # 底部: 机会榜完整表（TOP30）+ 邮件速览精选 5 只卡片
+        bottom_html = picks_html + opp_html
+
+        extra_html = (top_html + bottom_html) or None
+        extra_md_parts = [p for p in [sector_md, breadth_md, summ_md, picks_md, opp_md] if p]
+        extra_md = ("\n\n".join(extra_md_parts)) if extra_md_parts else None
+
         html_path = generate_report.generate_report(
             metrics_csv, day_dir,
-            extra_html=extra_html or None,
-            extra_md=summ["md"] if summ else None)
+            extra_html=extra_html,
+            extra_md=extra_md)
         wlog(f"步骤3完成 -> {html_path}")
 
         wlog("步骤4: 生成个股股价走势图（含每日信号）…")
