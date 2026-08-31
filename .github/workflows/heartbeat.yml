@@ -1,0 +1,42 @@
+name: heartbeat
+
+on:
+  schedule:
+    # 独立于 daily-metrics 的兜底心跳：检查远端 main 上今日 DONE 标记，
+    # 缺失则通过 API 补触发一次 daily-metrics（DONE 防重保证不会重复跑）。
+    - cron: "35 10 * * 1-5"   # 北京时间 18:35
+    - cron: "0 12 * * 1-5"    # 北京时间 20:00
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-and-trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger daily-metrics if today not done
+        env:
+          TOKEN: ${{ secrets.HEARTBEAT_TOKEN }}
+          REPO: logic77lhl/daily-stock-metrics
+        run: |
+          TODAY=$(TZ=Asia/Shanghai date +%F)
+          MISSING=""
+          for d in output output_etf output_hk; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer $TOKEN" \
+              "https://api.github.com/repos/$REPO/contents/$d/$TODAY/DONE?ref=main")
+            [ "$code" = "200" ] || MISSING="$MISSING $d"
+          done
+          if [ -z "$MISSING" ]; then
+            echo "今日($TODAY)三个市场均已完成，心跳无需动作"
+            exit 0
+          fi
+          echo "缺少 DONE 标记:$MISSING，补触发 daily-metrics"
+          curl -s -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/actions/workflows/daily.yml/dispatches" \
+            -d '{"ref":"main"}'
+          echo "已发送 dispatch"
