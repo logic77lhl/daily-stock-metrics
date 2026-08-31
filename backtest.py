@@ -89,7 +89,8 @@ def load_metrics(output_dir, market="个股"):
     for path in sorted(glob.glob(os.path.join(output_dir, "????-??-??", "metrics_*.csv"))):
         date = os.path.basename(os.path.dirname(path))
         df = pd.read_csv(path, dtype={"代码": str})
-        df["代码"] = df["代码"].astype(str).str.zfill(6)
+        # 港股代码为 5 位（如 00700），zfill(6) 会拼成 hk000700 导致腾讯接口 501
+        df["代码"] = df["代码"].astype(str).str.zfill(5 if market == "HK" else 6)
         df["日期"] = pd.Timestamp(date)
         df["市场"] = market
         frames.append(df)
