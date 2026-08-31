@@ -2,8 +2,12 @@ name: daily-metrics
 
 on:
   schedule:
-    # UTC 08:30 = 北京时间 16:30
-    - cron: "30 8 * * 1-5"
+    # GitHub 的 schedule 是 best-effort，高峰期会延迟甚至漏触发。
+    # 多个冗余触发点 + 脚本内 DONE 标记防重：先到的跑，后到的自动跳过。
+    - cron: "30 8 * * 1-5"   # 北京时间 16:30
+    - cron: "0 9 * * 1-5"    # 北京时间 17:00
+    - cron: "30 9 * * 1-5"   # 北京时间 17:30
+    - cron: "0 11 * * 1-5"   # 北京时间 19:00
   workflow_dispatch:
 
 concurrency:
