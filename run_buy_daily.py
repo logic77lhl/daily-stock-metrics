@@ -105,6 +105,12 @@ def main():
         print(f"{today} 为周末，跳过买入参考")
         return 0
 
+    # 时间护栏：北京时间15:00前(含凌晨延迟触发)不生成，避免用前一日数据冒充当日
+    now_bj = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+    if now_bj.hour < 15:
+        print(f"北京时间 {now_bj:%H:%M} 早于15:00，当日收盘数据尚未生成，跳过买入参考")
+        return 0
+
     done_marker = os.path.join(BASE_DIR, "output", f"BUY_DONE_{today}")
     if os.path.exists(done_marker):
         print("买入参考今日已处理，跳过")

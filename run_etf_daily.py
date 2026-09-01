@@ -44,6 +44,12 @@ def main():
         print(f"{today} 为周末，收盘数据与周五一致，跳过本次运行")
         return 0
 
+    # 时间护栏：北京时间15:00前(含凌晨延迟触发)不生成报告，避免用前一日数据冒充当日
+    now_bj = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+    if now_bj.hour < 15:
+        print(f"北京时间 {now_bj:%H:%M} 早于15:00，当日收盘数据尚未生成，跳过本次运行")
+        return 0
+
     day_dir = os.path.join(OUTPUT_DIR, today)
     os.makedirs(day_dir, exist_ok=True)
 
