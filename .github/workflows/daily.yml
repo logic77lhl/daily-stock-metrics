@@ -89,6 +89,11 @@ jobs:
             echo "周末，跳过完成检查"
             exit 0
           fi
+          HOUR=$(TZ=Asia/Shanghai date +%H)
+          if [ "$HOUR" -lt 15 ]; then
+            echo "北京时间 ${HOUR} 点早于15:00，为延迟重复触发（当日任务尚未到执行窗口），跳过完成检查"
+            exit 0
+          fi
           TODAY=$(TZ=Asia/Shanghai date +%F)
           MISSING=""
           for d in output output_etf output_hk; do

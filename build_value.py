@@ -73,6 +73,13 @@ def load_market(today, label, list_dir, metrics_dir, list_prefix, mcap_col):
 
 def build(today=None):
     today = today or datetime.date.today().strftime("%Y-%m-%d")
+
+    # 时间护栏：北京时间15:00前(含凌晨延迟触发)当日数据尚未生成，直接跳过
+    now_bj = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+    if now_bj.hour < 15:
+        print(f"北京时间 {now_bj:%H:%M} 早于15:00，当日数据未生成，跳过价值筛选")
+        return None
+
     frames = [
         load_market(today, "A股", os.path.join(BASE_DIR, "output"),
                     os.path.join(BASE_DIR, "output"), "top100", "总市值"),
@@ -81,10 +88,11 @@ def build(today=None):
         load_market(today, "ETF", os.path.join(BASE_DIR, "output_etf"),
                     os.path.join(BASE_DIR, "output_etf"), "etf_list", "场内规模(亿)"),
     ]
-    df = pd.concat([f for f in frames if f is not None], ignore_index=True)
-    if df.empty:
+    parts = [f for f in frames if f is not None]
+    if not parts:
         print(f"{today} 无可用数据，跳过价值筛选")
         return None
+    df = pd.concat(parts, ignore_index=True)
 
     df = df[_num(df["市值(亿)"]) >= MIN_MKT_CAP].copy()
     df["PE_TTM"] = _num(df["PE_TTM"])
