@@ -190,8 +190,10 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # 容错 add：任一 pathspec 无匹配时不能让整个提交步骤失败
           git add -A -- output output_etf output_hk 2>/dev/null || true
+          # 用 if 而不是 `[ -e ] && git add`：后者在文件不存在时整条 AND-OR
+          # 列表返回非零，配合 set -e 会让步骤直接中断。
           for f in 摘要-*.md; do
-            [ -e "$f" ] && git add -- "$f"
+            if [ -e "$f" ]; then git add -- "$f"; fi
           done
           if git diff --cached --quiet; then
             echo "没有新的输出需要提交"
