@@ -4,6 +4,8 @@ import time
 import requests
 import pandas as pd
 
+import http_util
+
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
 
@@ -39,18 +41,23 @@ def fetch_top100(retries=12):
         "fields": "f12,f14,f2,f20,f21,f100,f6,f37,f41,f45,f46,f49",
     }
     last_err = None
+    deadline = http_util.DEFAULT_DEADLINE
     for i in range(retries):
         url = HOSTS[i % len(HOSTS)]
         try:
-            r = requests.get(url, params=params, headers=HEADERS, timeout=20)
-            r.raise_for_status()
-            data = r.json()["data"]["diff"]
-            return data
+            # diff_list 统一了 null / dict-map / list 三种形状；形状不可用会触发重试，
+            # 而不是把坏数据交给 DataFrame 组装阶段去崩。
+            return http_util.get_json(
+                requests, url, params=params, headers=HEADERS, retries=1,
+                accept=http_util.diff_list,
+            )
+        except http_util.DeadlineExceeded:
+            raise
         except Exception as e:
             last_err = e
             wait = min(2 ** i, 45)
             print(f"第 {i + 1} 次请求失败({url.split('//')[1].split('.')[0]}): {e}，{wait}s后重试")
-            time.sleep(wait)
+            deadline.sleep(wait, "fetch_top100 主机轮换")
     raise last_err
 
 

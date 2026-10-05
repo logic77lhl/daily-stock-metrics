@@ -18,6 +18,8 @@ import time
 import pandas as pd
 import requests
 
+import http_util
+
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
 elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -48,24 +50,32 @@ def get_session():
     return s
 
 
-def fetch_hk_list(session, retries=12):
+def fetch_hk_list(session, retries=4):
+    """港股通标的列表。
+
+    原来是 12 轮 × 4 主机（最坏约 48 次尝试 ≈ 24 分钟，可能吃掉整个 job 时限）；
+    现在 4 轮 × 4 主机，并由 Deadline 兜底 —— 接口长时间故障时快速失败，
+    交给 workflow 的重试步骤而不是在里面死等。
+    """
     last_err = None
+    deadline = http_util.DEFAULT_DEADLINE
     for i in range(retries):
         for host in HOSTS:
             try:
-                r = session.get(host, params={
-                    "pn": 1, "pz": 1000, "po": 1, "np": 1, "fltt": 2, "invt": 2,
-                    "fid": "f20", "fs": FS, "fields": FIELDS,
-                }, timeout=20)
-                r.raise_for_status()
-                d = r.json()
-                diff = (d.get("data") or {}).get("diff")
-                if diff:
-                    return diff
+                return http_util.get_json(
+                    session, host,
+                    params={
+                        "pn": 1, "pz": 1000, "po": 1, "np": 1, "fltt": 2, "invt": 2,
+                        "fid": "f20", "fs": FS, "fields": FIELDS,
+                    },
+                    retries=1, accept=http_util.diff_list,
+                )
+            except http_util.DeadlineExceeded:
+                raise
             except Exception as e:
                 last_err = e
-                time.sleep(0.5)
-        time.sleep(min(2 ** i, 30))
+                deadline.sleep(0.5, "fetch_hk 主机轮换")
+        deadline.sleep(min(2 ** i, 30), "fetch_hk 轮次退避")
     raise last_err
 
 

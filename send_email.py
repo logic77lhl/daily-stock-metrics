@@ -63,7 +63,8 @@ def send_report(html_path, subject=None, attach_html=True):
             att.add_header("Content-Disposition", "attachment", filename=os.path.basename(html_path))
             msg.attach(att)
 
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+        # timeout 必给：没有它，SMTP 握手/发送卡住会一直挂到 job 的 180 分钟上限
+        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=30) as server:
             server.login(SENDER_EMAIL, SENDER_AUTH_CODE)
             server.send_message(msg)
 

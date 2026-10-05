@@ -16,6 +16,8 @@ import pandas as pd
 
 import send_email
 import strategy_summary
+import fsutil
+import trading_calendar
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HIST_PATH = os.path.join(BASE_DIR, "output", "recommend_history.json")
@@ -100,9 +102,10 @@ def main():
     elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
         sys.stdout.reconfigure(encoding="utf-8")
 
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    if datetime.date.today().weekday() >= 5:
-        print(f"{today} 为周末，跳过买入参考")
+    today_date = trading_calendar.resolve()
+    today = today_date.strftime("%Y-%m-%d")
+    if not trading_calendar.is_trading_day(today_date, market="A"):
+        print(f"{today} 非交易日（{trading_calendar.reason(today_date, 'A')}），跳过买入参考")
         return 0
 
     # 时间护栏：北京时间15:00前(含凌晨延迟触发)不生成，避免用前一日数据冒充当日
@@ -142,21 +145,21 @@ def main():
     review_html, review_md = build_review(hist, today)
 
     html_path = os.path.join(BASE_DIR, "output", f"buylist_{today}.html")
-    with open(html_path, "w", encoding="utf-8") as f:
-        f.write("<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">"
-                "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
-                f"<title>今日买入参考 - {today}</title></head>"
-                "<body style=\"font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;"
-                "background:#f0f2f5;padding:12px;margin:0\">"
-                "<div style=\"max-width:720px;margin:0 auto\">"
-                + result["html"] + review_html + "</div></body></html>")
+    fsutil.atomic_write_text(
+        html_path,
+        "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+        f"<title>今日买入参考 - {today}</title></head>"
+        "<body style=\"font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;"
+        "background:#f0f2f5;padding:12px;margin:0\">"
+        "<div style=\"max-width:720px;margin:0 auto\">"
+        + result["html"] + review_html + "</div></body></html>")
     print(f"买入参考已生成({result['count']}只): {html_path}")
 
     # 供 build_pages.py 嵌入首页的片段（今日推荐 + 昨日回归）
     for fname, frag in (("buy_today.html", result["html"]), ("buy_review.html", review_html)):
         frag_path = os.path.join(BASE_DIR, "output", fname)
-        with open(frag_path, "w", encoding="utf-8") as f:
-            f.write(frag)
+        fsutil.atomic_write_text(frag_path, frag)
         print(f"片段已写入: {frag_path}")
 
     ok = send_email.send_report(html_path, subject=f"今日买入参考 TOP{result['count']} - {today}")
@@ -175,10 +178,9 @@ def main():
             if d >= (datetime.date.today() - datetime.timedelta(days=30)).strftime("%Y-%m-%d")}
     hist[today] = picks[-10:]
     try:
-        with open(HIST_PATH, "w", encoding="utf-8") as f:
-            json.dump(hist, f, ensure_ascii=False, indent=1)
-    except OSError:
-        pass
+        fsutil.atomic_write_json(HIST_PATH, hist, indent=1)
+    except OSError as exc:
+        print(f"[买入参考] 历史写入失败：{exc}")
 
     try:
         os.makedirs(os.path.dirname(done_marker), exist_ok=True)

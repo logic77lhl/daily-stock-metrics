@@ -8,3 +8,7 @@ docs/
 
 # 回测产物与 kline 缓存，每次重跑覆盖，不入库
 backtest_results/
+
+# 3.2MB 的单文件、每日重建，且不被 docs/ 站点引用（仅本地查看），不入库。
+# 由 prune_outputs.py 一次性从索引移除。
+/output/stock_charts.html

@@ -10,6 +10,7 @@ import os
 import pandas as pd
 
 import backtest
+import fsutil
 
 ROLLING_DAYS = 20   # 统计最近多少个信号日
 MIN_TRADES = 8      # 入选最少样本数
@@ -152,8 +153,8 @@ def write_root_summary(filename, md_text, date_str):
     """把摘要写到仓库根目录，方便在 GitHub 上直接预览。"""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
     content = f"# 每日摘要（{date_str}）\n\n{md_text}\n\n> 由每日任务自动更新\n"
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
+    # 这个文件会被提交进 git，中断留下半截就等于把一个坏文件推上去
+    fsutil.atomic_write_text(path, content)
     return path
 
 

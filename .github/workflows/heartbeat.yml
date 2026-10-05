@@ -16,27 +16,55 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # 需要 trading_calendar.py 判断「今天是否交易日」，所以必须 checkout
+      - uses: actions/checkout@v4
+
       - name: Trigger daily-metrics if today not done
         env:
           TOKEN: ${{ secrets.HEARTBEAT_TOKEN }}
           REPO: logic77lhl/daily-stock-metrics
         run: |
           TODAY=$(TZ=Asia/Shanghai date +%F)
+
+          # 交易日才需要动作：节假日不该因此补触发，也不该判失败
+          set +e
+          python3 trading_calendar.py check --date "$TODAY" --min-hour 15
+          CAL=$?
+          set -e
+          if [ "$CAL" = "3" ]; then
+            echo "今日非交易日或未到收盘时间，心跳无需动作"
+            exit 0
+          fi
+
           MISSING=""
           for d in output output_etf output_hk; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" \
+            code=$(curl -sS -o /dev/null -w "%{http_code}" \
               -H "Authorization: Bearer $TOKEN" \
               "https://api.github.com/repos/$REPO/contents/$d/$TODAY/DONE?ref=main")
-            [ "$code" = "200" ] || MISSING="$MISSING $d"
+            case "$code" in
+              200) ;;
+              404) MISSING="$MISSING $d" ;;   # 只有 404 才等于「确实缺失」
+              *) echo "::error::探测 $d/$TODAY/DONE 返回 HTTP $code（令牌权限或网络问题），\
+          心跳无法判断，失败退出"; exit 1 ;;
+            esac
           done
           if [ -z "$MISSING" ]; then
             echo "今日($TODAY)三个市场均已完成，心跳无需动作"
             exit 0
           fi
           echo "缺少 DONE 标记:$MISSING，补触发 daily-metrics"
-          curl -s -X POST \
+
+          # 必须校验返回码：原来不检查，403（令牌 scope 不足）也会打印「已发送」，
+          # 于是兜底机制静默失效而无人察觉。
+          resp=$(curl -sS -X POST -o /tmp/dispatch.json -w "%{http_code}" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
             "https://api.github.com/repos/$REPO/actions/workflows/daily.yml/dispatches" \
-            -d '{"ref":"main"}'
-          echo "已发送 dispatch"
+            -d '{"ref":"main"}')
+          if [ "$resp" != "204" ]; then
+            echo "::error::dispatch 失败 HTTP $resp"
+            cat /tmp/dispatch.json || true
+            exit 1
+          fi
+          echo "已发送 dispatch（HTTP 204）"

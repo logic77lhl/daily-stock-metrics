@@ -27,9 +27,33 @@
 - `output\2026-07-19\top100_2026-07-19.csv` — 市值前100
 - `output\2026-07-19\metrics_2026-07-19.csv` — 指标结果
 - `output\2026-07-19\run_2026-07-19.log` — 运行日志（逐条记录）
-- `output\2026-07-19\DONE` — 完成标记（当天已完成则跳过重跑）
+- `output\2026-07-19\DONE` — 完成标记。**内容即体检报告**（status/rows/success_ratio/fill），
+  只有数据质量门通过才会写入；工作流据此判断当天是否真的完成
 
 `metrics` 字段：排名、代码、名称、日线J、周线J、月线J、最新价、涨跌幅、PE_TTM、PE历史分位%、PB_MRQ、PB历史分位%、MA20、MA60、双均线多头、价距MA20%、量比、PE5年分位%、PB5年分位%、行业
+
+## 运维须知
+
+几个每天都会用到、但踩过坑才写下来的规则：
+
+- **交易日历**：`trading_calendar.py` 是「今天该不该跑」的**唯一**判断入口
+  （workflow、三个 runner、heartbeat 都调它）。它内置了 A 股法定节假日 ——
+  只判断周末是不够的：国庆/春节这类落在工作日的假期 A 股同样休市，会把
+  **上一交易日**的行情当成「今天」发布出去。年度表需要每年按上交所/深交所
+  休市公告更新一次（`A_SHARE_HOLIDAYS` / `HK_EXTRA_HOLIDAYS`，
+  港股通为两者并集）；未覆盖的年份会 fail-open 并按交易日放行 + 打告警。
+  本地验证假日分支：`DSM_CALENDAR_DATE=2026-10-05 python run_daily.py`。
+- **产物保留 30 个交易日**：`prune_outputs.py` 只保留最近 `DSM_KEEP_DAYS`（默认 30）
+  个交易日的目录与带日期的文件；裁剪用 `git rm`（同时删索引与工作区）。
+  `output/stock_charts.html`（3.2 MB、每日重建、站点不引用）已不再入库。
+- **等待预算**：各步骤通过 `DSM_DEADLINE_SEC` 限制最长等待，超出即抛
+  `DeadlineExceeded` → 不写 DONE → 由 workflow 的重试步骤补跑，
+  而不是在里面死等到 job 超时。
+- **heartbeat 的 PAT 权限**：`HEARTBEAT_TOKEN` 需要
+  `Contents: Read` + `Actions: Read and write`。权限不足时探测/补触发会
+  显式报错退出（早期版本会把 403 当成「缺失」，导致兜底机制静默失效）。
+- **候选池与页面体积**：首页体积约为 `1.1 KB × 候选池上限`，调大
+  `max_candidates` 时请一并留意仓库体积。
 
 ## 回测
 
@@ -45,7 +69,8 @@ python backtest.py --strategy "自定义=日线J<20 and MA20>MA60"
 
 ## 个股走势图
 
-`output\stock_charts.html` 汇总全部历史日期的指标，为每只股票生成一张图：
+`output\stock_charts.html` 汇总全部历史日期的指标，为每只股票生成一张图
+（**只在本地生成，不再提交进仓库** —— 单文件 3.2 MB 且每日重建）：
 
 - **y 轴**：每日最新价（股价走势线）
 - **x 轴**：日期

@@ -16,15 +16,22 @@ import os
 import re
 import socket
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 import requests
+
+import http_util
 
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
 elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
+
+# 并发抓 F10 页面时每个线程各持一个 Session
+_local = threading.local()
 
 HEADERS = {
     "User-Agent": (
@@ -161,27 +168,33 @@ def fetch_etf_list(top, retries=12):
         "fields": "f12,f14,f2,f3,f6,f20,f21",
     }
     last_err = None
+    deadline = http_util.DEFAULT_DEADLINE
     for i in range(retries):
         url = HOSTS[i % len(HOSTS)]
         try:
-            r = requests.get(url, params=params, headers=HEADERS, timeout=20)
-            r.raise_for_status()
-            data = r.json()["data"]["diff"]
+            data = http_util.get_json(
+                requests, url, params=params, headers=HEADERS, retries=1,
+                accept=http_util.diff_list,
+            )
             data.sort(key=lambda x: x.get("f20") or 0, reverse=True)
             return data[:top]
+        except http_util.DeadlineExceeded:
+            raise
         except Exception as e:
             last_err = e
             wait = min(2 ** i, 45)
             print(f"第 {i + 1} 次请求失败({url.split('//')[1].split('.')[0]}): {e}，{wait}s后重试")
-            time.sleep(wait)
+            deadline.sleep(wait, "fetch_etf 主机轮换")
     raise last_err
 
 
-def fetch_fund_basic(session, code, retries=3):
+def fetch_fund_basic(session, code, retries=2):
+    """抓 F10 基金概况页。timeout 收紧为 (连接, 读取)，避免滴流响应拖死单步。"""
     last_err = None
     for i in range(retries):
         try:
-            r = session.get(F10_TEMPLATE.format(code=code), headers=F10_HEADERS, timeout=15)
+            r = session.get(F10_TEMPLATE.format(code=code), headers=F10_HEADERS,
+                            timeout=(5, 10))
             r.raise_for_status()
             pat = re.compile(r"<th[^>]*>([^<]+)</th>\s*<td[^>]*>([^<]*)</td>")
             kv = {k.strip(): v.strip() for k, v in pat.findall(r.text)}
@@ -189,15 +202,25 @@ def fetch_fund_basic(session, code, retries=3):
         except Exception as e:
             last_err = e
             if i < retries - 1:
-                time.sleep(1 + i)
+                http_util.DEFAULT_DEADLINE.sleep(1 + i, "fetch_fund_basic 重试")
     return None, None, None
 
 
+def _thread_session():
+    session = getattr(_local, "session", None)
+    if session is None:
+        session = get_session()
+        _local.session = session
+    return session
+
+
 def build_dataframe(top=100, log_file=None):
-    raw_top = max(top * 3, 300)
+    # 为了按跟踪指数去重，要多取一些。原来取 3 倍（至少 300）——每多取一只就要多抓
+    # 一次 F10 页面，串行时最坏约 4 小时，单这一步就能吃光 job 的 180 分钟上限。
+    # 2 倍（至少 160）在去重后仍能取满 top，请求量少一半。
+    raw_top = max(top * 2, 160)
     print(f"获取ETF列表(先取规模前{raw_top}只, 按跟踪指数去重后取前{top}只)...")
     etf_list = fetch_etf_list(raw_top)
-    session = get_session()
 
     def wlog(msg):
         print(msg)
@@ -205,12 +228,19 @@ def build_dataframe(top=100, log_file=None):
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(msg + "\n")
 
+    # F10 页面并发抓取：纯只读 HTTP、各线程独立 Session、无共享可变状态，
+    # 因此并发是安全的；结果按输入顺序回填，后续排序逻辑不受影响。
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        basics = list(pool.map(
+            lambda item: fetch_fund_basic(_thread_session(), str(item["f12"])),
+            etf_list,
+        ))
+
     rows = []
-    for i, it in enumerate(etf_list, 1):
+    for i, (it, (track, ftype, full)) in enumerate(zip(etf_list, basics), 1):
         code = str(it["f12"])
         name = it["f14"]
         scale = (it.get("f20") or 0) / 1e8
-        track, ftype, full = fetch_fund_basic(session, code)
         theme = classify_theme(name, track)
         rows.append({
             "代码": code,
@@ -225,7 +255,10 @@ def build_dataframe(top=100, log_file=None):
             "主题": theme,
         })
         wlog(f"[{i:>3}] {code} {name}  规模={round(scale, 2)}亿  跟踪={track or '-'}  主题={theme}")
-        time.sleep(0.15)
+
+    if not rows:
+        # 宁可响亮失败，也不要写出一张空表让下游生成「全是 0 的报告」
+        raise ValueError("ETF 列表为空，无法生成数据")
 
     df = pd.DataFrame(rows)
     if "跟踪标的" in df.columns:

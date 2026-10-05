@@ -52,7 +52,12 @@ def html_escape(val):
 
 
 def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信号报告", extra_html=None, extra_md=None):
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"metrics CSV 不存在：{csv_path}")
     df = pd.read_csv(csv_path, dtype={"代码": str})
+    # 前置校验：空表或列缺失时宁可报错，也不要生成一份「全是 0 的漂亮报告」
+    if df.empty or len(df.columns) < 3:
+        raise ValueError(f"metrics CSV 为空或列缺失（{len(df)} 行 / {len(df.columns)} 列）：{csv_path}")
     today = os.path.basename(out_dir)
     has_yesterday = "昨日日线J" in df.columns
 

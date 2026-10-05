@@ -7,6 +7,7 @@
 
 import datetime
 import glob
+import html
 import os
 import re
 import shutil
@@ -21,7 +22,9 @@ MARKETS = [
 ]
 BT_SOURCES = [("个股", "a"), ("ETF", "etf"), ("HK", "hk")]
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-MAX_DAYS = 120
+# 归档页最多展示多少天。必须与 prune_outputs 的保留策略取同一个数，
+# 否则站点会宣称 120 天、链接却指向仓库里已经被裁掉的报告。
+MAX_DAYS = int(os.environ.get("DSM_KEEP_DAYS", "30"))
 WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
 # import 同级 market_insights（避免在 sys.path 未就绪时失败）
@@ -430,43 +433,45 @@ def build_strategy_summary(latest):
 
 
 def build_dashboard_ctx(latest):
-    """组装首页上下文：市场洞察 4 面板 + 摘要卡。任何一块失败都置空，不阻塞。"""
+    """组装首页上下文：市场洞察 4 面板 + 摘要卡。任何一块失败都置空，不阻塞。
+
+但**必须留下原因**（放进 ctx["warnings"]）：原来这里是裸 except: pass，
+于是「数据缺失 → 整块面板消失」在页面上毫无痕迹，只有翻源码才知道会这样。
+"""
     ctx = {"kpi_chips": "", "breadth": "", "sector": "", "oversold": "", "overbuy": "",
-           "strategy": "", "value": "", "backtest": ""}
-    if not latest or market_insights is None:
+           "strategy": "", "value": "", "backtest": "", "warnings": []}
+    if not latest:
+        ctx["warnings"].append("没有任何日期产物，首页洞察区全部为空")
+        return ctx
+    if market_insights is None:
+        ctx["warnings"].append("market_insights 模块导入失败，洞察区全部为空")
         return ctx
     m_csv, b_csv = _latest_a_paths(latest)
-    try:
-        ctx["kpi_chips"] = build_kpi_chips(latest)
-    except Exception:
-        pass
-    try:
-        ctx["breadth"] = market_insights.market_breadth_dashboard(
-            b_csv, m_csv, market="A").get("html", "")
-    except Exception:
-        pass
-    try:
-        ctx["sector"] = market_insights.sector_temperature(m_csv, market="A").get("html", "")
-    except Exception:
-        pass
-    try:
+
+    def collect(name, fn):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001
+            ctx["warnings"].append(f"{name} 缺失：{type(exc).__name__}: {exc}")
+            return ""
+
+    ctx["kpi_chips"] = collect("KPI 摘要带", lambda: build_kpi_chips(latest))
+    ctx["breadth"] = collect(
+        "大盘宽度", lambda: market_insights.market_breadth_dashboard(
+            b_csv, m_csv, market="A").get("html", ""))
+    ctx["sector"] = collect(
+        "板块温度", lambda: market_insights.sector_temperature(m_csv, market="A").get("html", ""))
+
+    def _opp():
         opp = market_insights.opportunity_board(m_csv, market="A", top_n=30)
         ctx["oversold"] = opp.get("oversold_html", "")
         ctx["overbuy"] = opp.get("overbought_html", "")
-    except Exception:
-        pass
-    try:
-        ctx["strategy"] = build_strategy_summary(latest)
-    except Exception:
-        pass
-    try:
-        ctx["value"] = build_value_summary(latest)
-    except Exception:
-        pass
-    try:
-        ctx["backtest"] = build_backtest_summary()
-    except Exception:
-        pass
+        return "ok"
+
+    collect("机会榜", _opp)
+    ctx["strategy"] = collect("策略速览", lambda: build_strategy_summary(latest))
+    ctx["value"] = collect("价值标的", lambda: build_value_summary(latest))
+    ctx["backtest"] = collect("回测摘要", lambda: build_backtest_summary())
     return ctx
 
 
@@ -683,6 +688,20 @@ def build_index(dates, extras, ctx):
         nav += '<a class="pill arch" href="archive.html">🗂 报告归档</a>'
     nav_html = f'<nav>{nav}</nav>' if nav else ""
 
+    # 缺块必须在页面上可见 —— 原来数据缺失只是「整块消失」，读者无从判断
+    # 是「今天没有」还是「抓取失败了」。
+    warnings = ctx.get("warnings") or []
+    banner_html = ""
+    if warnings:
+        items = "".join(f"<li>{html.escape(str(w))}</li>" for w in warnings)
+        banner_html = (
+            '<div class="banner" style="max-width:1200px;margin:12px auto;padding:10px 14px;'
+            'border:1px solid #f0c36d;background:#fff8e6;border-radius:8px;'
+            'font-size:13px;line-height:1.7">'
+            f'⚠️ 本次有 {len(warnings)} 个板块未能生成（数据缺失或抓取失败）：'
+            f'<ul style="margin:6px 0 0;padding-left:20px">{items}</ul></div>'
+        )
+
     # ---- 洞察区：大盘宽度（宽卡）+ 板块温度（宽卡）+ 超跌/超买双列 ----
     breadth_card = _insight_card("大盘宽度仪表盘", "📡",
                                   _strip_outer_div(ctx.get("breadth", "")), tone="value")
@@ -817,6 +836,7 @@ footer{{text-align:center;color:#98a1b3;font-size:11.5px;padding:16px 12px 28px;
 <span class="chip">🔄 每交易日收盘后自动更新</span>
 </div>
 {nav_html}
+{banner_html}
 </div></header>
 <main>
 <div class="kpi-row">{ctx.get("kpi_chips", "")}</div>
@@ -864,10 +884,23 @@ def main():
         extras.append("archive.html")
 
     ctx = build_dashboard_ctx(latest)
+    for warning in ctx.get("warnings", []):
+        # 让 workflow 日志里也能直接看到，而不是只有翻 HTML 才发现
+        print(f"::warning::站点缺块：{warning}")
     with open(os.path.join(DOCS_DIR, "index.html"), "w", encoding="utf-8") as f:
         f.write(build_index(dates, extras, ctx))
     n_reports = sum(len(k) for _, k in dates)
     print(f"站点已生成: {len(dates)} 天 / {n_reports} 份报告 + {len(extras)} 个附加页 -> {DOCS_DIR}")
+
+    # 返回值分级：最新一天三个市场的报告全缺 → 真的没东西可发布，判失败；
+    # 只缺子板块 → 通过（已在页面上用 banner 说明）。
+    if not dates:
+        print("::error::没有任何日期产物，站点无内容可发布")
+        return 1
+    latest_keys = dates[0][1]
+    if not any(key in latest_keys for _label, _src, key in MARKETS):
+        print(f"::error::{dates[0][0]} 三个市场的报告全部缺失")
+        return 1
     return 0
 
 

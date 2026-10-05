@@ -19,12 +19,17 @@ permissions:
   pages: write
   id-token: write
 
+env:
+  TZ: Asia/Shanghai
+  # 产物保留最近多少个交易日（prune_outputs.py 与 build_pages 共用同一数值，
+  # 避免「站点宣称 120 天、仓库里只剩 30 天」的错位）
+  DSM_KEEP_DAYS: "30"
+
 jobs:
   run-daily:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
-      TZ: Asia/Shanghai
       EMAIL_SOURCE_TAG: GitHub
       SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
       SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
@@ -33,6 +38,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 提交前要 git pull --rebase，浅克隆上会失败
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -43,52 +50,86 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Regression tests
+        run: python tests/test_calendar.py
+
+      # 交易日历是**唯一**的判断入口。shell 里原来各写一份 `date +%u` / `$HOUR < 15`，
+      # 三处都不知道「法定节假日 A 股也休市」，节假日会把上一交易日的数据
+      # 当成今天发布出去（今天 2026-10-05 国庆就是活例）。
+      - name: Trading-day check
+        id: calendar
+        run: |
+          TODAY=$(TZ=Asia/Shanghai date +%F)
+          set +e
+          python trading_calendar.py check --date "$TODAY" --min-hour 15
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo "proceed=true"  >> "$GITHUB_OUTPUT" ;;
+            3) echo "proceed=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "proceed=true"  >> "$GITHUB_OUTPUT"
+               echo "::warning::交易日历未覆盖 $TODAY，按交易日放行（请按交易所公告补充年度表）" ;;
+          esac
+
       - name: Run A股 daily
+        if: steps.calendar.outputs.proceed == 'true'
         continue-on-error: true
+        env:
+          DSM_DEADLINE_SEC: "2700"
         run: python run_daily.py
 
       - name: Run ETF daily
+        if: steps.calendar.outputs.proceed == 'true'
         continue-on-error: true
+        env:
+          DSM_DEADLINE_SEC: "2700"
         run: python run_etf_daily.py
 
       - name: Run 港股 daily
+        if: steps.calendar.outputs.proceed == 'true'
         continue-on-error: true
+        env:
+          DSM_DEADLINE_SEC: "1500"
         run: python run_hk_daily.py
 
       - name: Build buy list email
+        if: steps.calendar.outputs.proceed == 'true'
         continue-on-error: true
+        env:
+          DSM_DEADLINE_SEC: "600"
         run: python run_buy_daily.py
 
       - name: Run backtest
+        if: steps.calendar.outputs.proceed == 'true'
         continue-on-error: true
+        env:
+          DSM_DEADLINE_SEC: "600"
         run: python backtest.py
 
       - name: Build value screen
+        if: steps.calendar.outputs.proceed == 'true'
         continue-on-error: true
+        env:
+          DSM_DEADLINE_SEC: "600"
         run: python build_value.py
 
+      # 东财接口偶发短时故障(502/断连)会让某个市场整轮失败。
+      # 三个 runner 都有 DONE 防重 + 已生成文件跳过逻辑，重复执行是安全的。
+      # continue-on-error 必须加：if: always() 只保证「会被执行」，
+      # 不能保证它自己失败后后续步骤继续（原来就漏了这个，一旦 retry 非零退出，
+      # 后面全部被跳过，等于白修）。
       - name: Retry unfinished markets
-        if: always()
+        if: always() && steps.calendar.outputs.proceed == 'true'
+        continue-on-error: true
+        env:
+          DSM_DEADLINE_SEC: "1800"
         run: |
-          # 东财接口偶发短时故障(502/断连)会让某个市场整轮失败。
-          # 三个 runner 都有 DONE 防重 + 已生成文件跳过逻辑，重复执行是安全的。
-          # 放在 Build site 之前，补跑成功后站点与完成检查都能用上完整数据。
-          WEEKDAY=$(TZ=Asia/Shanghai date +%u)
-          if [ "$WEEKDAY" -gt 5 ]; then
-            echo "周末，跳过重试"
-            exit 0
-          fi
-          HOUR=$(TZ=Asia/Shanghai date +%H)
-          if [ "$HOUR" -lt 15 ]; then
-            echo "北京时间 ${HOUR} 点早于15:00，跳过重试"
-            exit 0
-          fi
           TODAY=$(TZ=Asia/Shanghai date +%F)
           for round in 1 2 3; do
             MISSING=""
             for pair in "output:run_daily.py" "output_etf:run_etf_daily.py" "output_hk:run_hk_daily.py"; do
               d="${pair%%:*}"; s="${pair##*:}"
-              if [ ! -s "$d/$TODAY/DONE" ]; then
+              if ! python quality.py check "$d/$TODAY/DONE"; then
                 MISSING="$MISSING $d"
                 echo "第 $round 轮重试 $s ..."
                 python "$s" || true
@@ -102,52 +143,100 @@ jobs:
             [ "$round" = "3" ] || sleep 180
           done
 
+      # 裁剪要在 Build site 之前：站点按最终存在的目录生成归档页，
+      # 否则 docs 里会有指向「已被裁掉的报告」的死链。
+      - name: Prune outputs
+        if: always()
+        run: python prune_outputs.py
+
       - name: Build site
         if: always()
+        env:
+          DSM_DEADLINE_SEC: "300"
         run: python build_pages.py
 
+      # 完成检查只产出结论，不在这里退出：真正的红/绿由最后的 gate 决定，
+      # 这样「已成功市场的产出先提交」与「整体判红」不再互斥。
+      - name: Check daily completion
+        id: completion
+        if: always()
+        run: |
+          TODAY=$(TZ=Asia/Shanghai date +%F)
+          if [ "${{ steps.calendar.outputs.proceed }}" != "true" ]; then
+            echo "非交易日，跳过完成检查"
+            echo "complete=n/a" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          MISSING=""
+          for d in output output_etf output_hk; do
+            if ! python quality.py check "$d/$TODAY/DONE"; then
+              MISSING="$MISSING $d"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::以下市场未完成或数据不达标(缺有效 DONE):$MISSING"
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "全部市场任务均已完成"
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 无论是否完整都提交已成功的产出：原来 Check 步骤先 exit 1，
+      # 于是「一个市场失败」被放大成「当天全部产物丢失」，远端永远缺这一天。
+      - name: Commit outputs
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 容错 add：任一 pathspec 无匹配时不能让整个提交步骤失败
+          git add -A -- output output_etf output_hk 2>/dev/null || true
+          for f in 摘要-*.md; do
+            [ -e "$f" ] && git add -- "$f"
+          done
+          if git diff --cached --quiet; then
+            echo "没有新的输出需要提交"
+            exit 0
+          fi
+          git commit -m "daily results $(TZ=Asia/Shanghai date +%F)"
+          # 手动补跑可能与定时任务或 heartbeat 补触发重叠，push 前先 rebase
+          for i in 1 2 3; do
+            if git pull --rebase --autostash --quiet origin main && git push --quiet; then
+              echo "提交成功（第 $i 次尝试）"
+              exit 0
+            fi
+            echo "push 失败，5s 后重试（$i/3）"
+            sleep 5
+          done
+          echo "::error::push 连续失败，请检查分支保护或并发提交"
+          exit 1
+
+      # 不完整的站点不发布 —— 保留上一次已部署的版本，而不是把缺数据的页面推上去
       - name: Setup Pages
+        if: always() && steps.completion.outputs.complete == 'true'
         uses: actions/configure-pages@v5
 
       - name: Upload site
+        if: always() && steps.completion.outputs.complete == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs
 
       - name: Deploy to GitHub Pages
+        if: always() && steps.completion.outputs.complete == 'true'
         uses: actions/deploy-pages@v4
 
-      - name: Check daily completion
+      # 唯一的红/绿裁决点。瞬时抖动 → Retry 补跑成功 → DONE 有效 → 绿；
+      # 真正的代码缺陷 → 重试也失败 → 这里红。
+      - name: Enforce completion gate
+        if: always()
         run: |
-          WEEKDAY=$(TZ=Asia/Shanghai date +%u)
-          if [ "$WEEKDAY" -gt 5 ]; then
-            echo "周末，跳过完成检查"
+          if [ "${{ steps.completion.outputs.complete }}" = "true" ]; then
+            echo "全部市场完成，通过"
             exit 0
           fi
-          HOUR=$(TZ=Asia/Shanghai date +%H)
-          if [ "$HOUR" -lt 15 ]; then
-            echo "北京时间 ${HOUR} 点早于15:00，为延迟重复触发（当日任务尚未到执行窗口），跳过完成检查"
+          if [ "${{ steps.calendar.outputs.proceed }}" != "true" ]; then
+            echo "非交易日，跳过完成门"
             exit 0
           fi
-          TODAY=$(TZ=Asia/Shanghai date +%F)
-          MISSING=""
-          for d in output output_etf output_hk; do
-            [ -s "$d/$TODAY/DONE" ] || MISSING="$MISSING $d"
-          done
-          if [ -n "$MISSING" ]; then
-            echo "::error::以下市场未完成(缺少 DONE 标记):$MISSING"
-            exit 1
-          fi
-          echo "全部市场任务均已完成"
-
-      - name: Commit outputs
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add output output_etf output_hk "摘要-*.md"
-          if git diff --cached --quiet; then
-            echo "没有新的输出需要提交"
-          else
-            git commit -m "daily results $(date +%Y-%m-%d)"
-            git push
-          fi
+          echo "::error::有市场未完成：已提交部分产出，但本轮整体判失败"
+          exit 1

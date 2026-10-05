@@ -10,6 +10,8 @@ import os
 
 import pandas as pd
 
+import fsutil
+
 KEEP_DAYS = 365
 
 
@@ -43,10 +45,11 @@ def merge(path, list_df, today):
         pool[code] = ent
     pool = _prune(pool, today)
     try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(pool, f, ensure_ascii=False)
-    except OSError:
-        pass
+        # 原子写：观察池是跨天累积的状态，写到一半被中断会丢失整池历史
+        fsutil.atomic_write_json(path, pool)
+    except OSError as exc:
+        # 原来这里是裸 pass，写失败被完全吞掉 —— 意味着明天的追踪池会静默缩水
+        print(f"[观察池] 写入失败（{path}）：{exc}")
     return pool
 
 

@@ -22,6 +22,8 @@ import generate_report
 import send_email
 import stock_pool
 import strategy_summary
+import quality
+import trading_calendar
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output_hk")
@@ -38,19 +40,22 @@ def main():
     elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
         sys.stdout.reconfigure(encoding="utf-8")
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    today_date = trading_calendar.resolve()
+    today = today_date.strftime("%Y-%m-%d")
 
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    if datetime.date.today().weekday() >= 5:
-        print(f"{today} 为周末，收盘数据与周五一致，跳过本次运行")
+    # 港股通用 market="HK"：港股通要求内地与香港**同时**开市，
+    # 所以它的休市日 = A股休市日 ∪ 香港额外假期。方向是「宁可不跑，
+    # 不拿隔夜数据冒充当日」。
+    if not trading_calendar.is_trading_day(today_date, market="HK"):
+        print(f"{today} 非交易日（{trading_calendar.reason(today_date, 'HK')}），"
+              f"收盘数据与上一交易日一致，跳过本次运行")
         return 0
-
-    # 时间护栏：北京时间15:00前(含凌晨延迟触发)不生成报告，避免用前一日数据冒充当日
     now_bj = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
     if now_bj.hour < 15:
         print(f"北京时间 {now_bj:%H:%M} 早于15:00，当日收盘数据尚未生成，跳过本次运行")
         return 0
 
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     day_dir = os.path.join(OUTPUT_DIR, today)
     os.makedirs(day_dir, exist_ok=True)
 
@@ -84,8 +89,11 @@ def main():
         tracked_csv, pool_size, added = stock_pool.build_tracked_csv(
             OUTPUT_DIR, day_dir, hk_csv, today)
         wlog(f"观察池: 共{pool_size}只(含历史追踪{added}只)")
-        fetch_metrics.run(in_csv=tracked_csv, out_csv=metrics_csv, log_file=log_file, market="HK")
-        wlog(f"步骤2完成 -> {metrics_csv}")
+        mstats = fetch_metrics.run(in_csv=tracked_csv, out_csv=metrics_csv, log_file=log_file,
+                                   market="HK",
+                                   fail_log=os.path.join(day_dir, f"failed_{today}.csv"))
+        wlog(f"步骤2完成 -> {metrics_csv}（成功 {mstats['ok']}/{mstats['expected']}，"
+             f"失败 {mstats['failed']}）")
 
         wlog("步骤3: 生成 HTML 总结报告...")
         summ = strategy_summary.build_summary(metrics_csv, OUTPUT_DIR, "港股通")
@@ -101,8 +109,12 @@ def main():
         ok = send_email.send_report(html_path, subject=f"港股通 KDJ 多周期信号报告 - {today}")
         wlog(f"步骤4完成: {'邮件已发送' if ok else '邮件发送失败(请检查 email_config.py 配置)'}")
 
-        with open(done_marker, "w", encoding="utf-8") as f:
-            f.write(time.strftime("%Y-%m-%d %H:%M:%S"))
+        # 质量门是写 DONE 的唯一出口
+        report = quality.assess(metrics_csv, mstats["expected"], mstats)
+        if not report.ok:
+            wlog(f"数据质量门未通过：{report.checks}")
+            return quality.fail(day_dir, "港股通", report)
+        quality.succeed(day_dir, "港股通", today, report)
         wlog(f"===== 全部完成 {today} =====")
         return 0
     except Exception as e:

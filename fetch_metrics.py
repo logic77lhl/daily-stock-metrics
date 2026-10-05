@@ -8,6 +8,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import pandas as pd
 
+import fsutil
+import http_util
+
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
 
@@ -110,23 +113,15 @@ def secucode(code):
 
 
 def request_json(session, url, params, retries=6, base_wait=1):
-    last = None
-    for i in range(retries):
-        try:
-            r = session.get(url, params=params, timeout=15)
-            r.raise_for_status()
-            return r.json()
-        except requests.HTTPError as e:
-            if e.response is not None and e.response.status_code in (501, 502, 503, 504):
-                raise
-            last = e
-            if i < retries - 1:
-                time.sleep(min(base_wait * (2 ** i), 4))
-        except Exception as e:
-            last = e
-            if i < retries - 1:
-                time.sleep(min(base_wait * (2 ** i), 4))
-    raise last
+    """统一走 http_util：5xx/429/网络异常都会退避重试。
+
+    这里原来是手写循环，并显式对 501/502/503/504 直接 raise —— 也就是说
+    「5xx 不重试、429 反而重试」，与期望策略完全相反，重试参数形同虚设。
+    """
+    return http_util.get_json(
+        session, url, params=params, retries=retries, base_wait=base_wait,
+        cap_wait=4.0, timeout=(5, 15),
+    )
 
 
 def fetch_kline(session, code, period, bars=800, market="A"):
@@ -293,7 +288,28 @@ def _amount_of(row, col_names):
     return None
 
 
-def _process_one(row, market, col_names, out_csv, log_file, write_lock):
+def _note_failure(code, name, exc, fail_log, lock):
+    """把失败明细单独记一份，便于事后定位（而不是留一行全空的数据）。"""
+    if not fail_log:
+        return
+    try:
+        if lock:
+            lock.acquire()
+        try:
+            write_header = not os.path.exists(fail_log) or os.path.getsize(fail_log) == 0
+            pd.DataFrame([{
+                "代码": code, "名称": name, "原因": f"{type(exc).__name__}: {exc}",
+            }]).to_csv(fail_log, mode="a", header=write_header, index=False,
+                       encoding="utf-8-sig")
+        finally:
+            if lock:
+                lock.release()
+    except Exception:
+        pass
+
+
+def _process_one(row, market, col_names, out_csv, log_file, write_lock,
+                 fail_log=None, fail_lock=None):
     session = thread_session()
     code = str(row["代码"]) if market == "HK" else str(row["代码"]).zfill(6)
     name = row["名称"]
@@ -307,7 +323,6 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock):
 
     rank_raw = row.get("排名")
     rank_tag = f"{int(rank_raw):>3}" if pd.notna(rank_raw) else " ---"
-    written = False
 
     try:
         daily_df = None
@@ -358,8 +373,13 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock):
                 rec["PB_MRQ"] = pb
                 rec["PB历史分位%"] = pb_pct
 
+        # 质量判定：三个周期的 J 和最新价全空，等于这一行没有任何信息量。
+        # 原来这种情况会照写一行「全 None」，让下游生成一份漂亮但空洞的报告。
+        if (rec["日线J"] is None and rec["周线J"] is None
+                and rec["月线J"] is None and rec["最新价"] is None):
+            raise ValueError("三个周期的 K 线与最新价均未取到（无有效数据）")
+
         append_record(rec, out_csv, lock=write_lock)
-        written = True
         close_str = f" 价={rec['最新价']} 涨={rec['涨跌幅']}%" if rec['最新价'] is not None else ""
         ma_str = f" MA20={rec['MA20']} MA60={rec['MA60']} 多头={rec['双均线多头']}"
         log(f"[{rank_tag}] {code} {name}  完成  "
@@ -367,8 +387,8 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock):
             f"PE={rec['PE_TTM']}({rec['PE历史分位%']}%) PB={rec['PB_MRQ']}({rec['PB历史分位%']}%)", log_file)
         return True
     except Exception as e:
-        if not written:
-            append_record(rec, out_csv, lock=write_lock)
+        # 失败**不写**占位行（原来会写一行全 None），只记到失败明细里。
+        _note_failure(code, name, e, fail_log, fail_lock)
         log(f"[{rank_tag}] {code} {name}  失败: {e}", log_file)
         return False
 
@@ -380,13 +400,20 @@ def sort_output_by_rank(out_csv):
         df = pd.read_csv(out_csv, dtype={"代码": str})
         if "排名" in df.columns and len(df) > 1:
             df = df.sort_values("排名").drop_duplicates(subset=["代码"], keep="last")
-            df.to_csv(out_csv, index=False, encoding="utf-8-sig")
+            # 原子替换：中断不会留下未排序的半截 CSV
+            fsutil.atomic_write_bytes(out_csv, df.to_csv(index=False).encode("utf-8-sig"))
     except Exception as e:
         print(f"排序输出失败(不影响结果): {e}")
 
 
-def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FILE, market="A", workers=8):
+def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FILE,
+        market="A", workers=8, fail_log=None):
+    """抓取指标。返回结构化统计供 runner 做质量门，而不是只返回路径。"""
+    if not os.path.exists(in_csv):
+        raise FileNotFoundError(f"输入列表不存在：{in_csv}")
     top = pd.read_csv(in_csv, dtype={"代码": str})
+    if top.empty:
+        raise ValueError(f"输入列表为空（只有表头）：{in_csv}")
 
     done = load_done_codes(out_csv, market)
     if done:
@@ -396,19 +423,43 @@ def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FIL
             if (str(row["代码"]) if market == "HK" else str(row["代码"]).zfill(6)) not in done]
     col_names = list(top.columns)
 
+    n_ok = 0
+    n_failed = 0
     if todo:
         write_lock = threading.Lock()
+        fail_lock = threading.Lock()
         max_workers = max(1, min(workers, len(todo)))
         log(f"待处理 {len(todo)} 条，并发数 {max_workers}", log_file)
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futures = [ex.submit(_process_one, row, market, col_names, out_csv, log_file, write_lock)
+            futures = [ex.submit(_process_one, row, market, col_names, out_csv,
+                                 log_file, write_lock, fail_log, fail_lock)
                        for row in todo]
             for f in as_completed(futures):
-                f.result()
+                try:
+                    ok = f.result()
+                except Exception as e:  # 理论上 _process_one 已兜住，这里再保一层
+                    log(f"  任务异常: {type(e).__name__}: {e}", log_file)
+                    ok = False
+                if ok:
+                    n_ok += 1
+                else:
+                    n_failed += 1
 
     sort_output_by_rank(out_csv)
-    log(f"全部完成，结果已写入 {out_csv}", log_file)
-    return out_csv
+
+    expected = len(top)
+    stats = {
+        "out_csv": out_csv,
+        "expected": expected,
+        "processed": len(todo),
+        "skipped_done": len(done),
+        "ok": len(done) + n_ok,
+        "failed": n_failed,
+        "fail_log": fail_log,
+    }
+    stats["success_ratio"] = round(stats["ok"] / max(expected, 1), 4)
+    log(f"全部完成：成功 {stats['ok']}/{expected}，失败 {n_failed}，结果已写入 {out_csv}", log_file)
+    return stats
 
 
 if __name__ == "__main__":

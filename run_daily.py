@@ -13,6 +13,8 @@ import send_email
 import stock_pool
 import strategy_summary
 import run_buy_daily
+import quality
+import trading_calendar
 
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
@@ -28,19 +30,22 @@ def already_done(marker):
 
 
 def main():
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    today_date = trading_calendar.resolve()
+    today = today_date.strftime("%Y-%m-%d")
 
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    if datetime.date.today().weekday() >= 5:
-        print(f"{today} 为周末，收盘数据与周五一致，跳过本次运行")
+    # 时间/交易日护栏必须在**建目录之前**：否则假日会留下一个空的 output/日期/
+    # 目录，而且下游的「缺 DONE」检查会把它当成一次失败的执行。
+    # 非交易日直接返回：不建目录、不生成报告、不写 DONE。
+    if not trading_calendar.is_trading_day(today_date, market="A"):
+        print(f"{today} 非交易日（{trading_calendar.reason(today_date, 'A')}），"
+              f"收盘数据与上一交易日一致，跳过本次运行")
         return 0
-
-    # 时间护栏：北京时间15:00前(含凌晨延迟触发)不生成报告，避免用前一日数据冒充当日
     now_bj = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
     if now_bj.hour < 15:
         print(f"北京时间 {now_bj:%H:%M} 早于15:00，当日收盘数据尚未生成，跳过本次运行")
         return 0
 
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     day_dir = os.path.join(OUTPUT_DIR, today)
     os.makedirs(day_dir, exist_ok=True)
 
@@ -73,8 +78,10 @@ def main():
         tracked_csv, pool_size, added = stock_pool.build_tracked_csv(
             OUTPUT_DIR, day_dir, top_csv, today)
         wlog(f"观察池: 共{pool_size}只(含历史追踪{added}只) -> {tracked_csv}")
-        fetch_metrics.run(in_csv=tracked_csv, out_csv=metrics_csv, log_file=log_file)
-        wlog(f"步骤2完成 -> {metrics_csv}")
+        mstats = fetch_metrics.run(in_csv=tracked_csv, out_csv=metrics_csv, log_file=log_file,
+                                  fail_log=os.path.join(day_dir, f"failed_{today}.csv"))
+        wlog(f"步骤2完成 -> {metrics_csv}（成功 {mstats['ok']}/{mstats['expected']}，"
+             f"失败 {mstats['failed']}）")
 
         temp_card = ""
         market_breadth_csv = os.path.join(day_dir, f"market_breadth_{today}.csv")
@@ -163,8 +170,14 @@ def main():
         ok = send_email.send_report(html_path)
         wlog(f"步骤5完成: {'邮件已发送' if ok else '邮件发送失败(请检查 email_config.py 配置)'}")
 
-        with open(done_marker, "w", encoding="utf-8") as f:
-            f.write(time.strftime("%Y-%m-%d %H:%M:%S"))
+        # 质量门是写 DONE 的唯一出口：数据不达标就绝不写标记，
+        # 于是工作流判为「未完成」，可以靠重试步骤挽救，而不是盖个章说成功。
+        report = quality.assess(metrics_csv, mstats["expected"], mstats)
+        if not report.ok:
+            wlog(f"数据质量门未通过：{report.checks}")
+            return quality.fail(day_dir, "A股", report)
+        quality.succeed(day_dir, "A股", today, report,
+                        extra={"stats_success_ratio": f"{mstats['success_ratio']:.4f}"})
         wlog(f"===== 全部完成 {today} =====")
         return 0
     except Exception as e:

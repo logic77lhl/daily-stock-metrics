@@ -5,6 +5,8 @@ import datetime
 import requests
 import pandas as pd
 
+import http_util
+
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
 
@@ -70,15 +72,21 @@ def _request_page(pn, pz=500):
         "fid": "f20", "fs": FS, "fields": FIELDS,
     }
     last_err = None
+    deadline = http_util.DEFAULT_DEADLINE
     for i in range(6):
         url = HOSTS[i % len(HOSTS)]
         try:
-            r = requests.get(url, params=params, headers=HEADERS, timeout=20)
-            r.raise_for_status()
-            return r.json()["data"]
+            # data_object 会校验 data 是对象；原来 data:null 时返回 None，
+            # 随后的 .get() 抛 AttributeError 被上层静默吞掉（站点少一整块）。
+            return http_util.get_json(
+                requests, url, params=params, headers=HEADERS, retries=1,
+                accept=http_util.data_object,
+            )
+        except http_util.DeadlineExceeded:
+            raise
         except Exception as e:
             last_err = e
-            time.sleep(min(1 << i, 8))
+            deadline.sleep(min(1 << i, 8), "fetch_market_breadth 分页重试")
     raise last_err
 
 
@@ -86,21 +94,17 @@ def fetch_all():
     rows = []
     first = _request_page(1)
     total = first.get("total", 0) or 0
-    diff = first.get("diff") or []
-    if isinstance(diff, dict):
-        diff = list(diff.values())
+    diff = http_util.normalize_diff(first.get("diff"))
     rows.extend(diff)
     pn = 2
     while len(rows) < total:
         data = _request_page(pn)
-        diff = data.get("diff") or []
-        if isinstance(diff, dict):
-            diff = list(diff.values())
+        diff = http_util.normalize_diff(data.get("diff"))
         if not diff:
             break
         rows.extend(diff)
         pn += 1
-        time.sleep(0.15)
+        http_util.DEFAULT_DEADLINE.sleep(0.15, "fetch_market_breadth 翻页")
     return rows
 
 
