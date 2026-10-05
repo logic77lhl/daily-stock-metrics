@@ -148,7 +148,7 @@ def classify_theme(name, track_index):
     return "其他"
 
 
-def fetch_etf_list(top, retries=8):
+def fetch_etf_list(top, retries=12):
     params = {
         "pn": 1,
         "pz": 100,
@@ -171,7 +171,7 @@ def fetch_etf_list(top, retries=8):
             return data[:top]
         except Exception as e:
             last_err = e
-            wait = min(2 ** i, 30)
+            wait = min(2 ** i, 45)
             print(f"第 {i + 1} 次请求失败({url.split('//')[1].split('.')[0]}): {e}，{wait}s后重试")
             time.sleep(wait)
     raise last_err

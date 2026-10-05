@@ -26,7 +26,7 @@ HOSTS = [
 ]
 
 
-def fetch_top100(retries=8):
+def fetch_top100(retries=12):
     params = {
         "pn": 1,
         "pz": 100,
@@ -48,7 +48,7 @@ def fetch_top100(retries=8):
             return data
         except Exception as e:
             last_err = e
-            wait = min(2 ** i, 30)
+            wait = min(2 ** i, 45)
             print(f"第 {i + 1} 次请求失败({url.split('//')[1].split('.')[0]}): {e}，{wait}s后重试")
             time.sleep(wait)
     raise last_err

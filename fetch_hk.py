@@ -48,7 +48,7 @@ def get_session():
     return s
 
 
-def fetch_hk_list(session, retries=8):
+def fetch_hk_list(session, retries=12):
     last_err = None
     for i in range(retries):
         for host in HOSTS:
@@ -65,6 +65,7 @@ def fetch_hk_list(session, retries=8):
             except Exception as e:
                 last_err = e
                 time.sleep(0.5)
+        time.sleep(min(2 ** i, 30))
     raise last_err
 
 

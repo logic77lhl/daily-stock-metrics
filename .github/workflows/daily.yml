@@ -67,6 +67,41 @@ jobs:
         continue-on-error: true
         run: python build_value.py
 
+      - name: Retry unfinished markets
+        if: always()
+        run: |
+          # 东财接口偶发短时故障(502/断连)会让某个市场整轮失败。
+          # 三个 runner 都有 DONE 防重 + 已生成文件跳过逻辑，重复执行是安全的。
+          # 放在 Build site 之前，补跑成功后站点与完成检查都能用上完整数据。
+          WEEKDAY=$(TZ=Asia/Shanghai date +%u)
+          if [ "$WEEKDAY" -gt 5 ]; then
+            echo "周末，跳过重试"
+            exit 0
+          fi
+          HOUR=$(TZ=Asia/Shanghai date +%H)
+          if [ "$HOUR" -lt 15 ]; then
+            echo "北京时间 ${HOUR} 点早于15:00，跳过重试"
+            exit 0
+          fi
+          TODAY=$(TZ=Asia/Shanghai date +%F)
+          for round in 1 2 3; do
+            MISSING=""
+            for pair in "output:run_daily.py" "output_etf:run_etf_daily.py" "output_hk:run_hk_daily.py"; do
+              d="${pair%%:*}"; s="${pair##*:}"
+              if [ ! -s "$d/$TODAY/DONE" ]; then
+                MISSING="$MISSING $d"
+                echo "第 $round 轮重试 $s ..."
+                python "$s" || true
+              fi
+            done
+            if [ -z "$MISSING" ]; then
+              echo "全部市场任务均已完成"
+              exit 0
+            fi
+            echo "第 $round 轮重试后仍缺:$MISSING"
+            [ "$round" = "3" ] || sleep 180
+          done
+
       - name: Build site
         if: always()
         run: python build_pages.py
