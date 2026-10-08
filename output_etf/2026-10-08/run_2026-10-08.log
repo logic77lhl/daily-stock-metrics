@@ -1,0 +1,3 @@
+2026-10-08 23:53:04  ===== 开始每日ETF指标任务 2026-10-08 =====
+2026-10-08 23:53:04  步骤1: 获取场内规模前100的ETF...
+2026-10-08 23:58:57  任务失败: ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
