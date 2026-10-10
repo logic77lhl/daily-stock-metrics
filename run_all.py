@@ -67,16 +67,21 @@ STEPS: tuple[Step, ...] = (
     Step("A股", ("run_daily.py",), 2700, True, group=1),
     Step("ETF", ("run_etf_daily.py",), 2700, True, group=1),
     Step("港股", ("run_hk_daily.py",), 1500, True, group=1),
-    # ── 第 2 组：串行 ────────────────────────────────────────────────
+    # ── 第 2 组：发信 / 回测 / 价值标的（写的文件不相交，可并行）──────────
     # 三个市场都写完之后再发信：合成一封，且只收录 DONE 有效（=质量门通过）的市场。
-    # 放在回测/价值/建站之前，是为了让数据一到就发出去，不必等建站。
+    # 邮件读 DONE + metrics CSV、写 report_*.html 与 digest_*.html；
+    # 回测读 metrics CSV、写 backtest_results/；价值标的读 metrics CSV、写 value_*.html。
     Step("合并摘要邮件", ("send_digest.py",), 300, True, group=2),
     Step("回测", ("backtest.py",), 900, True, group=2),
     Step("价值标的", ("build_value.py",), 600, True, group=2),
-    # 裁剪必须在建站之前：站点按最终存在的目录生成归档页，
-    # 否则 docs 里会有指向「已被裁掉的报告」的死链。
-    Step("裁剪产物", ("prune_outputs.py",), 300, False, group=2),
-    Step("构建站点", ("build_pages.py",), 300, False, group=2),
+    # ── 第 3 组：裁剪（必须独占）───────────────────────────────────────
+    # 裁剪会 `git rm` 掉过期日期目录，而**建站按最终存在的目录生成归档页** ——
+    # 两者并行就会产出指向「已被裁掉的报告」的死链。
+    # 这不是假设：第一版把它们放进同一组并行跑，靠回测恰好先完成才没暴露。
+    Step("裁剪产物", ("prune_outputs.py",), 300, False, group=3),
+    # ── 第 4 组：建站（必须最后，且必须独占）─────────────────────────────
+    # 它读回测/价值标的刚写下的产物（collect_extras）与裁剪后的目录结构。
+    Step("构建站点", ("build_pages.py",), 300, False, group=4),
 )
 
 # 只有它失败会让整个入口返回非零（见模块 docstring）。

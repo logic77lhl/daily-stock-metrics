@@ -748,6 +748,48 @@ def test_fetch_metrics_writes_shared_prices() -> None:
         shutil.rmtree(root, ignore_errors=True)
 
 
+def test_pipeline_groups_preserve_ordering_invariants() -> None:
+    """run_all.py 的并行分组不许破坏几条**静默失败**的顺序不变式。
+
+    并行是为了速度（三个市场 49s → 28s），但流水线里存在真实的先后依赖，
+    而它们失败时都不报错：
+
+      * 裁剪会 `git rm` 过期日期目录，建站按最终目录生成归档页 ——
+        两者并行会产出指向已删报告的死链；
+      * 建站读回测/价值标的刚写下的产物（`collect_extras`）——
+        并行会让站点少掉回测页，而**靠时序碰巧**才可能看不出来；
+      * 合并摘要邮件只收录 DONE 有效的市场，所以必须晚于三个市场。
+
+    这不是假想：第一版把第 2~5 步放进同一组并行跑，靠回测恰好先完成才没暴露。
+    """
+    import run_all
+
+    groups = {s.name: s.group for s in run_all.STEPS}
+    names = [s.name for s in run_all.STEPS]
+
+    # 三个市场在同一组（并行），且是最早的一组
+    assert groups["A股"] == groups["ETF"] == groups["港股"], groups
+    assert groups["A股"] == min(groups.values()), "三个市场应当是最先执行的一组"
+
+    # 邮件/回测/价值标的晚于三个市场
+    for m in ("A股", "ETF", "港股"):
+        for later in ("合并摘要邮件", "回测", "价值标的"):
+            assert groups[m] < groups[later], f"{m} 必须先于 {later}"
+
+    # 裁剪必须早于建站（且不在同一组）
+    assert groups["裁剪产物"] < groups["构建站点"], "裁剪与建站不能并行"
+
+    # 建站必须独占最后一组，且回测/价值标的严格早于它
+    last = max(groups.values())
+    assert [n for n in names if groups[n] == last] == ["构建站点"], \
+        f"最后一组只能有「构建站点」，实际 {[n for n in names if groups[n] == last]}"
+    for dep in ("回测", "价值标的", "裁剪产物"):
+        assert groups[dep] < groups["构建站点"], f"{dep} 必须先于建站"
+
+    print(f"  [PASS] 流水线分组保持顺序不变式（{len(set(groups.values()))} 组；"
+          f"并行组：{ {g: [n for n in names if groups[n] == g] for g in sorted(set(groups.values()))} }）")
+
+
 def main() -> int:
     print("降级链路端到端自检")
     print("=" * 58)
@@ -765,6 +807,7 @@ def main() -> int:
     test_price_source_block_fails_fast()
     test_price_cache_removes_backtest_refetching()
     test_fetch_metrics_writes_shared_prices()
+    test_pipeline_groups_preserve_ordering_invariants()
     print("=" * 58)
     print("全部通过")
     return 0
