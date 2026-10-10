@@ -1,7 +1,6 @@
 import os
 import sys
-import time
-import requests
+
 import pandas as pd
 
 import http_util
@@ -10,10 +9,6 @@ if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    ),
     "Referer": "https://quote.eastmoney.com/",
 }
 
@@ -27,8 +22,28 @@ HOSTS = [
     "https://1.push2.eastmoney.com/api/qt/clist/get",
 ]
 
+_SESSION = None
 
-def fetch_top100(retries=12):
+
+def get_session():
+    """复用的 Session。
+
+    原来这里把 requests **模块**当 Session 传（`get_json(requests, ...)`），
+    而 `requests.get()` 内部是 `with sessions.Session() as session:` ——
+    每次重试都新建连接、重做 TLS 握手，连接池完全失效。
+    """
+    global _SESSION
+    if _SESSION is None:
+        _SESSION = http_util.make_session(HEADERS)
+    return _SESSION
+
+
+# 主机级封锁（整批 RemoteDisconnected）对退避重试免疫，所以这里用带退役机制的池：
+# 快速失败，把重试机会留给 workflow 的重试步骤和下一个 cron（不同时刻才有意义）。
+POOL = http_util.HostPool(HOSTS, label="fetch_top100", retire_after=2)
+
+
+def fetch_top100(rounds=2, note=None):
     params = {
         "pn": 1,
         "pz": 100,
@@ -40,29 +55,14 @@ def fetch_top100(retries=12):
         "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048",
         "fields": "f12,f14,f2,f20,f21,f100,f6,f37,f41,f45,f46,f49",
     }
-    last_err = None
-    deadline = http_util.DEFAULT_DEADLINE
-    for i in range(retries):
-        url = HOSTS[i % len(HOSTS)]
-        try:
-            # diff_list 统一了 null / dict-map / list 三种形状；形状不可用会触发重试，
-            # 而不是把坏数据交给 DataFrame 组装阶段去崩。
-            return http_util.get_json(
-                requests, url, params=params, headers=HEADERS, retries=1,
-                accept=http_util.diff_list,
-            )
-        except http_util.DeadlineExceeded:
-            raise
-        except Exception as e:
-            last_err = e
-            wait = min(2 ** i, 45)
-            print(f"第 {i + 1} 次请求失败({url.split('//')[1].split('.')[0]}): {e}，{wait}s后重试")
-            deadline.sleep(wait, "fetch_top100 主机轮换")
-    raise last_err
+    # diff_list 统一了 null / dict-map / list 三种形状；形状不可用会触发重试，
+    # 而不是把坏数据交给 DataFrame 组装阶段去崩。
+    return POOL.fetch(get_session(), params=params, accept=http_util.diff_list,
+                      rounds=rounds, note=note)
 
 
-def build_dataframe():
-    data = fetch_top100()
+def build_dataframe(note=None):
+    data = fetch_top100(note=note)
     rows = []
     for item in data:
         rows.append({
@@ -85,8 +85,8 @@ def build_dataframe():
     return df
 
 
-def run(out_path=None):
-    df = build_dataframe()
+def run(out_path=None, note=None):
+    df = build_dataframe(note=note)
     if out_path is None:
         out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "top100.csv")
     df.to_csv(out_path, index=False, encoding="utf-8-sig")

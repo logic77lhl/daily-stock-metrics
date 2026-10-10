@@ -17,11 +17,9 @@ import re
 import socket
 import sys
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
-import requests
 
 import http_util
 
@@ -78,12 +76,27 @@ def _detect_proxy():
 
 
 def get_session():
-    s = requests.Session()
-    s.headers.update(HEADERS)
+    """复用的 Session（含浏览器指纹头与连接池）。"""
+    return http_util.make_session(HEADERS, proxies=_proxy_dict())
+
+
+def _proxy_dict():
     p = _detect_proxy()
-    if p:
-        s.proxies.update({"http": p, "https": p})
-    return s
+    return {"http": p, "https": p} if p else None
+
+
+def _num(value, default=0.0):
+    """把东财字段安全转成 float。
+
+    停牌/无数据的行会返回字符串 `"-"`。原来的
+    `data.sort(key=lambda x: x.get("f20") or 0)` 对 `"-"` 得到的是 `"-"` 本身
+    （非空字符串是 truthy），于是 str 与 float 比较直接 TypeError。
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return default if number != number else number  # NaN 兜底
 
 
 THEME_RULES = [
@@ -155,7 +168,10 @@ def classify_theme(name, track_index):
     return "其他"
 
 
-def fetch_etf_list(top, retries=12):
+POOL = http_util.HostPool(HOSTS, label="fetch_etf", retire_after=2)
+
+
+def fetch_etf_list(top, rounds=2, note=None):
     params = {
         "pn": 1,
         "pz": 100,
@@ -167,25 +183,11 @@ def fetch_etf_list(top, retries=12):
         "fs": "b:MK0021",
         "fields": "f12,f14,f2,f3,f6,f20,f21",
     }
-    last_err = None
-    deadline = http_util.DEFAULT_DEADLINE
-    for i in range(retries):
-        url = HOSTS[i % len(HOSTS)]
-        try:
-            data = http_util.get_json(
-                requests, url, params=params, headers=HEADERS, retries=1,
-                accept=http_util.diff_list,
-            )
-            data.sort(key=lambda x: x.get("f20") or 0, reverse=True)
-            return data[:top]
-        except http_util.DeadlineExceeded:
-            raise
-        except Exception as e:
-            last_err = e
-            wait = min(2 ** i, 45)
-            print(f"第 {i + 1} 次请求失败({url.split('//')[1].split('.')[0]}): {e}，{wait}s后重试")
-            deadline.sleep(wait, "fetch_etf 主机轮换")
-    raise last_err
+    data = POOL.fetch(get_session(), params=params, accept=http_util.diff_list,
+                      rounds=rounds, note=note)
+    # 用 _num：停牌行返回 "-"，原来的 `or 0` 会把字符串留在 key 里导致 TypeError
+    data.sort(key=lambda x: _num(x.get("f20")), reverse=True)
+    return data[:top]
 
 
 def fetch_fund_basic(session, code, retries=2):
@@ -214,13 +216,13 @@ def _thread_session():
     return session
 
 
-def build_dataframe(top=100, log_file=None):
+def build_dataframe(top=100, log_file=None, note=None):
     # 为了按跟踪指数去重，要多取一些。原来取 3 倍（至少 300）——每多取一只就要多抓
     # 一次 F10 页面，串行时最坏约 4 小时，单这一步就能吃光 job 的 180 分钟上限。
     # 2 倍（至少 160）在去重后仍能取满 top，请求量少一半。
     raw_top = max(top * 2, 160)
     print(f"获取ETF列表(先取规模前{raw_top}只, 按跟踪指数去重后取前{top}只)...")
-    etf_list = fetch_etf_list(raw_top)
+    etf_list = fetch_etf_list(raw_top, note=note)
 
     def wlog(msg):
         print(msg)
@@ -278,10 +280,10 @@ def build_dataframe(top=100, log_file=None):
     return df
 
 
-def run(top=100, out_path=None, log_file=None):
+def run(top=100, out_path=None, log_file=None, note=None):
     if out_path is None:
         out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "etf_top100.csv")
-    df = build_dataframe(top=top, log_file=log_file)
+    df = build_dataframe(top=top, log_file=log_file, note=note)
     df.to_csv(out_path, index=False, encoding="utf-8-sig")
     print(f"已导出 {len(df)} 条ETF数据到 {out_path}")
     return out_path

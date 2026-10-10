@@ -1,8 +1,6 @@
 import os
 import sys
-import time
 import datetime
-import requests
 import pandas as pd
 
 import http_util
@@ -14,10 +12,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    ),
     "Referer": "https://quote.eastmoney.com/",
 }
 
@@ -27,6 +21,23 @@ HOSTS = [
     "https://push2.eastmoney.com/api/qt/clist/get",
     "https://1.push2.eastmoney.com/api/qt/clist/get",
 ]
+
+_SESSION = None
+
+
+def get_session():
+    """复用的 Session（原来这里传的是 requests 模块，连接池完全失效）。"""
+    global _SESSION
+    if _SESSION is None:
+        _SESSION = http_util.make_session(HEADERS)
+    return _SESSION
+
+
+POOL = http_util.HostPool(HOSTS, label="fetch_market_breadth", retire_after=2)
+
+# 页数上限：全 A 股约 5400 只 / 500 = 11 页。旧实现是 `while len(rows) < total`
+# 且没有上限 —— 一旦 total 被接口报成离谱的值，就会一直翻页直到烧光等待预算。
+MAX_PAGES = 40
 
 # 全 A 股（深主板 + 创业板 + 沪主板 + 科创板 + 北交所）
 FS = "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048"
@@ -66,46 +77,47 @@ def _temp_band(t):
     return "过热"
 
 
-def _request_page(pn, pz=500):
+def _request_page(pn, pz=500, note=None):
     params = {
         "pn": pn, "pz": pz, "po": 1, "np": 1, "fltt": 2, "invt": 2,
         "fid": "f20", "fs": FS, "fields": FIELDS,
     }
-    last_err = None
-    deadline = http_util.DEFAULT_DEADLINE
-    for i in range(6):
-        url = HOSTS[i % len(HOSTS)]
-        try:
-            # data_object 会校验 data 是对象；原来 data:null 时返回 None，
-            # 随后的 .get() 抛 AttributeError 被上层静默吞掉（站点少一整块）。
-            return http_util.get_json(
-                requests, url, params=params, headers=HEADERS, retries=1,
-                accept=http_util.data_object,
-            )
-        except http_util.DeadlineExceeded:
-            raise
-        except Exception as e:
-            last_err = e
-            deadline.sleep(min(1 << i, 8), "fetch_market_breadth 分页重试")
-    raise last_err
+    # data_object 会校验 data 是对象；原来 data:null 时返回 None，
+    # 随后的 .get() 抛 AttributeError 被上层静默吞掉（站点少一整块）。
+    return POOL.fetch(get_session(), params=params,
+                      accept=http_util.data_object, rounds=2, note=note)
 
 
-def fetch_all():
-    rows = []
-    first = _request_page(1)
+def fetch_all(note=None):
+    """翻页取全市场行情。
+
+    必须按代码去重：`fid=f20` 是按市值排序，而市值在翻页期间会变动，
+    同一只股票可能出现在两页里。旧实现 `rows.extend(diff)` 是裸追加，
+    重复行会让 `成交额` 被重复累加、温度系统性偏高。
+    同时把「声称 total / 实取 N」记下来 —— 旧实现在 `if not diff: break`
+    处静默截断，缺了一半数据也没人知道。
+    """
+    seen: dict[str, dict] = {}
+    first = _request_page(1, note=note)
     total = first.get("total", 0) or 0
-    diff = http_util.normalize_diff(first.get("diff"))
-    rows.extend(diff)
+    for item in http_util.normalize_diff(first.get("diff")):
+        seen[str(item.get("f12"))] = item
+
     pn = 2
-    while len(rows) < total:
-        data = _request_page(pn)
+    while len(seen) < total and pn <= MAX_PAGES:
+        data = _request_page(pn, note=note)
         diff = http_util.normalize_diff(data.get("diff"))
         if not diff:
             break
-        rows.extend(diff)
+        for item in diff:
+            seen.setdefault(str(item.get("f12")), item)
         pn += 1
         http_util.DEFAULT_DEADLINE.sleep(0.15, "fetch_market_breadth 翻页")
-    return rows
+
+    if total and len(seen) < total * 0.9:
+        print(f"::warning::大盘温度：接口声称 {total} 只，实际只取到 {len(seen)} 只"
+              f"（翻页 {pn - 1} 页），温度与涨跌停统计可能失真")
+    return list(seen.values())
 
 
 def _num(x):

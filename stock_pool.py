@@ -90,3 +90,33 @@ def build_tracked_csv(out_dir, day_dir, list_csv, today, prefix="tracked"):
     out_csv = os.path.join(day_dir, f"{prefix}_{today}.csv")
     tracked.to_csv(out_csv, index=False, encoding="utf-8-sig")
     return out_csv, len(pool), len(tracked) - len(list_df)
+
+
+def list_from_pool(out_dir, out_path, today, prefix="top100"):
+    """列表接口不可用时的降级路径：把观察池写成一份「今日名单」。
+
+    为什么可以接受这种降级：观察池按 KEEP_DAYS(365 天) 滚动追踪每一个曾进入过
+    Top100 的标的，成分日间变化极小；**指标本身仍然逐只重新抓取**，所以降级
+    只影响「今天谁算 Top100」，不影响任何一行指标。
+
+    而它要解决的问题是真实且昂贵的：东财对云厂商出口 IP 会整批 RST ——
+    实测 4 个主机、12 次重试全部 `RemoteDisconnected`，导致 A股/ETF/港股
+    三个市场连续 8 个交易日整轮失败、整天数据全丢。降级把「全丢」变成
+    「名单可能滞后一天，指标照旧」。
+
+    池为空时仍然抛错：首次运行没有历史可降级，必须真的连通接口。
+    """
+    pool = load(pool_path(out_dir))
+    if not pool:
+        raise RuntimeError("观察池为空，无法降级；首次运行必须能连通东财列表接口")
+    rows = [
+        {"代码": code, "名称": ent.get("名称", ""), "_最近": str(ent.get("最近", ""))}
+        for code, ent in pool.items()
+    ]
+    df = pd.DataFrame(rows).sort_values(["_最近", "代码"], ascending=[False, True])
+    df = df.drop(columns=["_最近"]).reset_index(drop=True)
+    df.insert(0, "排名", range(1, len(df) + 1))
+    if out_path is None:
+        raise ValueError("list_from_pool 需要显式 out_path")
+    df.to_csv(out_path, index=False, encoding="utf-8-sig")
+    return out_path, len(df)

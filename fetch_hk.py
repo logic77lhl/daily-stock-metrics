@@ -13,10 +13,8 @@
 import argparse
 import os
 import sys
-import time
 
 import pandas as pd
-import requests
 
 import http_util
 
@@ -26,10 +24,6 @@ elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    ),
     "Referer": "https://quote.eastmoney.com/",
 }
 
@@ -44,42 +38,45 @@ FS = "b:MK0144"
 FIELDS = "f12,f14,f2,f3,f9,f20,f23,f6,f37,f41,f45,f46,f49"
 
 
+def _num(value):
+    """把东财字段安全转成 float；停牌行返回的是字符串 "-"。
+
+    必须归一化：`fetch_metrics` 对 `PE_TTM` 做 `float(...)`，拿到 "-" 会抛
+    ValueError，而那个异常在 `_process_one` 里是**整只股票**级别的失败 ——
+    一只停牌股的 PE 缺失会把它的全部指标一起丢掉。
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if number != number else number
+
+
 def get_session():
-    s = requests.Session()
-    s.headers.update(HEADERS)
-    return s
+    """复用的 Session（含浏览器指纹头与连接池）。"""
+    return http_util.make_session(HEADERS)
 
 
-def fetch_hk_list(session, retries=4):
+POOL = http_util.HostPool(HOSTS, label="fetch_hk", retire_after=2)
+
+
+def fetch_hk_list(session, rounds=2, note=None):
     """港股通标的列表。
 
-    原来是 12 轮 × 4 主机（最坏约 48 次尝试 ≈ 24 分钟，可能吃掉整个 job 时限）；
-    现在 4 轮 × 4 主机，并由 Deadline 兜底 —— 接口长时间故障时快速失败，
-    交给 workflow 的重试步骤而不是在里面死等。
+    原来是「12 轮 × 4 主机」（最坏约 48 次尝试）或「4 轮 × 4 主机 + 14s sleep」，
+    与 A股/ETF 那套 12 次 + 289s sleep 的参数相差 9 倍 —— 同一故障、同一分钟，
+    放弃时间却完全不同，说明参数是拍出来的而不是按故障形态设计的。
+    现在统一走 HostPool：主机级封锁下快速失败，把重试交给 workflow 与下一个 cron。
     """
-    last_err = None
-    deadline = http_util.DEFAULT_DEADLINE
-    for i in range(retries):
-        for host in HOSTS:
-            try:
-                return http_util.get_json(
-                    session, host,
-                    params={
-                        "pn": 1, "pz": 1000, "po": 1, "np": 1, "fltt": 2, "invt": 2,
-                        "fid": "f20", "fs": FS, "fields": FIELDS,
-                    },
-                    retries=1, accept=http_util.diff_list,
-                )
-            except http_util.DeadlineExceeded:
-                raise
-            except Exception as e:
-                last_err = e
-                deadline.sleep(0.5, "fetch_hk 主机轮换")
-        deadline.sleep(min(2 ** i, 30), "fetch_hk 轮次退避")
-    raise last_err
+    return POOL.fetch(
+        session,
+        params={"pn": 1, "pz": 1000, "po": 1, "np": 1, "fltt": 2, "invt": 2,
+                "fid": "f20", "fs": FS, "fields": FIELDS},
+        accept=http_util.diff_list, rounds=rounds, note=note,
+    )
 
 
-def build_dataframe(top=100, log_file=None):
+def build_dataframe(top=100, log_file=None, note=None):
     def wlog(msg):
         print(msg)
         if log_file:
@@ -88,28 +85,35 @@ def build_dataframe(top=100, log_file=None):
 
     session = get_session()
     wlog(f"获取港股通标的列表(共取市值前 {top} 只)...")
-    raw = fetch_hk_list(session)
+    raw = fetch_hk_list(session, note=note)
     wlog(f"接口返回 {len(raw)} 只港股通标的")
 
     rows = []
     for i, it in enumerate(raw, 1):
-        code = str(it["f12"])
-        name = it["f14"]
+        code = str(it.get("f12", "")).strip()
+        name = it.get("f14")
+        if not code:
+            wlog(f"[{i:>3}] 跳过无代码的行: {it.get('f14')}")
+            continue
         rows.append({
             "代码": code,
             "名称": name,
-            "最新价": it.get("f2"),
-            "涨跌幅%": it.get("f3"),
-            "总市值(亿港元)": round((it.get("f20") or 0) / 1e8, 2),
-            "成交额(亿港元)": round((it.get("f6") or 0) / 1e8, 2),
-            "PE_TTM": it.get("f9"),
-            "PB_MRQ": it.get("f23"),
-            "ROE%": it.get("f37"),
-            "营收同比%": it.get("f41"),
-            "净利润(亿)": round(it["f45"] / 1e8, 2) if isinstance(it.get("f45"), (int, float)) else None,
-            "净利同比%": it.get("f46"),
-            "毛利率%": it.get("f49"),
+            "最新价": _num(it.get("f2")),
+            "涨跌幅%": _num(it.get("f3")),
+            "总市值(亿港元)": round((_num(it.get("f20")) or 0) / 1e8, 2),
+            "成交额(亿港元)": round((_num(it.get("f6")) or 0) / 1e8, 2),
+            "PE_TTM": _num(it.get("f9")),
+            "PB_MRQ": _num(it.get("f23")),
+            "ROE%": _num(it.get("f37")),
+            "营收同比%": _num(it.get("f41")),
+            "净利润(亿)": (round(_num(it.get("f45")) / 1e8, 2)
+                           if _num(it.get("f45")) is not None else None),
+            "净利同比%": _num(it.get("f46")),
+            "毛利率%": _num(it.get("f49")),
         })
+
+    if not rows:
+        raise ValueError("港股通列表为空，无法生成数据")
 
     df = pd.DataFrame(rows).sort_values("总市值(亿港元)", ascending=False)
     df = df.head(top).reset_index(drop=True)
@@ -117,10 +121,10 @@ def build_dataframe(top=100, log_file=None):
     return df
 
 
-def run(top=100, out_path=None, log_file=None):
+def run(top=100, out_path=None, log_file=None, note=None):
     if out_path is None:
         out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hk_top100.csv")
-    df = build_dataframe(top=top, log_file=log_file)
+    df = build_dataframe(top=top, log_file=log_file, note=note)
     df.to_csv(out_path, index=False, encoding="utf-8-sig")
     print(f"已导出 {len(df)} 条港股通数据到 {out_path}")
     return out_path

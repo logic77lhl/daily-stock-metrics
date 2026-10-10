@@ -21,6 +21,11 @@ DEFAULT_LOG_FILE = os.path.join(BASE_DIR, "progress.log")
 
 FIELDS = [
     "排名", "代码", "名称",
+    # 这一行的指标实际取自哪一根 K 线。质量门用它比对「目标交易日」：
+    # 2026-10-02 那次就是把 09-30 的收盘价当成 10-02 发布了出去（国庆休市，
+    # 但旧版 workflow 不知道，照样跑完并写了 DONE）。有了这一列，
+    # 「抓到的不是那一天」会直接让质量门失败，而不是静默污染归档。
+    "数据日期",
     "日线J", "周线J", "月线J",
     "昨日日线J", "昨日周线J", "昨日月线J",
     "最新价", "涨跌幅",
@@ -48,6 +53,10 @@ VALUE_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 
 TX_PERIOD = {"daily": "day", "weekly": "week", "monthly": "month"}
 _PROXY = None
+
+# 全局 K 线请求节流。8 线程 × 每标的 3 个周期，不节流约 50 次/秒 ——
+# 实测会把腾讯打到限流，随后整批标的失败（见 fetch_kline 的说明）。
+KLINE_LIMITER = http_util.RateLimiter(http_util.request_interval())
 
 FIVE_YEARS_BARS = 1210
 
@@ -124,38 +133,60 @@ def request_json(session, url, params, retries=6, base_wait=1):
     )
 
 
-def fetch_kline(session, code, period, bars=800, market="A"):
+def _kline_rows(klines):
+    rows = []
+    for item in klines:
+        try:
+            vol = float(item[5])
+        except (IndexError, TypeError, ValueError):
+            vol = None
+        rows.append({
+            "date": item[0],
+            "close": float(item[2]),
+            "high": float(item[3]),
+            "low": float(item[4]),
+            "volume": vol,
+        })
+    return rows
+
+
+def fetch_kline(session, code, period, bars=800, market="A", attempts=3):
+    """取前复权 K 线。
+
+    三处修正（都是实测踩出来的）：
+
+    1. **全局限流**。原来只有每线程 `sleep(0.15)`，8 线程合起来约 50 次/秒，
+       会把腾讯打到限流（响应变成非 JSON）。实测一次 113 只的全灭就是这样来的：
+       `501/JSONDecodeError` 之后每只标的在两个 host 上接连失败。
+    2. **真的重试**。原来 `request_json(..., retries=1)` 加一个不 sleep 的双 host
+       循环 —— 两个 host 打完就抛，等于没有重试。限流是**暂时性**的，必须退避。
+    3. **`raise last_err` 可能抛 `None`**：两个 host 都返回合法 JSON 但没有 K 线时
+       `last_err` 仍是 `None`，`raise None` 会变成
+       `TypeError: exceptions must derive from BaseException`，把真实原因盖掉。
+    """
     sym = tx_symbol(code, market)
     per = TX_PERIOD[period]
     params = {"param": f"{sym},{per},,,{bars},qfq"}
     last_err = None
-    for host in TX_HOSTS:
+    for attempt in range(attempts):
+        KLINE_LIMITER.wait()
+        host = TX_HOSTS[attempt % len(TX_HOSTS)]
         try:
-            j = request_json(session, host, params, retries=1)
-            node = j.get("data", {}).get(sym)
-            if not node:
-                continue
-            key = f"qfq{per}" if f"qfq{per}" in node else per
-            klines = node.get(key)
-            if not klines:
-                continue
-            rows = []
-            for item in klines:
-                try:
-                    vol = float(item[5])
-                except (IndexError, TypeError, ValueError):
-                    vol = None
-                rows.append({
-                    "date": item[0],
-                    "close": float(item[2]),
-                    "high": float(item[3]),
-                    "low": float(item[4]),
-                    "volume": vol,
-                })
-            return pd.DataFrame(rows)
-        except Exception as e:
-            last_err = e
-    raise last_err
+            payload = request_json(session, host, params, retries=2)
+        except Exception as exc:
+            last_err = exc
+        else:
+            node = payload.get("data") if isinstance(payload, dict) else None
+            node = node.get(sym) if isinstance(node, dict) else None
+            if isinstance(node, dict):
+                key = f"qfq{per}" if f"qfq{per}" in node else per
+                klines = node.get(key)
+                if klines:
+                    return pd.DataFrame(_kline_rows(klines))
+            last_err = ValueError(f"{sym} {period} 响应中没有 K 线数据")
+        if attempt < attempts - 1:
+            http_util.DEFAULT_DEADLINE.sleep(min(2 ** attempt, 8), f"{sym} K线退避")
+    raise last_err if last_err is not None else RuntimeError(f"{sym} {period} K线获取失败")
 
 
 def kdj_j(df, n=9, m1=3, m2=3):
@@ -192,10 +223,15 @@ def volume_ratio(df, n=5):
     return round(float(vol.iloc[-1] / base), 2)
 
 
-def fetch_valuation(session, code):
+def fetch_valuation(session, code, columns="TRADE_DATE,PE_TTM,PB_MRQ"):
+    """东财估值历史序列。
+
+    columns 可加 `TOTAL_MARKET_CAP` —— 回填需要它来重建「当日真实市值前 100」
+    （该接口返回完整历史，所以历史市值是可得的，不必用今天的排名冒充历史排名）。
+    """
     params = {
         "reportName": "RPT_VALUEANALYSIS_DET",
-        "columns": "TRADE_DATE,PE_TTM,PB_MRQ",
+        "columns": columns,
         "filter": f'(SECUCODE="{secucode(code)}")',
         "pageSize": "6000",
         "sortColumns": "TRADE_DATE",
@@ -336,6 +372,8 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock,
                 if period == "daily":
                     daily_df = df
                     rec["最新价"] = round(float(df["close"].iloc[-1]), 2)
+                    # 记录实际取到的最后一根 K 线日期（腾讯返回 ISO 日期串）
+                    rec["数据日期"] = str(df["date"].iloc[-1])[:10]
                     if len(df) >= 2:
                         pct = (df["close"].iloc[-1] - df["close"].iloc[-2]) / df["close"].iloc[-2] * 100
                         rec["涨跌幅"] = round(float(pct), 2)
@@ -385,12 +423,13 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock,
         log(f"[{rank_tag}] {code} {name}  完成  "
             f"日J={rec['日线J']} 周J={rec['周线J']} 月J={rec['月线J']}{ma_str}{close_str}  "
             f"PE={rec['PE_TTM']}({rec['PE历史分位%']}%) PB={rec['PB_MRQ']}({rec['PB历史分位%']}%)", log_file)
-        return True
+        # 返回实际数据日期（truthy）而不是 True：runner 需要它做完整性校验
+        return rec["数据日期"] or True
     except Exception as e:
         # 失败**不写**占位行（原来会写一行全 None），只记到失败明细里。
         _note_failure(code, name, e, fail_log, fail_lock)
         log(f"[{rank_tag}] {code} {name}  失败: {e}", log_file)
-        return False
+        return None
 
 
 def sort_output_by_rank(out_csv):
@@ -425,6 +464,7 @@ def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FIL
 
     n_ok = 0
     n_failed = 0
+    bar_dates: dict[str, int] = {}
     if todo:
         write_lock = threading.Lock()
         fail_lock = threading.Lock()
@@ -436,16 +476,37 @@ def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FIL
                        for row in todo]
             for f in as_completed(futures):
                 try:
-                    ok = f.result()
+                    bar = f.result()
                 except Exception as e:  # 理论上 _process_one 已兜住，这里再保一层
                     log(f"  任务异常: {type(e).__name__}: {e}", log_file)
-                    ok = False
-                if ok:
+                    bar = None
+                if bar:
                     n_ok += 1
+                    if isinstance(bar, str):
+                        bar_dates[bar] = bar_dates.get(bar, 0) + 1
                 else:
                     n_failed += 1
 
     sort_output_by_rank(out_csv)
+
+    # 续跑时 todo 为空，bar_dates 会是空的 —— 从落盘 CSV 的「数据日期」列回读，
+    # 让「数据日期」校验在续跑路径上同样生效（否则续跑等于绕过了完整性检查）。
+    if not bar_dates and os.path.exists(out_csv):
+        try:
+            landed = pd.read_csv(out_csv, dtype={"代码": str})
+            if "数据日期" in landed.columns:
+                counts = landed["数据日期"].dropna().astype(str).value_counts()
+                bar_dates = {str(k): int(v) for k, v in counts.items()}
+        except Exception as e:
+            print(f"回读「数据日期」失败（不影响主流程）：{e}")
+
+    # 全军覆没时给出自解释的错误，而不是让下游在「CSV 不存在」上崩掉
+    # （实测 113 只全失败后，步骤 3 抛的是 FileNotFoundError，真实原因被盖住）
+    if n_ok == 0 and not done:
+        raise RuntimeError(
+            f"所有 {expected} 只标的的指标都抓取失败（成功 0）——"
+            f"通常是数据源限流或网络封锁，请查看失败明细 {fail_log}"
+        )
 
     expected = len(top)
     stats = {
@@ -456,9 +517,13 @@ def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FIL
         "ok": len(done) + n_ok,
         "failed": n_failed,
         "fail_log": fail_log,
+        # 实际数据日期分布 + 众数：质量门用它比对目标交易日
+        "bar_dates": dict(sorted(bar_dates.items(), key=lambda kv: -kv[1])),
+        "bar_date": max(bar_dates, key=bar_dates.get) if bar_dates else None,
     }
     stats["success_ratio"] = round(stats["ok"] / max(expected, 1), 4)
-    log(f"全部完成：成功 {stats['ok']}/{expected}，失败 {n_failed}，结果已写入 {out_csv}", log_file)
+    log(f"全部完成：成功 {stats['ok']}/{expected}，失败 {n_failed}，"
+        f"数据日期 {stats['bar_date']}，结果已写入 {out_csv}", log_file)
     return stats
 
 
