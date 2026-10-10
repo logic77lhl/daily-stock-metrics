@@ -1,0 +1,37 @@
+name: probe-sources
+
+# 一次性数据源探测。**没有 schedule**，只能手动触发，用完即删。
+#
+# 为什么必须在 CI 里跑：东财会按出口 IP 整批 RST，本机测出来的
+# 「push2his 不支持批量」可能是假的（实测本机对 push2his / push2 clist 全部
+# RemoteDisconnected，而同一时刻 datacenter-web 与 push2 ulist 都正常）。
+# 只有换一个出口 IP 才能分辨「接口不支持」和「这个 IP 被墙」。
+#
+# 它回答的问题直接决定下一轮优化的架构：
+#   A. K 线能不能批量（282 次请求 → 个位数，且仍是前复权）
+#   B. 估值历史能不能批量（A股 113 → ~3）
+#   C. 当日快照一次能拿几只
+#   D. 腾讯的安全速率到底是多少（当前 3.3 次/秒是猜的，节流下限占 85 秒）
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Probe data sources
+        run: python tools/probe_sources.py
