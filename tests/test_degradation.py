@@ -429,13 +429,15 @@ def test_digest_only_includes_markets_that_passed_the_gate() -> None:
     root = tempfile.mkdtemp(prefix="dsm-digest-")
     try:
         iso = "2026-10-09"
-        # A股：有效 DONE + 摘要片段 → 收录
+        # A股：有效 DONE + metrics CSV，但**刻意不放** digest/report ——
+        # 模拟「补跑时采集步骤提前返回」的真实场景（实测就是这么漏掉一封邮件的：
+        # 三个市场全部报「摘要片段缺失」）。_collect 必须自己把它物化出来。
         a_dir = os.path.join(root, "output", iso)
         os.makedirs(a_dir, exist_ok=True)
         Path(a_dir, "DONE").write_text(
             "status=ok\ndate=%s\nmarket=A股\nrows=113\n" % iso, encoding="utf-8")
-        Path(a_dir, f"digest_{iso}.html").write_text("<div>A股摘要</div>", encoding="utf-8")
-        Path(a_dir, f"report_{iso}.html").write_text("<html>A股报告</html>", encoding="utf-8")
+        write_metrics(os.path.join(a_dir, f"metrics_{iso}.csv"), iso, n=12)
+        assert not os.path.exists(os.path.join(a_dir, f"digest_{iso}.html"))
 
         # 港股：有报告但没有有效 DONE（质量门未通过）→ 必须被排除
         hk_dir = os.path.join(root, "output_hk", iso)
@@ -447,13 +449,16 @@ def test_digest_only_includes_markets_that_passed_the_gate() -> None:
         with mock.patch.object(send_digest, "BASE_DIR", root):
             frags, atts, included, skipped = send_digest._collect(iso)
             assert included == ["A股"], f"只应收录 A股，实际 {included}"
-            assert len(frags) == 1 and "A股摘要" in frags[0]
+            assert len(frags) == 1 and "A股" in frags[0], f"摘要片段未被物化：{frags}"
+            assert os.path.exists(os.path.join(a_dir, f"digest_{iso}.html")), \
+                "_collect 必须在片段缺失时现场物化它"
             assert len(atts) == 1 and atts[0].endswith(f"report_{iso}.html")
             assert any("港股通" in s for s in skipped), f"跳过原因里应点名港股通：{skipped}"
             assert any("ETF" in s for s in skipped), f"跳过原因里应点名 ETF：{skipped}"
 
             html = send_digest.build_html(iso, frags, included, skipped)
-            assert "A股摘要" in html and "港股摘要" not in html, "被拒市场的摘要泄漏进了邮件"
+            # 片段是 _collect 现场物化的（含市场标签与速览），不是预先放好的字面量
+            assert "A股" in html and "港股摘要" not in html, "被拒市场的摘要泄漏进了邮件"
             assert "未收录" in html, "被跳过的市场必须在邮件里显式说明"
 
             # 幂等标记：发过就不再重发，但**出现了新市场时必须补发** ——

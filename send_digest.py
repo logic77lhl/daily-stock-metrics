@@ -87,15 +87,30 @@ def _collect(iso: str):
             # 这正是「先判后发」的结构化：发信人不看指标，只看 DONE。
             skipped.append(f"{label}（无有效 DONE）")
             continue
+
+        # 片段与报告都是**派生数据**（不入库），所以要在这里现场物化。
+        # 为什么不能只依赖采集步骤写它们：采集步骤会在「今天已完成，跳过」时
+        # 提前返回，于是**任何一次补跑/手动触发**都会出现「DONE 有效但片段不存在」——
+        # 实测就是这么漏掉一封邮件的（三个市场全部报「摘要片段缺失」）。
+        # reports.ensure 会重建报告，并在片段缺失时补齐片段。
+        metrics_csv = os.path.join(day_dir, f"metrics_{iso}.csv")
+        if not os.path.exists(metrics_csv):
+            skipped.append(f"{label}（缺 metrics CSV）")
+            continue
+        try:
+            report_path = reports.ensure(metrics_csv, day_dir, iso, key)
+        except Exception as exc:
+            skipped.append(f"{label}（报告物化失败：{type(exc).__name__}）")
+            continue
+
         frag = reports.digest_path(day_dir, iso)
         if not os.path.exists(frag):
             skipped.append(f"{label}（摘要片段缺失）")
             continue
         with open(frag, encoding="utf-8") as fh:
             fragments.append(fh.read())
-        report = os.path.join(day_dir, f"report_{iso}.html")
-        if os.path.exists(report):
-            attachments.append(report)
+        if report_path and os.path.exists(report_path):
+            attachments.append(report_path)
         included.append(label)
     return fragments, attachments, included, skipped
 
