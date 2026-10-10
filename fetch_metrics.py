@@ -9,6 +9,7 @@ import pandas as pd
 
 import fsutil
 import http_util
+import price_cache
 
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
@@ -50,11 +51,29 @@ VALUE_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 TX_PERIOD = {"daily": "day", "weekly": "week", "monthly": "month"}
 _PROXY = None
 
-# 全局 K 线请求节流。8 线程 × 每标的 3 个周期，不节流约 50 次/秒 ——
-# 实测会把腾讯打到限流，随后整批标的失败（见 fetch_kline 的说明）。
-# 注意：日更路径现在每标的只有 1 个周期（周/月已改为本地聚合），
-# 请求数 339 → 113，节流下限 102s → 34s。
+# 全局 K 线请求节流（默认 0.05s ≈ 20 次/秒，实测腾讯在该速率下不限流；
+# 详见 http_util.request_interval 的 docstring 与那组并发梯度数据）。
+#
+# 历史：这里曾经是 0.30s（≈3.3 次/秒），理由是「不节流约 50 次/秒会把腾讯打到
+# 限流」—— 那条结论是**误诊**：真正的现象是 501 + JS 挑战页（按 IP 信誉封锁），
+# 与速率无关。误诊的代价是 282 次 K 线请求的节流下限 85 秒。
 KLINE_LIMITER = http_util.RateLimiter(http_util.request_interval())
+
+# 并发数。实测天花板 = 并发数 ÷ 单次延迟（约 0.74s）：8 → 9.9 次/秒，
+# 16 → 20.4 次/秒（各 160 次请求、零失败）。所以它同时也是「要不要更快」的旋钮。
+# 可用 DSM_WORKERS 覆盖。
+DEFAULT_WORKERS = 16
+
+
+def _workers(default: int = DEFAULT_WORKERS) -> int:
+    raw = os.environ.get("DSM_WORKERS", "").strip()
+    if not raw:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
+
 
 FIVE_YEARS_BARS = 1210
 
@@ -103,6 +122,25 @@ def _is_source_failure(exc: BaseException) -> bool:
     """是否属于「价格源本身不可用」（而不是这只标的没数据）。"""
     import requests
     return isinstance(exc, (requests.RequestException, http_util.DeadlineExceeded))
+
+
+# 当日价格序列的共享落点：{代码: DataFrame}，由 run() 在末尾统一写盘。
+#
+# 为什么要有它：下面每只标的都抓了 800 根日线，而**紧接着的回测步骤**会为同一批
+# 标的重新抓一遍（280 次请求、无节流、实测 24~111 秒）。把它留在临时目录里，
+# 回测那一步就是 0 次请求。介质刻意选临时目录而不是仓库 —— 见 price_cache 的说明。
+_PRICE_SINK: dict = {}
+
+
+def _sink_price(code, daily_df):
+    """把刚抓到的日线记进共享落点（未启用共享时是空操作）。"""
+    if not price_cache.cache_dir():
+        return
+    try:
+        _PRICE_SINK[str(code)] = daily_df[["date", "open", "close"]].tail(
+            price_cache.KEEP_BARS).copy()
+    except Exception:
+        pass  # 共享缓存只是优化，绝不能因为它失败而影响采集
 
 
 def _detect_proxy():
@@ -186,8 +224,13 @@ def _kline_rows(klines):
             vol = float(item[5])
         except (IndexError, TypeError, ValueError):
             vol = None
+        try:
+            op = float(item[1])
+        except (IndexError, TypeError, ValueError):
+            op = None
         rows.append({
             "date": item[0],
+            "open": op,
             "close": float(item[2]),
             "high": float(item[3]),
             "low": float(item[4]),
@@ -201,11 +244,12 @@ def fetch_kline(session, code, period, bars=800, market="A", attempts=3):
 
     三处修正（都是实测踩出来的）：
 
-    1. **全局限流**。原来只有每线程 `sleep(0.15)`，8 线程合起来约 50 次/秒，
-       会把腾讯打到限流（响应变成非 JSON）。实测一次 113 只的全灭就是这样来的：
-       `501/JSONDecodeError` 之后每只标的在两个 host 上接连失败。
+    1. **全局限流**。原来只有每线程 `sleep(0.15)`，而限流器是跨线程的全局最小间隔
+       （默认 0.05s ≈ 20 次/秒，实测腾讯在该速率下不限流，见
+       `http_util.request_interval`）。注意：当年把「113 只全灭」记成
+       「限流」是**误诊** —— 那是 501 + JS 挑战页，按 IP 信誉封锁，与速率无关。
     2. **真的重试**。原来 `request_json(..., retries=1)` 加一个不 sleep 的双 host
-       循环 —— 两个 host 打完就抛，等于没有重试。限流是**暂时性**的，必须退避。
+       循环 —— 两个 host 打完就抛，等于没有重试。瞬时故障必须退避。
     3. **`raise last_err` 可能抛 `None`**：两个 host 都返回合法 JSON 但没有 K 线时
        `last_err` 仍是 `None`，`raise None` 会变成
        `TypeError: exceptions must derive from BaseException`，把真实原因盖掉。
@@ -488,6 +532,7 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock,
         if daily_df is not None and len(daily_df) >= 5:
             for col, val in period_j_columns(daily_df).items():
                 rec[col] = val
+            _sink_price(code, daily_df)
             rec["最新价"] = round(float(daily_df["close"].iloc[-1]), 2)
             # 记录实际取到的最后一根 K 线日期（腾讯返回 ISO 日期串）
             rec["数据日期"] = str(daily_df["date"].iloc[-1])[:10]
@@ -574,8 +619,17 @@ def sort_output_by_rank(out_csv):
 
 
 def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FILE,
-        market="A", workers=8, fail_log=None):
-    """抓取指标。返回结构化统计供 runner 做质量门，而不是只返回路径。"""
+        market="A", workers=None, fail_log=None, cache_key=None):
+    """抓取指标。返回结构化统计供 runner 做质量门，而不是只返回路径。
+
+    workers=None 时从 DSM_WORKERS 读（默认 16，见 DEFAULT_WORKERS 的实测依据）。
+    cache_key：当日价格序列写进共享缓存时用的键。**不能用 market** ——
+    A股 与 ETF 的 market 都是 "A"，会写到同一个文件里。调用方传输出目录名
+    （output / output_etf / output_hk），回测侧用同样的键读。
+    """
+    if workers is None:
+        workers = _workers()
+    _PRICE_SINK.clear()
     if not os.path.exists(in_csv):
         raise FileNotFoundError(f"输入列表不存在：{in_csv}")
     top = pd.read_csv(in_csv, dtype={"代码": str})
@@ -667,6 +721,19 @@ def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FIL
         "bar_date": max(bar_dates, key=bar_dates.get) if bar_dates else None,
     }
     stats["success_ratio"] = round(stats["ok"] / max(expected, 1), 4)
+
+    # 把这一轮抓到的日线留给**同一次运行里的回测步骤**（见 price_cache 的说明）。
+    # 放在最后、且用 try 兜住：它只是优化，失败绝不能让采集本身判失败。
+    key = cache_key or market
+    try:
+        written = price_cache.write(key, _PRICE_SINK)
+        if written:
+            log(f"共享价格序列：{written} 只写入 {price_cache.path_for(key)}"
+                f"（回测将直接读它，省掉 {written} 次重复请求）", log_file)
+    except Exception as exc:
+        print(f"[价格共享] 写入失败（回测将自行抓取）：{type(exc).__name__}: {exc}")
+    _PRICE_SINK.clear()
+
     log(f"全部完成：成功 {stats['ok']}/{expected}，失败 {n_failed}，"
         f"数据日期 {stats['bar_date']}，结果已写入 {out_csv}", log_file)
     return stats

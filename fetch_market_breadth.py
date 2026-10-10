@@ -13,10 +13,13 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 
 HEADERS = http_util.EM_HEADERS
 
+# 主机顺序**按实测可用性排**：CI 上 `push2` 与 `push2delay` 能通，
+# 而带数字前缀的镜像（82./1.）稳定 RemoteDisconnected。把它们排前面，
+# 正常情况第一个主机就成功，一次请求解决；排后面只是让它在前面全挂时兜底。
 HOSTS = [
+    "https://push2.eastmoney.com/api/qt/clist/get",
     "https://push2delay.eastmoney.com/api/qt/clist/get",
     "https://82.push2.eastmoney.com/api/qt/clist/get",
-    "https://push2.eastmoney.com/api/qt/clist/get",
     "https://1.push2.eastmoney.com/api/qt/clist/get",
 ]
 
@@ -31,7 +34,10 @@ def get_session():
     return _SESSION
 
 
-POOL = http_util.HostPool(HOSTS, label="fetch_market_breadth", retire_after=2)
+# 退役阈值 1 + 单轮：主机级封锁对退避免疫（同 fetch_top100 的结论），
+# 而且这一步失败只影响「温度卡」一块（不影响任何一行指标），
+# 没有理由为它把 4 主机 × 2 轮全撞一遍 —— 实测那样要 38 秒才放弃。
+POOL = http_util.HostPool(HOSTS, label="fetch_market_breadth", retire_after=1)
 
 # 页数上限：全 A 股约 5400 只 / 500 = 11 页。旧实现是 `while len(rows) < total`
 # 且没有上限 —— 一旦 total 被接口报成离谱的值，就会一直翻页直到烧光等待预算。
@@ -75,8 +81,12 @@ def _request_page(pn, pz=500, note=None):
     }
     # data_object 会校验 data 是对象；原来 data:null 时返回 None，
     # 随后的 .get() 抛 AttributeError 被上层静默吞掉（站点少一整块）。
+    #
+    # rounds=1 + 更紧的超时：这一步失败只影响温度卡一块，不该为它把
+    # 4 主机 × 2 轮 × (5,15) 超时全撞一遍（实测 38 秒）。
     return POOL.fetch(get_session(), params=params,
-                      accept=http_util.data_object, rounds=2, note=note)
+                      accept=http_util.data_object, rounds=1, note=note,
+                      timeout=http_util.LIST_TIMEOUT)
 
 
 def fetch_all(note=None):

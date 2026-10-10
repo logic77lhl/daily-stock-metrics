@@ -238,13 +238,16 @@ def _non_trading_panel_days(panel, market):
 
 
 def build_price_map(panel, market, cache_dir, log=print, bars=DEFAULT_BARS, stats=None,
-                    required_last=None):
+                    required_last=None, shared_key=None):
     """重建每只标的的全期一致前复权价格序列（open/close），缓存到 kline_cache/。
 
     metrics 里存的最新价是各自抓取日的前复权价，跨日除权后不可比，所以统一用
     当前时点的复权序列定价。结果按 (市场, 代码, bars) 缓存。
     stats 为就地累加的统计字典（见 main），用来把「抓不到 / 缓存过期 / 预算耗尽」
     这些剔除事件计数并披露到报告里，而不是静默少几笔交易。
+
+    shared_key：同一次运行里 `fetch_metrics` 刚写下的价格序列的键
+    （用输出目录名，例如 output_etf）。命中时**完全不需要联网**。
     """
     import fetch_metrics as fm
     import http_util
@@ -252,7 +255,7 @@ def build_price_map(panel, market, cache_dir, log=print, bars=DEFAULT_BARS, stat
     if stats is None:
         stats = {}
     for k in ("codes_total", "from_cache", "fetched", "no_price", "stale_series",
-              "budget_exhausted", "cache_rejected"):
+              "budget_exhausted", "cache_rejected", "from_shared"):
         stats.setdefault(k, 0)
 
     os.makedirs(cache_dir, exist_ok=True)
@@ -266,11 +269,32 @@ def build_price_map(panel, market, cache_dir, log=print, bars=DEFAULT_BARS, stat
     log(f"  [{market}] 新鲜度门槛：价格序列须覆盖到 {required_last.date()}")
     log(f"  [{market}] 缓存目录 {cache_dir}（key 含 bars={bars}）")
 
+    # 第一优先级：**同一次运行里 fetch_metrics 刚抓到的**价格序列（临时目录）。
+    #
+    # 它省掉的是一笔很实在的重复劳动：fetch_metrics 为每只标的抓了 800 根日线，
+    # 算完 J/MA/量比就把表扔了，而这里又要为同一批标的重新抓一遍
+    # （280 次请求、10 并发、**无节流**、实测 24~111 秒）。
+    #
+    # 键用输出目录名（output / output_etf / output_hk），与 runner 侧一致；
+    # 不能用 market —— A股 与 ETF 的 market 都是 "A"。
+    import price_cache
+    shared = price_cache.read(shared_key) if shared_key else {}
+    if shared:
+        log(f"  [{market}] 共享价格序列命中 {len(shared)} 只（来自本次运行的采集步骤，"
+            f"命中的标的省掉一次重复请求）")
+
+    def _shared_ok(s):
+        return s is not None and not s.empty and s.index.max() >= required_last
+
     def _fetch_one(code):
         raw = code.split("_", 1)[1] if "_" in code else code
         cache = os.path.join(cache_dir, f"{market}_{raw}_{bars}.csv")
         s = None
         rejected = 0
+        # 0) 本次运行采集步骤刚抓到的序列（零请求）
+        sh = shared.get(raw) if shared else None
+        if _shared_ok(sh):
+            return code, sh.sort_index(), "from_shared", 0
         if os.path.exists(cache):
             try:
                 s, why = _read_cache(cache, required_last)
@@ -334,14 +358,49 @@ def build_price_map(panel, market, cache_dir, log=print, bars=DEFAULT_BARS, stat
     return px
 
 
-def _entry_exit_prices(px_df, entry_date, exit_date):
+def _price_lookup(px_df):
+    """把一只标的的价格序列编译成 (日期→位置, open 数组, close 数组)。
+
+    存在的唯一理由是性能，而它是可量的：原来每个 (信号日 × 标的 × 持有期) 都要调
+    两次 `px_df.index.get_indexer([ts])`，实测 38,767 次调用耗掉 **36 秒**
+    （get_indexer 走的是 list-like 校验路径，单元素查询约 0.47ms —— 而它每次只是
+    要一个位置）。日期只有几十个不同值，字典查表是 O(1)。
+    """
+    return ({ts: i for i, ts in enumerate(px_df.index)},
+            px_df["open"].to_numpy(dtype="float64"),
+            px_df["close"].to_numpy(dtype="float64"))
+
+
+def _pos_of(posmap, key):
+    """查位置；键不是 Timestamp 时补一次转换（正常路径直接命中）。"""
+    pos = posmap.get(key)
+    if pos is None and not isinstance(key, pd.Timestamp):
+        pos = posmap.get(pd.Timestamp(key))
+    return pos
+
+
+def _entry_exit_prices(px_df, entry_date, exit_date, lookup=None):
     """T+1 开盘价建仓 / 持有期结束日收盘价平仓。
 
     返回 (entry_open, exit_close, entry_pos, exit_pos, 缺失原因)；
     缺失原因 ∈ {None, "entry", "exit"}。任一根 K 线缺失即返回 None，
     **绝不回退到更早的 bar**（旧的 searchsorted(side='right')-1 会把停牌/缓存
     过期时的旧价格当成成交价，并悄悄拉长持有期）。
+
+    lookup：`_price_lookup(px_df)` 的结果。给了就走 O(1) 字典/数组路径；
+    不给则退回 `get_indexer` 的参考实现（测试用它钉住语义，两条路径必须同值）。
     """
+    if lookup is not None:
+        posmap, opens, closes = lookup
+        pos_in = _pos_of(posmap, entry_date)
+        if pos_in is None:
+            return None, None, None, None, "entry"
+        pos_out = _pos_of(posmap, exit_date)
+        if pos_out is None:
+            return None, None, None, None, "exit"
+        return (float(opens[pos_in]), float(closes[pos_out]),
+                int(pos_in), int(pos_out), None)
+
     ts_in, ts_out = pd.Timestamp(entry_date), pd.Timestamp(exit_date)
     pos_in = px_df.index.get_indexer([ts_in])[0]
     if pos_in < 0:
@@ -390,14 +449,17 @@ def build_trades(panel, horizons, px, cost_pct=0.15, stats=None, last_day=None):
               "drop_no_exit_bar", "drop_bad_price"):
         stats.setdefault(k, 0)
 
-    info = panel.set_index(["日期", "代码"])
-    if info.index.has_duplicates:
-        # 真守卫：重复行会让 info.loc[key] 返回 DataFrame 而不是 Series
-        # （原来那句 isinstance(rec, pd.DataFrame) 就是在补这个漏）。
-        # 这里直接从源头去重，于是后面可以确定性地当 Series 用。
-        info = info[~info.index.duplicated(keep="first")]
+    # 去重放在最前面，让「按日切片」与「按 (日期,代码) 取行」看到**同一份**数据。
+    # 原来只对 info 去重、却按原始 panel 逐日迭代，于是重复行会被建成两笔交易，
+    # 而它们读到的 名称/排名 还是第一行 —— 一个静默的双重计数。
+    panel = panel.drop_duplicates(subset=["日期", "代码"], keep="first")
     cal = _market_calendar(px, panel, last_day)
     c = cost_pct / 100.0
+
+    # 每只标的的价格查找结构**按需编译一次**并缓存。这一步是纯性能优化，但它是
+    # 最大的一处：原来每个 (信号日 × 标的 × 持有期) 都要调两次 get_indexer，
+    # 实测 38,767 次调用耗掉 36 秒（占 build_trades 的 80%）。
+    lookups: dict = {}
 
     rows = []
     for d in sorted(panel["日期"].unique()):
@@ -417,13 +479,21 @@ def build_trades(panel, horizons, px, cost_pct=0.15, stats=None, last_day=None):
                 stats["skip_horizon_beyond_panel"] += len(day)
                 continue
             sell_d = cal[p + h]
-            for _, r in day.iterrows():
+            # to_dict("records") 而不是 iterrows()：后者每行构造一个 Series，
+            # 在 38,767 次迭代上是纯开销。而且下面本来还要 info.loc[(d, code)]
+            # 再把这一行取一遍 —— r 里已经有全部字段，那次查询是多余的。
+            for r in day.to_dict("records"):
                 code = r["代码"]
                 s = px.get(code)
                 if s is None:
                     stats["drop_no_price_series"] += 1
                     continue
-                buy_raw, sell_raw, buy_pos, sell_pos, missing = _entry_exit_prices(s, entry_d, sell_d)
+                lk = lookups.get(code)
+                if lk is None:
+                    lk = _price_lookup(s)
+                    lookups[code] = lk
+                buy_raw, sell_raw, buy_pos, sell_pos, missing = _entry_exit_prices(
+                    s, entry_d, sell_d, lookup=lk)
                 if missing == "entry":
                     stats["drop_no_entry_bar"] += 1
                     continue
@@ -435,7 +505,7 @@ def build_trades(panel, horizons, px, cost_pct=0.15, stats=None, last_day=None):
                 if not (np.isfinite(buy) and np.isfinite(sell)) or buy <= 0 or sell <= 0:
                     stats["drop_bad_price"] += 1
                     continue
-                rec = info.loc[(d, code)]
+                rec = r
                 ret = (sell * (1.0 - c)) / (buy * (1.0 + c)) - 1.0
                 orig_code = code.split("_", 1)[1] if "_" in code else code
                 rows.append({
@@ -484,15 +554,22 @@ def eval_expr(df, expr):
 
 
 def run_strategy(trades, panel, expr):
-    selected = trades.copy()
-    if expr is not None:
-        sigs = []
-        for d, g in panel.groupby("日期"):
-            mask = eval_expr(g, expr)
-            sigs.append(pd.DataFrame({"信号日": d, "代码": g.loc[mask, "代码"]}))
-        sig = pd.concat(sigs, ignore_index=True)
-        selected = selected.merge(sig, on=["信号日", "代码"], how="inner")
-    return selected
+    """把交易集合按策略表达式筛选。
+
+    原来是对每一天分别 eval 一次再 concat（14 个策略 × 29 天 = 406 次 eval/市场）。
+    改成对整张面板 eval 一次再按 (信号日, 代码) 合并 —— 语义相同（`eval_expr`
+    会把缺失列补成 NaN，逐日与整表的真假值一致，这一点在 strategy_summary 的
+    向量化里已经逐值验证过），但 eval 次数从 406 降到 14。
+    """
+    if expr is None:
+        return trades
+    mask = eval_expr(panel, expr).fillna(False)
+    sig = panel.loc[mask, ["日期", "代码"]].rename(columns={"日期": "信号日"})
+    if sig.empty:
+        return trades.iloc[0:0]
+    # drop_duplicates：同一 (信号日, 代码) 只该产生一笔交易。旧实现会把面板里的
+    # 重复行原样带进 sig，merge 之后变成同一笔交易计数两次。
+    return trades.merge(sig.drop_duplicates(), on=["信号日", "代码"], how="inner")
 
 
 def _bucket_nav(daily_means, h):
@@ -730,6 +807,7 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
         f"<tr><td>{label}</td><td>{_cnt(key)}</td><td>{note}</td></tr>"
         for label, key, note in [
             ("标的数（面板去重后）", "codes_total", "当日 Top100/榜单 + 观察池结转标的"),
+            ("价格序列来自本次采集共享", "from_shared", "同一轮运行里 fetch_metrics 刚抓的，零请求"),
             ("价格序列命中缓存", "from_cache", "缓存含开盘价且覆盖所需最后交易日"),
             ("价格序列本次抓取", "fetched", "腾讯 qfq 日线，含开盘价"),
             ("价格完全取不到", "no_price", "该标的全部交易被剔除"),
@@ -1062,9 +1140,11 @@ def main():
         stats["effective_last_day"] = str(required_last)[:10]
         print(f"[{mkt_name}] 重建统一复权价格序列（缓存: {os.path.join(args.outdir, 'kline_cache')}）…")
         px = build_price_map(panel, mkt_name, os.path.join(args.outdir, "kline_cache"),
-                             bars=args.bars, stats=stats, required_last=required_last)
+                             bars=args.bars, stats=stats, required_last=required_last,
+                             shared_key=os.path.basename(os.path.abspath(mkt_dir)))
         print(f"[{mkt_name}] 价格序列就绪: {len(px)}/{panel['代码'].nunique()} 只 "
-              f"(缓存命中 {stats.get('from_cache', 0)} / 本次抓取 {stats.get('fetched', 0)} / "
+              f"(本次采集共享 {stats.get('from_shared', 0)} / 缓存命中 {stats.get('from_cache', 0)}"
+              f" / 本次抓取 {stats.get('fetched', 0)} / "
               f"抓取失败 {stats.get('no_price', 0)} / 预算中止 {stats.get('budget_exhausted', 0)})")
 
         trades = build_trades(panel, horizons, px, cost_pct=args.cost, stats=stats,

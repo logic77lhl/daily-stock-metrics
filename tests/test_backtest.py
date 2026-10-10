@@ -256,6 +256,38 @@ def test_bucket_nav_is_not_overlapping():
           f"（旧口径把同一段行情重复计入 3 次）")
 
 
+def test_fast_price_lookup_matches_reference() -> None:
+    """`_entry_exit_prices` 的快路径（字典+数组）必须与参考实现（get_indexer）逐值相同。
+
+    为什么必须钉死：快路径是纯性能优化，但它是**最大**的一处 ——
+    原来每个 (信号日 × 标的 × 持有期) 都要调两次 `index.get_indexer([ts])`，
+    实测 38,767 次调用耗掉 36 秒（占 build_trades 的 80%）。优化掉它之后，
+    两条路径一旦漂移，回测报告里每一个成交价和收益都会静默变错。
+    """
+    px = _px([
+        ("2026-09-14", 10.0, 11.0),
+        ("2026-09-15", 20.0, 21.0),
+        ("2026-09-17", 30.0, 31.0),
+    ])
+    lookup = bt._price_lookup(px)
+    cases = [
+        (pd.Timestamp("2026-09-15"), pd.Timestamp("2026-09-17")),   # 都在
+        (pd.Timestamp("2026-09-16"), pd.Timestamp("2026-09-17")),   # 缺建仓 bar（停牌）
+        (pd.Timestamp("2026-09-15"), pd.Timestamp("2026-09-16")),   # 缺平仓 bar
+        (pd.Timestamp("2026-09-14"), pd.Timestamp("2026-09-14")),   # 首日
+        ("2026-09-15", "2026-09-17"),                                # 字符串键也要能查
+    ]
+    for entry, exit_ in cases:
+        ref = bt._entry_exit_prices(px, entry, exit_)
+        fast = bt._entry_exit_prices(px, entry, exit_, lookup=lookup)
+        assert ref == fast, f"{entry}→{exit_}: 参考 {ref} vs 快路径 {fast}"
+    # 快路径确实拿到了正确的价格与位置
+    buy, sell, bi, si, why = bt._entry_exit_prices(
+        px, pd.Timestamp("2026-09-15"), pd.Timestamp("2026-09-17"), lookup=lookup)
+    assert (buy, sell, bi, si, why) == (20.0, 31.0, 1, 2, None), (buy, sell, bi, si, why)
+    print("  [PASS] 价格快查（字典+数组）与参考实现逐值相同，含缺 bar 与字符串键")
+
+
 def test_summary_has_drawdown_for_all_horizons():
     trades = pd.DataFrame({
         "策略": ["S"] * 6, "持有期": [3] * 6,
@@ -416,6 +448,7 @@ def main() -> int:
     test_cache_roundtrip_matches_writer_format()
     test_drop_counters_and_suspension_holding_days()
     test_bucket_nav_is_not_overlapping()
+    test_fast_price_lookup_matches_reference()
     test_summary_has_drawdown_for_all_horizons()
     test_summary_injects_baseline_and_excess()
     test_eval_expr_alias_columns()

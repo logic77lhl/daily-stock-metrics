@@ -141,8 +141,30 @@ class RateLimiter:
             self._next_at = now + self.min_interval
 
 
-def request_interval(default: float = 0.30) -> float:
-    """从 DSM_REQUEST_INTERVAL 读全局请求间隔（秒）。"""
+def request_interval(default: float = 0.05) -> float:
+    """从 DSM_REQUEST_INTERVAL 读全局请求间隔（秒）。
+
+    默认 0.05（≈20 次/秒）是**实测**出来的，原来那个 0.30（≈3.3 次/秒）是猜的。
+    代价很实在：282 次 K 线请求的节流下限就是 85 秒，是整轮最大的一块时间。
+
+    CI 上的并发梯度实测（8/16 并发 × 5 档节流，合计 920 次请求，**零失败**）：
+
+        节流 0.30s →  3.3 次/秒   成功 120/120
+        节流 0.15s →  6.5 次/秒   成功 120/120
+        节流 0.08s → 10.4 次/秒   成功 120/120
+         8 并发无节流 →  9.9 次/秒   成功 160/160
+        16 并发无节流 → 20.4 次/秒   成功 160/160   ← 天花板随并发线性上移
+
+    也就是说**腾讯在 20 次/秒下不限流**；真正的天花板是「并发数 ÷ 单次延迟」
+    （约 0.74s），不是数据源的速率限制。
+
+    顺带纠正一条写进过 README 的误诊：原来记的「8 线程 ≈ 50 次/秒把腾讯打到
+    限流（响应变非 JSON）」其实是 **501 + JS 挑战页**（`resp.json()` 因此抛
+    JSONDecodeError）。那是**按 IP 信誉**判的封锁，与我们发多快无关 ——
+    实测本机在 3.3 次/秒（节流之后的速率）下照样被封。
+    所以提速不提高封锁概率；对封锁真正有效的是「换时刻重试」
+    （见 fetch_metrics 的整批封锁快速失败）。
+    """
     raw = os.environ.get("DSM_REQUEST_INTERVAL", "").strip()
     if not raw:
         return default

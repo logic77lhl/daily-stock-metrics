@@ -30,6 +30,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 
@@ -82,9 +83,10 @@ def _child_io():
     return {"stdout": fh, "stderr": fh}, fh
 
 
-def run_step(step: Step, io_kwargs: dict) -> tuple[int, float]:
+def run_step(step: Step, io_kwargs: dict, env_extra: dict | None = None) -> tuple[int, float]:
     env = dict(os.environ)
     env["DSM_DEADLINE_SEC"] = str(step.deadline)
+    env.update(env_extra or {})
     started = time.monotonic()
     print(f"\n{'=' * 62}\n  ▶ {step.name}（预算 {step.deadline}s）\n{'=' * 62}", flush=True)
     try:
@@ -119,9 +121,17 @@ def main(argv=None) -> int:
 
     results = []
     io_kwargs, io_fh = _child_io()
+    # 当日价格序列的共享目录：采集步骤把抓到的日线写进去，回测直接读，
+    # 于是回测那 280 次重复请求变成 0（详见 price_cache 的说明）。
+    # 刻意用临时目录而不是仓库：价格序列每天约 1.5MB，入库会让 git 历史
+    # 每年涨几百 MB（prune 只删工作区，删不掉历史）。
+    price_dir = os.environ.get("DSM_PRICE_CACHE") or tempfile.mkdtemp(prefix="dsm-prices-")
+    os.makedirs(price_dir, exist_ok=True)
+    env_extra = {"DSM_PRICE_CACHE": price_dir}
+    print(f"共享价格序列目录：{price_dir}")
     try:
         for step in steps:
-            code, elapsed = run_step(step, io_kwargs)
+            code, elapsed = run_step(step, io_kwargs, env_extra)
             results.append({"步骤": step.name, "返回码": code, "耗时秒": round(elapsed, 1)})
             print(f"  {'✓' if code == 0 else '✗'} {step.name} 返回码={code} 耗时={elapsed:.0f}s",
                   flush=True)

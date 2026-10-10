@@ -25,10 +25,12 @@ elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 HEADERS = http_util.EM_HEADERS
 
+# 主机顺序**按实测可用性排**：CI 上 push2 / push2delay 能通，带数字前缀的
+# 镜像（82./1.）稳定 RemoteDisconnected。排后面的只在前面的全挂时兜底。
 HOSTS = [
+    "https://push2.eastmoney.com/api/qt/clist/get",
     "https://push2delay.eastmoney.com/api/qt/clist/get",
     "https://82.push2.eastmoney.com/api/qt/clist/get",
-    "https://push2.eastmoney.com/api/qt/clist/get",
     "https://1.push2.eastmoney.com/api/qt/clist/get",
 ]
 

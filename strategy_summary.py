@@ -36,21 +36,26 @@ def _warn(msg):
 from util import esc as _esc, md_esc as _md_esc  # noqa: E402
 
 
-def _load_history(market_dir, exclude_date=None, as_of=None):
-    """载入历史 metrics 面板。
+# 面板缓存：{market_dir: 全量面板}。
+#
+# 为什么必须有：站点构建时每个市场要物化 30 份报告，而**每份**报告都会调
+# `_load_history` 重读该市场**全部** metrics CSV。实测 90 份报告 × 最多 51 天
+# = 约 4,590 次 CSV 读 —— 这是「建站 83 秒」的主要成本，而且是纯粹的重复劳动
+# （同一个市场、同一批文件，被读了 30 遍）。
+#
+# 缓存的是**未按日期过滤**的全量面板，`as_of` / `exclude_date` 在内存里过滤。
+# 这样时点隔离（防前视）的语义完全不变，只是不再重复读盘。
+# 键是 market_dir 的完整路径，所以测试里各自的临时目录互不影响。
+_PANEL_CACHE: dict = {}
 
-    as_of 是**时点隔离**：只使用 <= as_of 的日期。没有它，重建一份历史报告
-    （回填的 `--reports-only`、站点构建时物化）会读到**报告日之后**才产生的
-    行情，于是把「当时不可能知道的胜率」写进归档页 —— 这是前视偏差，
-    而且完全静默：数字看起来很正常，只是它来自未来。
-    """
+
+def _load_all(market_dir):
+    """读取某市场**全部**日期的 metrics 面板（带进程内缓存）。"""
+    if market_dir in _PANEL_CACHE:
+        return _PANEL_CACHE[market_dir]
     frames = []
     for path in sorted(glob.glob(os.path.join(market_dir, "????-??-??", "metrics_*.csv"))):
         date = os.path.basename(os.path.dirname(path))
-        if exclude_date and date == exclude_date:
-            continue
-        if as_of and date > as_of:
-            continue
         try:
             df = pd.read_csv(path, dtype={"代码": str})
         except Exception as exc:
@@ -61,10 +66,31 @@ def _load_history(market_dir, exclude_date=None, as_of=None):
             continue
         df["日期"] = pd.Timestamp(date)
         frames.append(df)
-    if not frames:
+    panel = None
+    if frames:
+        panel = pd.concat(frames, ignore_index=True)
+        panel = panel.drop_duplicates(subset=["日期", "代码"], keep="last")
+    _PANEL_CACHE[market_dir] = panel
+    return panel
+
+
+def _load_history(market_dir, exclude_date=None, as_of=None):
+    """载入历史 metrics 面板（按 as_of 做时点隔离）。
+
+    as_of 是**时点隔离**：只使用 <= as_of 的日期。没有它，重建一份历史报告
+    （回填的 `--reports-only`、站点构建时物化）会读到**报告日之后**才产生的
+    行情，于是把「当时不可能知道的胜率」写进归档页 —— 这是前视偏差，
+    而且完全静默：数字看起来很正常，只是它来自未来。
+    """
+    panel = _load_all(market_dir)
+    if panel is None or panel.empty:
         return None
-    panel = pd.concat(frames, ignore_index=True)
-    return panel.drop_duplicates(subset=["日期", "代码"], keep="last")
+    out = panel
+    if as_of:
+        out = out[out["日期"] <= pd.Timestamp(as_of)]
+    if exclude_date:
+        out = out[out["日期"] != pd.Timestamp(exclude_date)]
+    return out if not out.empty else None
 
 
 def _baseline_win_rate(next_ret, window):
@@ -118,38 +144,40 @@ def _ranked_strategies(panel):
     window = dates[-(ROLLING_DAYS + 1):-1]
     baseline = _baseline_win_rate(next_ret, window)
 
+    # 把 next_ret 摊平成 (日期, 代码, ret) 三列，供下面按策略批量取。
+    # 用 melt 而不是 stack：pandas 3.0 的 stack 语义变过（dropna 参数被移除），
+    # melt 的行为是稳定的。
+    long_ret = (next_ret.reset_index()
+                .melt(id_vars="日期", var_name="代码", value_name="ret")
+                .dropna(subset=["ret"]))
+
+    # 这里原来是「对 20 个信号日 × 14 个策略各做一次全表扫描」
+    # （`panel[panel["日期"] == d]`），也就是每份报告 280 次扫描 —— 而站点要物化
+    # 90 份报告，合计 25,200 次。现在每个策略只对**整张面板**求一次掩码，
+    # 再按日期批量取次日收益：280 次 → 14 次。
     stats = {}
     failed = []
     for name, expr in backtest.STRATEGIES:
         if expr is None:
             continue
-        rets = []
-        eval_failed = 0
-        for d in window:
-            g = panel[panel["日期"] == d]
-            if g.empty:
-                continue
-            try:
-                mask = backtest.eval_expr(g, expr)
-            except Exception as exc:
-                # 旧代码在这里 break：窗口被静默截断，剩下的累计值照样当成
-                # 「20 日胜率」发布。现在改为跳过该日，并让该策略整体退出统计 ——
-                # 不发布一个用残缺窗口算出来的数字。
-                eval_failed += 1
-                _warn(f"策略「{name}」在 {d.date()} 评估失败：{type(exc).__name__}: {exc}")
-                continue
-            hits = g.loc[mask.fillna(False), "代码"]
-            if hits.empty:
-                continue
-            # reindex 而不是 .loc：万一某个代码不在价格透视表里（例如代码列为空），
-            # .loc 会抛 KeyError 把整张卡片打没，reindex 只会得到 NaN 并被 dropna 剔除。
-            r = next_ret.loc[d].reindex(hits)
-            rets.extend(r.dropna().tolist())
-        if eval_failed:
+        try:
+            mask = backtest.eval_expr(panel, expr)
+        except Exception as exc:
+            # 旧代码在这里 break：窗口被静默截断，剩下的累计值照样当成
+            # 「20 日胜率」发布。现在改为让该策略整体退出统计 ——
+            # 不发布一个用残缺窗口算出来的数字。
+            _warn(f"策略「{name}」评估失败：{type(exc).__name__}: {exc}")
             failed.append(name)
             continue
+        hits = panel.loc[mask.fillna(False), ["日期", "代码"]]
+        if hits.empty:
+            continue
+        hits = hits[hits["日期"].isin(window)]
+        if hits.empty:
+            continue
+        rets = hits.merge(long_ret, on=["日期", "代码"], how="inner")["ret"]
         if len(rets) >= MIN_TRADES:
-            s = pd.Series(rets)
+            s = pd.Series(rets.to_numpy(dtype="float64"))
             stats[name] = (expr, float((s > 0).mean()), len(s), float(s.mean()))
 
     ranked = sorted(stats.items(), key=lambda kv: (-kv[1][1], -kv[1][3]))

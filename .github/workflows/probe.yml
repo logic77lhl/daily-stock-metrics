@@ -1,20 +1,31 @@
 name: probe-sources
 
-# 一次性数据源探测。**没有 schedule**，只能手动触发，用完即删。
+# 数据源能力探测。**没有 schedule**，只能手动触发。
 #
-# 为什么必须在 CI 里跑：东财会按出口 IP 整批 RST，本机测出来的
-# 「push2his 不支持批量」可能是假的（实测本机对 push2his / push2 clist 全部
+# 存在的理由：这个项目的每一个架构决策都取决于「数据源到底能做什么」，而
+# 这些问题**只能从 CI 的出口 IP 问** —— 东财会按 IP 整批 RST，本机测出来的
+# 「push2his 不支持批量」很可能是假的（实测本机对 push2his / push2 clist 全部
 # RemoteDisconnected，而同一时刻 datacenter-web 与 push2 ulist 都正常）。
-# 只有换一个出口 IP 才能分辨「接口不支持」和「这个 IP 被墙」。
 #
-# 它回答的问题直接决定下一轮优化的架构：
-#   A. K 线能不能批量（282 次请求 → 个位数，且仍是前复权）
-#   B. 估值历史能不能批量（A股 113 → ~3）
-#   C. 当日快照一次能拿几只
-#   D. 腾讯的安全速率到底是多少（当前 3.3 次/秒是猜的，节流下限占 85 秒）
+# 三个脚本对应三轮探测，结论都写进了代码注释与 README：
+#   probe_batch.py  第一轮：批量能力。结论：datacenter 支持 SECUCODE in (...)；
+#                   腾讯 fqkline 的四种批量写法全部 501。
+#   probe_rate.py   第二轮：并发速率梯度。结论：16 并发 → 20.4 次/秒、零失败；
+#                   天花板 = 并发数 ÷ 单次延迟（0.74s），不是数据源的速率限制。
+#   probe_kline.py  第三轮：K 线批量 + 名单替代。结论：push2his **不能**批量；
+#                   datacenter pageSize=5000 两页拿全市场（含名称/行业/市值/PE/PB）。
 
 on:
   workflow_dispatch:
+    inputs:
+      script:
+        description: "要跑哪个探测脚本"
+        type: choice
+        options:
+          - tools/probe_kline.py
+          - tools/probe_rate.py
+          - tools/probe_batch.py
+        default: tools/probe_kline.py
 
 permissions:
   contents: read
@@ -34,4 +45,4 @@ jobs:
         run: pip install requests
 
       - name: Probe data sources
-        run: python tools/probe_sources3.py
+        run: python "${{ inputs.script || 'tools/probe_kline.py' }}"

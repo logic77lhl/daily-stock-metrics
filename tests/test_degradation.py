@@ -639,6 +639,115 @@ def test_price_source_block_fails_fast() -> None:
         shutil.rmtree(root, ignore_errors=True)
 
 
+def test_price_cache_removes_backtest_refetching() -> None:
+    """采集步骤抓到的价格序列必须被回测**直接复用**（0 次请求）。
+
+    这是整条链路里最浪费的一处：`fetch_metrics` 为每只标的抓 800 根日线，
+    算完 J/MA/量比就把表扔了；紧接着 `backtest` 又为同一批标的重新抓一遍
+    （280 次请求、10 并发、**且完全没有节流**，实测 24~111 秒）。
+
+    守卫的判据很硬：打桩 `_fetch_ohlc` 让它**一旦被调用就报错**，
+    然后断言 build_price_map 仍然拿到了全部标的、且 fetched == 0。
+    """
+    import backtest
+    import price_cache
+
+    root = tempfile.mkdtemp(prefix="dsm-pricecache-")
+    try:
+        shared_dir = os.path.join(root, "prices")
+        os.makedirs(shared_dir, exist_ok=True)
+        cache_dir = os.path.join(root, "kline_cache")
+
+        codes = ["600519", "000858"]
+        days = pd.bdate_range("2026-09-01", periods=40)
+        frames = {}
+        for i, c in enumerate(codes):
+            frames[c] = pd.DataFrame({
+                "date": days.strftime("%Y-%m-%d"),
+                "open": [10.0 + i + k * 0.01 for k in range(len(days))],
+                "close": [10.1 + i + k * 0.01 for k in range(len(days))],
+            })
+        with mock.patch.dict(os.environ, {"DSM_PRICE_CACHE": shared_dir}):
+            written = price_cache.write("output", frames)
+            assert written == 2, written
+            read_back = price_cache.read("output")
+            assert set(read_back) == set(codes), sorted(read_back)
+            assert list(read_back["600519"].columns) == ["open", "close"]
+
+            panel = pd.DataFrame({
+                "日期": pd.to_datetime([days[-1]] * 2),
+                "代码": codes,
+                "名称": ["贵州茅台", "五粮液"],
+                "最新价": [10.5, 11.5],
+            })
+
+            def boom(*a, **k):
+                raise AssertionError("共享价格序列命中时不该再联网抓取")
+
+            with mock.patch.object(backtest, "_fetch_ohlc", boom):
+                stats = {}
+                px = backtest.build_price_map(
+                    panel, "个股", cache_dir, bars=800, stats=stats,
+                    required_last=pd.Timestamp(days[-1]), shared_key="output")
+
+        assert len(px) == len(codes), f"应拿到全部标的，实际 {sorted(px)}"
+        assert stats["from_shared"] == len(codes), stats
+        assert stats["fetched"] == 0, f"不该发生任何抓取，实际 {stats['fetched']}"
+        assert stats["no_price"] == 0, stats
+        for c in codes:
+            assert px[c].index.max() == pd.Timestamp(days[-1])
+            assert list(px[c].columns) == ["open", "close"]
+        print(f"  [PASS] 回测复用采集步骤的价格序列：{len(px)} 只、0 次请求"
+              f"（原实现要重抓 {len(codes)} 次、无节流）")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_fetch_metrics_writes_shared_prices() -> None:
+    """采集步骤必须把抓到的日线写进共享目录（否则回测复用无从谈起）。"""
+    import price_cache
+
+    root = tempfile.mkdtemp(prefix="dsm-sink-")
+    try:
+        shared_dir = os.path.join(root, "prices")
+        in_csv = os.path.join(root, "list.csv")
+        out_csv = os.path.join(root, "metrics.csv")
+        pd.DataFrame({
+            "排名": [1], "代码": ["600519"], "名称": ["贵州茅台"],
+        }).to_csv(in_csv, index=False, encoding="utf-8-sig")
+
+        days = pd.bdate_range("2026-08-01", periods=30)
+        fake = pd.DataFrame({
+            "date": days.strftime("%Y-%m-%d"),
+            "open": [10.0] * len(days),
+            "close": [10.0 + k * 0.05 for k in range(len(days))],
+            "high": [10.5] * len(days),
+            "low": [9.5] * len(days),
+            "volume": [1000.0] * len(days),
+        })
+
+        with mock.patch.dict(os.environ, {"DSM_PRICE_CACHE": shared_dir,
+                                          "DSM_WORKERS": "2"}), \
+                mock.patch.object(fetch_metrics, "fetch_kline",
+                                  lambda *a, **k: fake.copy()), \
+                mock.patch.object(fetch_metrics, "fetch_valuation",
+                                  lambda *a, **k: None):
+            stats = fetch_metrics.run(in_csv=in_csv, out_csv=out_csv,
+                                      log_file=None, market="A",
+                                      cache_key="output")
+            assert stats["ok"] == 1, stats
+            shared = price_cache.read("output")
+
+        assert "600519" in shared, f"共享文件里没有这只标的：{sorted(shared)}"
+        got = shared["600519"]
+        assert list(got.columns) == ["open", "close"]
+        assert len(got) == len(days), f"应保留 {len(days)} 根，实际 {len(got)}"
+        assert float(got["close"].iloc[-1]) == float(fake["close"].iloc[-1])
+        print(f"  [PASS] 采集步骤把 {len(got)} 根日线写进共享目录（回测可零请求复用）")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def main() -> int:
     print("降级链路端到端自检")
     print("=" * 58)
@@ -654,6 +763,8 @@ def main() -> int:
     test_homepage_backtest_card_shows_excess_not_bare_win_rate()
     test_watchlist_rewrite_is_byte_stable()
     test_price_source_block_fails_fast()
+    test_price_cache_removes_backtest_refetching()
+    test_fetch_metrics_writes_shared_prices()
     print("=" * 58)
     print("全部通过")
     return 0

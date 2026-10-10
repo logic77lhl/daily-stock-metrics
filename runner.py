@@ -146,6 +146,9 @@ def _step_metrics(ctx: _Run, list_csv: str):
     stats = fetch_metrics.run(
         in_csv=tracked_csv, out_csv=metrics_csv, log_file=ctx.log_file,
         market=spec.metrics_market,
+        # 共享价格序列的键用**输出目录名**：A股 与 ETF 的 market 都是 "A"，
+        # 用 market 会让它们互相覆盖。回测侧用同样的键读（见 price_cache）。
+        cache_key=os.path.basename(ctx.out_dir_abs),
         fail_log=os.path.join(day_dir, f"failed_{iso}.csv"))
     ctx.wlog(f"步骤2完成 -> {metrics_csv}（成功 {stats['ok']}/{stats['expected']}，"
              f"失败 {stats['failed']}）")
