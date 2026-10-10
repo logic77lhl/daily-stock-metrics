@@ -1,3 +1,1 @@
-2026-10-08 23:47:12  ===== 开始每日指标任务 2026-10-08 =====
-2026-10-08 23:47:12  步骤1: 获取 A股市值前100…
-2026-10-08 23:53:03  任务失败: ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-10-10 09:13:53  [A股] 2026-10-08 回填完成：100 行（实际 2026-10-08 / 期望 2026-10-08）

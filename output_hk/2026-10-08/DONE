@@ -1,0 +1,10 @@
+status=ok
+date=2026-10-08
+market=港股通
+rows=100
+success_ratio=1.0000
+fill=1.0000
+generated_at=2026-10-10 09:14:39
+backfilled=true
+backfill_source=tencent-qfq-kline + eastmoney-valueanalysis
+backfill_note=历史重算，非当日实抓；ETF/港股无历史估值与市值，排名沿用观察池顺序
