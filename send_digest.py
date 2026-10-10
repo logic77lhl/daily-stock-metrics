@@ -20,8 +20,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+import time
 
 import reports
 
@@ -33,6 +35,42 @@ elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
 
 SITE = "https://logic77lhl.github.io/daily-stock-metrics"
+
+# 幂等标记：这一天已经**发过**哪些市场。
+#
+# 为什么必须有：DONE 防重让「重复触发」不再重新采集，但邮件如果只看 DONE，
+# 那么每一次手动补跑、每一个兜底 cron 都会再发一封内容完全相同的邮件
+# （原来的买入参考就是靠 BUY_DONE_<日期> 这个标记挡住的，这里沿用同一手法）。
+#
+# 但它不能简单是「发过就不再发」：如果第一次触发时只有 A股 通过质量门，
+# 标记写上之后就永远不会再补 ETF/港股 —— 用户当天只会收到半封邮件且无从察觉。
+# 所以标记里记**已发送的市场集合**，只有当出现了新的市场时才再发一封。
+MARKER = "DIGEST_SENT_{iso}.json"
+
+
+def _marker_path(iso: str) -> str:
+    return os.path.join(BASE_DIR, "output", MARKER.format(iso=iso))
+
+
+def _already_sent(iso: str) -> set:
+    try:
+        with open(_marker_path(iso), encoding="utf-8") as fh:
+            return set(json.load(fh).get("markets") or [])
+    except (OSError, ValueError):
+        return set()
+
+
+def _mark_sent(iso: str, markets) -> None:
+    import fsutil
+
+    try:
+        fsutil.atomic_write_json(_marker_path(iso), {
+            "markets": sorted(markets),
+            "at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }, indent=1)
+    except OSError as exc:
+        # 写不进去的后果是「下次可能重发一封」，比「下次静默不发」安全得多
+        print(f"[邮件] 幂等标记写入失败（下次可能重发）：{exc}")
 
 
 def _collect(iso: str):
@@ -99,6 +137,7 @@ def main(argv=None) -> int:
     ap.add_argument("--date", default=None, help="YYYY-MM-DD，默认按交易日历推导")
     ap.add_argument("--dry-run", action="store_true", help="只生成 HTML，不发送")
     ap.add_argument("--out", default=None, help="dry-run 时的输出路径")
+    ap.add_argument("--force", action="store_true", help="忽略幂等标记，强制重发")
     args = ap.parse_args(argv)
 
     if args.date:
@@ -119,6 +158,15 @@ def main(argv=None) -> int:
         print(f"[邮件] {iso} 没有任何市场通过质量门（跳过：{'、'.join(skipped)}），不发邮件")
         return 0
 
+    sent = _already_sent(iso)
+    fresh = [m for m in included if m not in sent]
+    if not args.force and not fresh:
+        print(f"[邮件] {iso} 已发过（已含 {'、'.join(sorted(sent))}），本轮不重发"
+              f"（要强制重发加 --force）")
+        return 0
+    if sent and fresh:
+        print(f"[邮件] {iso} 上轮已发 {'、'.join(sorted(sent))}，本轮新增 {'、'.join(fresh)}，补发一封")
+
     html = build_html(iso, fragments, included, skipped)
     print(f"[邮件] {iso} 收录 {len(included)} 个市场：{'、'.join(included)}"
           + (f"；跳过 {'、'.join(skipped)}" if skipped else "")
@@ -135,6 +183,8 @@ def main(argv=None) -> int:
     ok = send_email.send_html(html, subject=f"每日市场指标 {iso}（{'/'.join(included)}）",
                               attachments=attachments)
     print("[邮件] 已发送" if ok else "[邮件] 发送失败（请检查邮箱配置）")
+    if ok:
+        _mark_sent(iso, set(sent) | set(included))
     return 0 if ok else 1
 
 

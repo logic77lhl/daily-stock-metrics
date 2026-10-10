@@ -455,7 +455,16 @@ def test_digest_only_includes_markets_that_passed_the_gate() -> None:
             html = send_digest.build_html(iso, frags, included, skipped)
             assert "A股摘要" in html and "港股摘要" not in html, "被拒市场的摘要泄漏进了邮件"
             assert "未收录" in html, "被跳过的市场必须在邮件里显式说明"
-        print("  [PASS] 合并摘要只收录 DONE 有效的市场，被拒市场的摘要不会进邮件")
+
+            # 幂等标记：发过就不再重发，但**出现了新市场时必须补发** ——
+            # 否则「第一次只有 A股 通过」会让用户当天只收到半封邮件且无从察觉。
+            assert send_digest._already_sent(iso) == set(), "初始不应有标记"
+            send_digest._mark_sent(iso, {"A股"})
+            assert send_digest._already_sent(iso) == {"A股"}
+            assert not ({"A股"} - send_digest._already_sent(iso)), "同一批市场不该重发"
+            assert {"A股", "港股通"} - send_digest._already_sent(iso) == {"港股通"}, \
+                "新增市场必须触发补发"
+        print("  [PASS] 合并摘要只收录 DONE 有效的市场；已发过不重发、出现新市场则补发")
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

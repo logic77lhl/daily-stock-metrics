@@ -45,6 +45,9 @@ DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 # 在根下并不存在名为 DONE 的文件（旧版把它列在这里，是一条永远不命中的死配置）。
 # recommend_history.json / buy_today.html / buy_review.html 曾在此列 ——
 # 它们属于已删除的「今日买入参考」，现在没有任何生产者了。
+#
+# DIGEST_SENT_<日期>.json（合并摘要邮件的幂等标记）**刻意不列在这里**：
+# 它只对当天有意义，跟着保留窗口一起过期正好，不必再写一套清理逻辑。
 KEEP_FILES = frozenset({
     "watchlist.json",        # stock_pool 的历史追踪状态，丢了下游历史就断
 })
