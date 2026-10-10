@@ -34,4 +34,4 @@ jobs:
         run: pip install requests
 
       - name: Probe data sources
-        run: python tools/probe_sources2.py
+        run: python tools/probe_sources3.py
