@@ -22,6 +22,10 @@ MARKETS = [
 ]
 BT_SOURCES = [("个股", "a"), ("ETF", "etf"), ("HK", "hk")]
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# 用于 _strip_outer_div 的深度扫描与 _split_leading_title 的前导块剥离
+_DIV_TOKEN = re.compile(r"<div\b[^>]*>|</div>")
+_STYLE_BLOCK = re.compile(r"^\s*<style\b[^>]*>.*?</style>\s*", re.DOTALL | re.IGNORECASE)
+_LEADING_TITLE = re.compile(r"^\s*<div\b[^>]*>([^<]*)</div>\s*")
 # 归档页最多展示多少天。必须与 prune_outputs 的保留策略取同一个数，
 # 否则站点会宣称 120 天、链接却指向仓库里已经被裁掉的报告。
 MAX_DAYS = int(os.environ.get("DSM_KEEP_DAYS", "30"))
@@ -54,6 +58,38 @@ def _latest(pattern, out_dir=None):
     base = out_dir if out_dir else os.path.join(BASE_DIR, "output")
     files = sorted(glob.glob(os.path.join(base, pattern)))
     return files[-1] if files else None
+
+
+def stale_market_warnings():
+    """站点内容是否落后于「最近一个已收盘交易日」。
+
+    这是三周冻结事故的直接补救。当时站点停在 2026-09-18 而 Actions 全绿：
+    每个市场都在各自的日期上「成功」过，页面也照常构建，读者完全无法区分
+    「今天没有数据」和「已经三周没有数据」。数据源故障必须**在页面上**可见，
+    否则沉默就是最坏的失败模式。
+    """
+    try:
+        import trading_calendar
+    except Exception as exc:  # pragma: no cover
+        print(f"[warn] 无法加载 trading_calendar，跳过数据新鲜度检查: {exc}")
+        return []
+
+    out = []
+    for label, out_dir, market in (("A股", "output", "A"),
+                                   ("ETF", "output_etf", "A"),
+                                   ("港股通", "output_hk", "HK")):
+        try:
+            target = trading_calendar.latest_closed_trading_day(market=market)
+        except Exception as exc:  # pragma: no cover
+            print(f"[warn] {label} 目标交易日推导失败: {exc}")
+            continue
+        if target is None:
+            continue
+        done = os.path.join(BASE_DIR, out_dir, target.isoformat(), "DONE")
+        if not os.path.exists(done):
+            out.append(f"{label}：最近一个已收盘交易日 {target.isoformat()} 没有数据"
+                       f"（数据源故障，或采集被跳过）")
+    return out
 
 
 def build_insights_page(latest_date):
@@ -223,6 +259,13 @@ display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}}
 .tab-btn{{flex:1 0 auto;min-width:120px;border:none;background:transparent;cursor:pointer;
 border-radius:8px;padding:9px 14px;font-size:13.5px;font-weight:600;color:#657289;
 transition:all .2s;white-space:nowrap}}
+/* 窄屏改为换行：4 个 tab × min-width:120px 在 390px 上放不下，而滚动条是
+   显式隐藏的（.tabs::-webkit-scrollbar），于是第 4 个 tab 直接看不见、
+   也没有任何「可以横向滚动」的提示。换行比隐藏滚动条诚实。 */
+@media(max-width:520px){{
+  .tabs{{flex-wrap:wrap}}
+  .tab-btn{{flex:1 1 calc(50% - 4px);min-width:0}}
+}}
 .tab-btn:hover{{background:#f5f7fb;color:#1c2333}}
 .tab-btn.active{{background:linear-gradient(135deg,#5f3dc4,#7048e8);color:#fff;
 box-shadow:0 3px 10px rgba(95,61,196,.30)}}
@@ -634,6 +677,43 @@ def collect_extras():
     return extras
 
 
+def _split_leading_title(body, fallback):
+    """取出正文开头的标题行，返回 (显示标题, 剩余正文)。
+
+    为什么需要：market_insights / strategy_summary 的片段自带标题 div，而
+    `_insight_card` 还会渲染 `.icard-head` —— 首页上标题就出现两次
+    （截图里肉眼可见）。这里把内层标题**提升**为卡片标题：只留一个，
+    且用信息量更大的那个（「超跌机会」→「超跌/低吸机会榜（TOP 28）」）。
+
+    前导的 `<style>` 块必须留在正文里（媒体查询靠它生效），所以只剥标题 div。
+    """
+    head = ""
+    rest = body or ""
+    while True:
+        match = _STYLE_BLOCK.match(rest)
+        if not match:
+            break
+        head += match.group(0)
+        rest = rest[match.end():]
+
+    match = _LEADING_TITLE.match(rest)
+    if not match:
+        return fallback, body
+
+    inner = match.group(1).strip()
+    def _norm(text):  # noqa: E306
+        return re.sub(r"[^\w\u4e00-\u9fff]", "", text or "")
+    got, want = _norm(inner), _norm(fallback)
+    # 短、纯文本、且与卡片标题有重叠 → 认定是重复的标题行
+    if inner and len(inner) <= 40 and got and want and (
+            got[:2] == want[:2] or want in got or got in want):
+        # 内层标题自带 emoji，而卡片头已经渲染了自己的图标 —— 去掉前导符号，
+        # 否则会出现「📡 📡 大盘宽度仪表盘」这种重复图标
+        cleaned = re.sub(r"^[^\w\u4e00-\u9fff]+", "", inner).strip()
+        return (cleaned or inner), head + rest[match.end():]
+    return fallback, body
+
+
 def _insight_card(title, icon, body, tone=""):
     """统一外壳：覆盖 market_insights 内联 margin/border-radius/box-shadow，视觉对齐。"""
     tone_border = ""
@@ -651,6 +731,8 @@ def _insight_card(title, icon, body, tone=""):
         tone_accent = "#1c2333"
     if not body:
         body = '<div class="empty-line">暂无数据</div>'
+    else:
+        title, body = _split_leading_title(body, title)
     # 覆盖内联 margin-bottom / border-radius / box-shadow / padding
     wrapper = (f'<section class="icard" style="background:#fff;border-radius:14px;padding:0;'
                f'box-shadow:0 1px 3px rgba(28,35,51,.06);border:1px solid #eceef4{tone_border};">'
@@ -660,13 +742,38 @@ def _insight_card(title, icon, body, tone=""):
 
 
 def _strip_outer_div(body):
-    """market_insights 返回的 body 外层 div 自带内联样式，去掉它交给外层 _insight_card。"""
-    import re as _re
-    # 匹配最外层 <div style="...">...</div> 并剥掉
-    m = _re.match(r'^\s*<div\s+style="[^"]*">(.*)</div>\s*$', body, _re.DOTALL)
-    if m:
-        return m.group(1).strip()
-    return body.strip()
+    """剥掉 market_insights 返回片段的最外层 div（仅当它真的包裹整体）。
+
+    原来的正则是 `^<div style="[^"]*">(.*)</div>$`（DOTALL、贪婪）。当片段是
+    **两个并列的兄弟 div**（`opportunity_board` 的 oversold/overbought 就是）
+    时，它会吃掉第一个 div 的开标签和最后一个 div 的闭标签，产出
+    `标题</div><div ...>` 这种**孤儿闭标签 + 未闭合 div** 的畸形 HTML。
+    浏览器能容错，但结构确实是错的。
+
+    改成按深度扫描：只有「第一个 <div> 的配对 </div> 恰好在末尾」时才剥，
+    否则原样返回。
+    """
+    text = (body or "").strip()
+    if not text.startswith("<div"):
+        return text
+
+    depth = 0
+    open_end = None
+    close_end = None
+    for token in _DIV_TOKEN.finditer(text):
+        if token.group(0).startswith("</"):
+            depth -= 1
+            if depth == 0:
+                close_end = token.end()
+                break
+        else:
+            if depth == 0:
+                open_end = token.end()
+            depth += 1
+
+    if close_end is None or close_end != len(text):
+        return text          # 并列兄弟节点，不能剥
+    return text[open_end:close_end - len("</div>")].strip()
 
 
 def build_index(dates, extras, ctx):
@@ -700,6 +807,23 @@ def build_index(dates, extras, ctx):
             'font-size:13px;line-height:1.7">'
             f'⚠️ 本次有 {len(warnings)} 个板块未能生成（数据缺失或抓取失败）：'
             f'<ul style="margin:6px 0 0;padding-left:20px">{items}</ul></div>'
+        )
+
+    # 数据落后于最近一个已收盘交易日 —— 单独一条醒目的红条。
+    # 不这样做的代价已经付过：站点整整三周停在 2026-09-18，而页面上
+    # 没有任何提示，Actions 也全绿。
+    stale = ctx.get("stale") or []
+    stale_html = ""
+    if stale:
+        items = "".join(f"<li>{html.escape(str(s))}</li>" for s in stale)
+        stale_html = (
+            '<div class="banner" style="max-width:1200px;margin:12px auto;padding:12px 16px;'
+            'border:1px solid #e03131;background:#fff5f5;border-radius:8px;'
+            'font-size:13.5px;line-height:1.75;color:#8a1c1c">'
+            '🚨 <b>数据已过期</b> —— 下列市场缺少最近一个交易日的产物：'
+            f'<ul style="margin:6px 0 0;padding-left:20px">{items}</ul>'
+            '<div style="margin-top:6px;color:#a33">下方展示的是更早日期的数据，'
+            '请勿当作最新行情使用。</div></div>'
         )
 
     # ---- 洞察区：大盘宽度（宽卡）+ 板块温度（宽卡）+ 超跌/超买双列 ----
@@ -761,7 +885,7 @@ box-shadow:0 4px 14px rgba(28,35,51,.07);border:1px solid #eceef4;min-height:62p
 @media(max-width:780px){{.kpi-row{{grid-template-columns:repeat(2,1fr)}}}}
 
 /* ---- insight cards (统一外壳，覆盖内联样式) ---- */
-.icard{{margin-bottom:14px}}
+.icard{{margin-bottom:14px;min-width:0}}
 .icard-head{{display:flex;align-items:center;gap:6px;padding:12px 18px;
 border-bottom:1px solid #f0f2f8;font-size:14px;font-weight:700;color:#1c2333}}
 .icard-title{{font-size:14px}}
@@ -780,6 +904,7 @@ margin:0 4px 4px 0}}
 
 /* ---- opp grid (超跌 + 超买双列) ---- */
 .opp-grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:0}}
+.opp-grid > *{{min-width:0}}
 @media(max-width:780px){{.opp-grid{{grid-template-columns:1fr}}}}
 .opp-grid .icard{{margin-bottom:0}}
 
@@ -839,6 +964,7 @@ footer{{text-align:center;color:#98a1b3;font-size:11.5px;padding:16px 12px 28px;
 {banner_html}
 </div></header>
 <main>
+{stale_html}
 <div class="kpi-row">{ctx.get("kpi_chips", "")}</div>
 {breadth_card}
 {sector_card}
@@ -863,7 +989,14 @@ def main():
             shutil.copy(src, os.path.join(dst, f"{key}.html"))
     extras = collect_extras()
 
-    latest = dates[0][0] if dates else None
+    # 「最新」必须是**有 A 股报告**的那一天：洞察页/今日摘要/价值标的/买入参考
+    # 全都读 A 股的产物。原来取的是「任一市场的最新日期」—— 一旦某天只有
+    # ETF 或港股成功，洞察页就会整块消失、导航 pill 也随之不见，
+    # 而日志里没有任何提示（静默降级）。
+    latest = next((d for d, keys in dates if "a" in keys), None)
+    if latest is None and dates:
+        latest = dates[0][0]
+        print("::warning::没有任何日期含 A 股报告，洞察页退化为使用其它市场的日期构建")
     if latest:
         try:
             insights_body = build_insights_page(latest)
@@ -884,9 +1017,13 @@ def main():
         extras.append("archive.html")
 
     ctx = build_dashboard_ctx(latest)
+    # 数据新鲜度检查：站点内容落后于「最近一个已收盘交易日」时必须在页面上可见
+    ctx["stale"] = stale_market_warnings()
     for warning in ctx.get("warnings", []):
         # 让 workflow 日志里也能直接看到，而不是只有翻 HTML 才发现
         print(f"::warning::站点缺块：{warning}")
+    for warning in ctx["stale"]:
+        print(f"::warning::数据过期：{warning}")
     with open(os.path.join(DOCS_DIR, "index.html"), "w", encoding="utf-8") as f:
         f.write(build_index(dates, extras, ctx))
     n_reports = sum(len(k) for _, k in dates)
