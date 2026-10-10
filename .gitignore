@@ -12,3 +12,15 @@ backtest_results/
 # 3.2MB 的单文件、每日重建，且不被 docs/ 站点引用（仅本地查看），不入库。
 # 由 prune_outputs.py 一次性从索引移除。
 /output/stock_charts.html
+
+# 日报 HTML/MD 是**派生数据**：完全可由 metrics_<日期>.csv 重建
+# （generate_report 只依赖 CSV），构建时由 build_pages.materialize 物化。
+# 实测一次日常提交里 .html 占 2973/4014 行（74%）、按字节占已提交产物的 62%。
+# 注意保留窗口必须比站点窗口大 21 天，否则重建时滚动胜率会退化成「历史不足」
+# （见 prune_outputs.HISTORY_DAYS 的说明）。
+output/*/report_*.html
+output/*/report_*.md
+output_etf/*/report_*.html
+output_etf/*/report_*.md
+output_hk/*/report_*.html
+output_hk/*/report_*.md

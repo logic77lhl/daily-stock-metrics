@@ -36,7 +36,9 @@ import requests  # noqa: E402
 
 import fetch_metrics  # noqa: E402
 import quality  # noqa: E402
-import run_daily  # noqa: E402
+import runner  # noqa: E402
+import run_buy_daily  # noqa: E402
+import strategy_summary  # noqa: E402
 
 # 2026-10-09（周五）22:00 北京时间：已收盘、且下一交易日 10-12 尚未开盘，
 # 所以目标日就是 10-09 本身。用固定时刻而不是「现在」，否则测试会随运行时间漂移。
@@ -110,46 +112,56 @@ def _seed_pool(out_dir: str, size: int = 60, latest: str = "2026-10-08") -> dict
     return pool
 
 
-def _patch_stack(out_dir: str, blocked, metrics_writer):
-    """把 run_daily 的每个外部依赖都换成夹具（只打桩边界，不改被测逻辑）。"""
+def _patch_stack(root: str, blocked, metrics_writer):
+    """把每个外部依赖都换成夹具（只打桩边界，不改被测逻辑）。"""
     return [
         mock.patch.dict(os.environ, {"DSM_CALENDAR_NOW": NOW}, clear=False),
-        mock.patch.object(run_daily, "OUTPUT_DIR", out_dir),
-        mock.patch.object(run_daily.fetch_top100, "run", blocked),
-        mock.patch.object(run_daily.fetch_metrics, "run", metrics_writer),
-        mock.patch.object(run_daily.fetch_market_breadth, "run", _conn_error),
-        mock.patch.object(run_daily.generate_stock_charts, "run",
-                          lambda *a, **k: os.path.join(out_dir, "stock_charts.html")),
-        mock.patch.object(run_daily.send_email, "send_report", lambda *a, **k: True),
-        mock.patch.object(run_daily.run_buy_daily, "_load_hist", lambda *a, **k: {}),
-        mock.patch.object(run_daily.run_buy_daily, "build_review", lambda *a, **k: ("", "")),
+        # 让产物落到临时「仓库根」，绝不碰真实工作区
+        mock.patch.object(runner, "BASE_DIR", root),
+        mock.patch("fetch_top100.run", blocked),
+        mock.patch("fetch_etf.run", blocked),
+        mock.patch("fetch_hk.run", blocked),
+        mock.patch("fetch_metrics.run", metrics_writer),
+        mock.patch("fetch_market_breadth.run", _conn_error),
+        mock.patch("generate_stock_charts.run",
+                   lambda *a, **k: os.path.join(root, "stock_charts.html")),
+        mock.patch("send_email.send_report", lambda *a, **k: True),
+        mock.patch.object(run_buy_daily, "_load_hist", lambda *a, **k: {}),
+        mock.patch.object(run_buy_daily, "build_review", lambda *a, **k: ("", "")),
         # 根目录摘要是**入库文件**，测试绝不能碰仓库工作区
-        mock.patch.object(run_daily.strategy_summary, "write_root_summary",
-                          lambda *a, **k: None),
+        mock.patch.object(strategy_summary, "write_root_summary", lambda *a, **k: None),
     ]
+
+
+def _fake_metrics_writer():
+    def fake(in_csv, out_csv, log_file=None, fail_log=None, market=None, **kw):
+        # 真实 fetch_metrics 会返回 bar_date；质量门用它比对目标交易日
+        write_metrics(out_csv, TRADING_DAY)
+        return {"ok": ROWS, "expected": ROWS, "failed": 0,
+                "success_ratio": 1.0, "bar_date": TRADING_DAY}
+    return fake
+
+
+def _run_with(stack):
+    for patcher in stack:
+        patcher.start()
+    try:
+        return runner.run(runner.SPECS["a"])
+    finally:
+        for patcher in reversed(stack):
+            patcher.stop()
 
 
 def test_list_block_degrades_to_pool_fallback() -> None:
     """名单接口被 RST 时：降级、指标照抓、DONE 标 pool-fallback、质量门仍通过。"""
-    out_dir = tempfile.mkdtemp(prefix="dsm-degrade-")
+    root = tempfile.mkdtemp(prefix="dsm-degrade-")
     try:
+        out_dir = os.path.join(root, "output")
+        os.makedirs(out_dir, exist_ok=True)
         pool = _seed_pool(out_dir)
         blocked = _ListBlocked()
 
-        def fake_metrics(in_csv, out_csv, log_file=None, fail_log=None, market=None):
-            # 真实 fetch_metrics 会返回 bar_date；质量门用它比对目标交易日
-            write_metrics(out_csv, TRADING_DAY)
-            return {"ok": ROWS, "expected": ROWS, "failed": 0,
-                    "success_ratio": 1.0, "bar_date": TRADING_DAY}
-
-        stack = _patch_stack(out_dir, blocked, fake_metrics)
-        for patcher in stack:
-            patcher.start()
-        try:
-            rc = run_daily.main()
-        finally:
-            for patcher in reversed(stack):
-                patcher.stop()
+        rc = _run_with(_patch_stack(root, blocked, _fake_metrics_writer()))
 
         day_dir = Path(out_dir, TRADING_DAY)
         done = day_dir / "DONE"
@@ -176,28 +188,18 @@ def test_list_block_degrades_to_pool_fallback() -> None:
         print(f"  [PASS] 名单接口 RST → 降级 {len(pool)} 只，指标 {len(metrics)} 行全抓，"
               f"DONE 标 universe=pool-fallback 且门通过")
     finally:
-        shutil.rmtree(out_dir, ignore_errors=True)
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def test_empty_pool_fails_loudly_and_writes_no_done() -> None:
     """池空时降级无历史可用 —— 必须响亮失败，绝不写出一个「成功」的 DONE。"""
-    out_dir = tempfile.mkdtemp(prefix="dsm-nopool-")
+    root = tempfile.mkdtemp(prefix="dsm-nopool-")
     try:
+        out_dir = os.path.join(root, "output")
+        os.makedirs(out_dir, exist_ok=True)   # 刻意不写 watchlist.json
         blocked = _ListBlocked()
 
-        def fake_metrics(in_csv, out_csv, log_file=None, fail_log=None, market=None):
-            write_metrics(out_csv, TRADING_DAY)
-            return {"ok": ROWS, "expected": ROWS, "failed": 0,
-                    "success_ratio": 1.0, "bar_date": TRADING_DAY}
-
-        stack = _patch_stack(out_dir, blocked, fake_metrics)
-        for patcher in stack:
-            patcher.start()
-        try:
-            rc = run_daily.main()
-        finally:
-            for patcher in reversed(stack):
-                patcher.stop()
+        rc = _run_with(_patch_stack(root, blocked, _fake_metrics_writer()))
 
         day_dir = Path(out_dir, TRADING_DAY)
         assert rc == 1, f"池空时应当失败（rc=1），实际 rc={rc}"
@@ -207,7 +209,73 @@ def test_empty_pool_fails_loudly_and_writes_no_done() -> None:
         assert "观察池为空" in log, f"失败原因必须留在日志里：{log[-300:]}"
         print("  [PASS] 观察池为空时不写 DONE、返回 1（不会把「无数据」伪装成成功）")
     finally:
-        shutil.rmtree(out_dir, ignore_errors=True)
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_report_log_has_no_per_symbol_echo() -> None:
+    """随产物提交的日志里不能有逐标的完成回显（那是 metrics CSV 的重复抄写）。"""
+    root = tempfile.mkdtemp(prefix="dsm-log-")
+    try:
+        out_dir = os.path.join(root, "output")
+        os.makedirs(out_dir, exist_ok=True)
+        _seed_pool(out_dir)
+
+        rc = _run_with(_patch_stack(root, _ListBlocked(), _fake_metrics_writer()))
+        assert rc == 0, f"夹具运行应当成功，实际 rc={rc}"
+
+        log_path = Path(out_dir, TRADING_DAY, f"run_{TRADING_DAY}.log")
+        log = log_path.read_text(encoding="utf-8")
+        echoed = [l for l in log.splitlines() if "完成  日J=" in l]
+        assert not echoed, (
+            f"日志里仍有 {len(echoed)} 行逐标的回显；它们与 metrics CSV 完全重复，"
+            f"会让真正的诊断被淹没（实测占落盘日志 143 行里的 113 行）")
+        assert "步骤2完成" in log, "汇总诊断行必须保留"
+        print(f"  [PASS] 落盘日志只留诊断（{len(log.splitlines())} 行），"
+              f"逐标的回显改走 stdout")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_reports_are_derived_from_csv() -> None:
+    """报告必须是**可由 CSV 重建**的派生数据 —— 这是「报告不入库」的前提。
+
+    守两件事：
+      1. `build_pages.collect()` 的判据是 metrics CSV，而不是报告 HTML。
+         否则报告一旦不入库，站点会整片空掉（而 .gitignore 只是让它们不入库，
+         并不会让它们消失，所以这个错误在本地测试里看不出来）。
+      2. 报告缺失时 `reports.ensure()` 能真的从 CSV 重建出内容。
+
+    为什么值得单独守：实测一次日常提交里 .html 占 2973/4014 行（74%）。
+    砍掉它的代价是「站点构建必须能自己把报告造出来」，这条链一旦断了，
+    表现是**线上站点没有报告**，而 CI 仍然全绿（docs 是 artifact，构建成功即部署）。
+    """
+    import build_pages
+    import reports
+
+    root = tempfile.mkdtemp(prefix="dsm-derived-")
+    try:
+        iso = "2026-10-09"
+        day_dir = os.path.join(root, "output_etf", iso)
+        os.makedirs(day_dir, exist_ok=True)
+        metrics = os.path.join(day_dir, f"metrics_{iso}.csv")
+        write_metrics(metrics, iso, n=12)
+        # 刻意**不**放 report_*.html —— 模拟「报告不入库」的全新检出
+        assert not os.path.exists(os.path.join(day_dir, f"report_{iso}.html"))
+
+        with mock.patch.object(build_pages, "BASE_DIR", root):
+            entries = build_pages.collect()
+            assert iso in entries, (
+                "collect() 没有按 metrics CSV 收录这一天 —— 报告不入库后站点会空掉")
+            assert "etf" in entries[iso], f"应认出 etf 市场，实际 {entries[iso]}"
+            resolved = build_pages.materialize([(iso, entries[iso])])
+
+        assert resolved and "etf" in resolved[0][1], "报告未能物化"
+        html = Path(resolved[0][1]["etf"]).read_text(encoding="utf-8")
+        assert "样本000" in html, "重建出的报告里没有数据行内容"
+        assert len(html) > 2000, f"重建出的报告过小（{len(html)} 字节）"
+        print(f"  [PASS] 报告由 CSV 物化（{len(html)} 字节），collect() 锚在数据上而非派生 HTML")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def test_quality_gate_rejects_stale_bar_date() -> None:
@@ -232,12 +300,42 @@ def test_quality_gate_rejects_stale_bar_date() -> None:
         shutil.rmtree(out_dir, ignore_errors=True)
 
 
+def test_history_is_point_in_time() -> None:
+    """重建历史报告时不得读到报告日之后的行情（前视）。
+
+    实测这个前视是**真实存在**的：不隔离时重建 2026-09-18 的报告，会读到
+    2026-10-08（29 个交易日），于是「近 20 日胜率」的窗口整个落在报告日之后。
+    """
+    out_dir = tempfile.mkdtemp(prefix="dsm-pit-")
+    try:
+        for iso in ("2026-09-17", "2026-09-18", "2026-09-21", "2026-09-22"):
+            day_dir = os.path.join(out_dir, iso)
+            os.makedirs(day_dir, exist_ok=True)
+            write_metrics(os.path.join(day_dir, f"metrics_{iso}.csv"), iso, n=12)
+
+        panel = strategy_summary._load_history(
+            out_dir, exclude_date="2026-09-18", as_of="2026-09-18")
+        assert panel is not None and not panel.empty
+        newest = panel["日期"].max().date().isoformat()
+        assert newest <= "2026-09-18", f"时点隔离失效，读到了 {newest}"
+
+        leaked = strategy_summary._load_history(out_dir, exclude_date="2026-09-18")
+        assert leaked["日期"].max().date().isoformat() == "2026-09-22", (
+            "对照：不传 as_of 时会读到未来（这正是被修掉的前视）")
+        print("  [PASS] 历史面板按 as_of 时点隔离（对照：不隔离时会读到未来）")
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
 def main() -> int:
     print("降级链路端到端自检")
     print("=" * 58)
     test_list_block_degrades_to_pool_fallback()
     test_empty_pool_fails_loudly_and_writes_no_done()
+    test_report_log_has_no_per_symbol_echo()
+    test_reports_are_derived_from_csv()
     test_quality_gate_rejects_stale_bar_date()
+    test_history_is_point_in_time()
     print("=" * 58)
     print("全部通过")
     return 0

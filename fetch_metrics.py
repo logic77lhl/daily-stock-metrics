@@ -255,9 +255,21 @@ def percentile(series, value, window=None):
     return round(float((s <= value).mean()) * 100, 2)
 
 
-def log(msg, log_file):
+def log(msg, log_file=None):
+    """写一行诊断。
+
+    log_file=None 表示**只打印到 stdout、不落盘**。这区分了两类信息：
+
+      * 诊断（步骤推进、降级、失败原因、汇总）→ 落盘。它是随产物提交的、
+        比 CI artifact 更持久的「这一天到底发生了什么」的唯一记录。
+      * 逐标的完成回显 → 只进 stdout。实测它占了落盘日志 143 行里的 113 行
+        （约 17KB / 22.7KB），而内容是 metrics CSV 的重复抄写（日J/周J/月J/
+        MA20/价/涨跌…），既不是诊断、也让真正的诊断被淹没。
+    """
     line = f"{time.strftime('%Y-%m-%d %H:%M:%S')}  {msg}"
     print(line)
+    if log_file is None:
+        return
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(line + "\n")
 
@@ -420,9 +432,10 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock,
         append_record(rec, out_csv, lock=write_lock)
         close_str = f" 价={rec['最新价']} 涨={rec['涨跌幅']}%" if rec['最新价'] is not None else ""
         ma_str = f" MA20={rec['MA20']} MA60={rec['MA60']} 多头={rec['双均线多头']}"
+        # 只进 stdout：这是 CSV 的重复抄写，不该进随产物提交的日志（见 log() 的说明）
         log(f"[{rank_tag}] {code} {name}  完成  "
             f"日J={rec['日线J']} 周J={rec['周线J']} 月J={rec['月线J']}{ma_str}{close_str}  "
-            f"PE={rec['PE_TTM']}({rec['PE历史分位%']}%) PB={rec['PB_MRQ']}({rec['PB历史分位%']}%)", log_file)
+            f"PE={rec['PE_TTM']}({rec['PE历史分位%']}%) PB={rec['PB_MRQ']}({rec['PB历史分位%']}%)")
         # 返回实际数据日期（truthy）而不是 True：runner 需要它做完整性校验
         return rec["数据日期"] or True
     except Exception as e:
@@ -500,15 +513,20 @@ def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FIL
         except Exception as e:
             print(f"回读「数据日期」失败（不影响主流程）：{e}")
 
+    expected = len(top)
+
     # 全军覆没时给出自解释的错误，而不是让下游在「CSV 不存在」上崩掉
     # （实测 113 只全失败后，步骤 3 抛的是 FileNotFoundError，真实原因被盖住）
+    #
+    # 注意 `expected` 必须在这之前绑定：这里原来引用了下面才赋值的 expected，
+    # 于是「全灭」这条路径抛的是 NameError: name 'expected' is not defined ——
+    # 恰恰在最需要真实原因的时候把它盖掉了。
     if n_ok == 0 and not done:
         raise RuntimeError(
             f"所有 {expected} 只标的的指标都抓取失败（成功 0）——"
             f"通常是数据源限流或网络封锁，请查看失败明细 {fail_log}"
         )
 
-    expected = len(top)
     stats = {
         "out_csv": out_csv,
         "expected": expected,

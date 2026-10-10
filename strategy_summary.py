@@ -40,11 +40,20 @@ def _md_esc(val):
     return str(val).replace("|", "\\|").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _load_history(market_dir, exclude_date=None):
+def _load_history(market_dir, exclude_date=None, as_of=None):
+    """载入历史 metrics 面板。
+
+    as_of 是**时点隔离**：只使用 <= as_of 的日期。没有它，重建一份历史报告
+    （回填的 `--reports-only`、站点构建时物化）会读到**报告日之后**才产生的
+    行情，于是把「当时不可能知道的胜率」写进归档页 —— 这是前视偏差，
+    而且完全静默：数字看起来很正常，只是它来自未来。
+    """
     frames = []
     for path in sorted(glob.glob(os.path.join(market_dir, "????-??-??", "metrics_*.csv"))):
         date = os.path.basename(os.path.dirname(path))
         if exclude_date and date == exclude_date:
+            continue
+        if as_of and date > as_of:
             continue
         try:
             df = pd.read_csv(path, dtype={"代码": str})
@@ -184,11 +193,16 @@ def _overview(today_df):
     return "，".join(bits)
 
 
-def build_summary(metrics_csv, market_dir, market_label):
-    """生成今日速览。返回 {"html":..., "md":...}；历史不足时给出显式占位文本。"""
+def build_summary(metrics_csv, market_dir, market_label, as_of=None):
+    """生成今日速览。返回 {"html":..., "md":...}；历史不足时给出显式占位文本。
+
+    as_of 默认取「报告自己的日期」，也就是**只用截至当日的历史**。
+    日更路径下未来的日期本来就不存在，所以行为不变；而重建历史报告时，
+    这个默认值正是防止前视的那道闸。
+    """
     today_df = pd.read_csv(metrics_csv, dtype={"代码": str})
     today = os.path.basename(os.path.dirname(metrics_csv))
-    panel = _load_history(market_dir, exclude_date=today)
+    panel = _load_history(market_dir, exclude_date=today, as_of=as_of or today)
 
     html_parts = [f"<li>📊 <b>{market_label}</b>：{_overview(today_df)}</li>"]
     md_parts = [f"- **{market_label}**：{_overview(today_df)}"]
@@ -241,7 +255,9 @@ def build_buy_list(markets, date_str=None):
             _warn(f"今日 metrics 读取失败，跳过 {label}（{mcsv}）：{type(exc).__name__}: {exc}")
             continue
         today = os.path.basename(os.path.dirname(mcsv))
-        panel = _load_history(mdir, exclude_date=today)
+        # as_of 用 metrics 自身的日期，而不是展示用的 date_str：
+        # 时点隔离必须锚在数据日期上（见 _load_history 的说明）
+        panel = _load_history(mdir, exclude_date=today, as_of=today)
         ranked, note = _ranked_strategies(panel)
         if not ranked:
             _warn(f"{label} 暂不参与买入参考：{note}")

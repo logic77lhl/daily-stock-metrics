@@ -61,7 +61,7 @@ def fetch_top100(rounds=2, note=None):
                       rounds=rounds, note=note)
 
 
-def build_dataframe(note=None):
+def build_dataframe(top=100, note=None):
     data = fetch_top100(note=note)
     rows = []
     for item in data:
@@ -80,13 +80,18 @@ def build_dataframe(note=None):
             "毛利率%": item.get("f49"),
         })
     df = pd.DataFrame(rows)
-    df = df.sort_values("总市值", ascending=False).head(100).reset_index(drop=True)
+    df = df.sort_values("总市值", ascending=False).head(top).reset_index(drop=True)
     df.insert(0, "排名", range(1, len(df) + 1))
     return df
 
 
-def run(out_path=None, note=None):
-    df = build_dataframe(note=note)
+def run(top=100, out_path=None, log_file=None, note=None):
+    """与 fetch_etf.run / fetch_hk.run 保持同一签名，供统一 runner 调用。
+
+    log_file 在这里未被使用（A 股名单只有一次请求、没有翻页进度可记）；
+    保留参数是为了三个市场能走同一段编排代码，而不是为差异再开一个分支。
+    """
+    df = build_dataframe(top=top, note=note)
     if out_path is None:
         out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "top100.csv")
     df.to_csv(out_path, index=False, encoding="utf-8-sig")

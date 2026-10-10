@@ -13,16 +13,20 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| `run_daily.py` | 主入口（编排器）：依次跑步骤1、步骤2，输出到 `output\日期\` |
+| `runner.py` | **唯一的**每日流水线：三个市场共用一份编排（差异集中在 `MarketSpec`） |
+| `run_daily.py` | A股入口薄壳（`= python runner.py a`）；`run_etf_daily.py` / `run_hk_daily.py` 同理 |
+| `reports.py` | 报告组装与物化：**唯一**决定「一份日报由哪些块拼成」的地方 |
 | `fetch_top100.py` | 步骤1：获取 A股市值前100（东方财富） |
 | `fetch_metrics.py` | 步骤2：算 KDJ-J（腾讯K线）+ PE/PB 历史分位（东方财富估值） |
 | `trading_calendar.py` | **唯一**的交易日判断入口：目标日推导 + 节假日表 + `plan` 子命令 |
 | `quality.py` | 数据质量门 + DONE 标记（唯一出口）；校验行数/成功率/填充率/**数据日期** |
 | `http_util.py` | 统一 HTTP 层：Session 复用、退避重试、`HostPool` 主机退役、等待预算 |
+| `signals.py` | 信号分类的唯一定义（`generate_report` / `market_insights` 共用，防漂移） |
 | `backfill.py` | 历史回填：用历史 K 线 + 历史估值重算缺失交易日 |
 | `generate_stock_charts.py` | 步骤4：汇总历史每日 metrics，生成个股股价走势图（x轴下方显示每日信号） |
 | `tests/test_calendar.py` | 交易日历结构自检 + 目标日推导（含跨午夜回归守卫） |
 | `tests/test_workflows.py` | workflow YAML 结构守卫（`run: \|` 块截断会导致整份 workflow 非法） |
+| `tests/test_degradation.py` | 降级链路端到端：名单接口 RST → 观察池降级 → 门仍通过；报告可由 CSV 重建 |
 | `run.bat` | 静默启动器（供自启动调用） |
 | `setup_autostart.ps1` | 注册开机(登录)自动运行 |
 | `remove_autostart.ps1` | 取消自动运行 |
@@ -31,10 +35,19 @@
 ## 每日输出（以 2026-07-19 为例）
 
 - `output\2026-07-19\top100_2026-07-19.csv` — 市值前100
-- `output\2026-07-19\metrics_2026-07-19.csv` — 指标结果
-- `output\2026-07-19\run_2026-07-19.log` — 运行日志（逐条记录）
+- `output\2026-07-19\metrics_2026-07-19.csv` — 指标结果（**源头数据**，入库）
+- `output\2026-07-19\run_2026-07-19.log` — 运行日志（只记诊断，逐标的回显走 stdout）
 - `output\2026-07-19\DONE` — 完成标记。**内容即体检报告**（status/rows/success_ratio/fill），
   只有数据质量门通过才会写入；工作流据此判断当天是否真的完成
+
+**日报 HTML/MD 不入库**。它们是**派生数据**：`generate_report` 只依赖 metrics CSV，
+所以 `build_pages.py` 在构建站点时用 `reports.ensure()` 现场物化。实测一次日常提交里
+`.html` 占 2973/4014 行（74%）、按字节占已提交产物的 62%，而它们可以被完全重建。
+
+这同时修掉一个隐蔽问题：把派生 HTML 入库，意味着**代码修好后归档页会一直停留在
+旧代码的输出上**。实测证据：`output/2026-10-09/report_*.html` 由 `7f98e25`
+（10-10 00:06）提交，而 `market_insights.py` 的信号分类修复在 `ef20d2f`
+（10-10 09:31）—— 晚了 5.5 小时，那份报告因此一直缺着修复后的板块分组。
 
 `metrics` 字段：排名、代码、名称、日线J、周线J、月线J、最新价、涨跌幅、PE_TTM、PE历史分位%、PB_MRQ、PB历史分位%、MA20、MA60、双均线多头、价距MA20%、量比、PE5年分位%、PB5年分位%、行业
 
@@ -79,8 +92,11 @@
   `datacenter-web`（估值）、腾讯 K 线、`quote.eastmoney.com` 都正常。这是
   **主机级、非瞬时**的封锁，指数退避对它没有任何价值。所以：
   - `http_util.HostPool` 让连续失败的主机**退役**，把最坏耗时从 351 秒压到约 45 秒；
-    快速失败是为了把机会让给**不同时刻**的重试（workflow 的 Retry 步骤 + 下一个 cron），
-    在进程内死等只是烧预算。
+    快速失败是为了把机会让给**不同时刻**的重试 —— 也就是**下一个 cron**。
+    这里曾经有一个 CI 内的「3 轮重试未完成市场」步骤（每轮 `sleep 180`，最多再
+    全量重采 9 次），实测**一次都没救回过运行**：抽样 3 个失败运行全部是
+    「第 1 轮重试后仍缺 → 第 2 轮重试后仍缺」，因为它的 sleep 180 与封禁窗口
+    是同一个 10 分钟。已删除，失败运行耗时从 5~10 分钟降到 2 分钟以内。
   - 三个「取列表」的步骤都有**降级路径**：接口不可用时改用观察池历史名单
     （`stock_pool.list_from_pool`）。成分日间变化极小，而**指标仍然全部实抓**，
     所以降级只影响「今天谁算 Top100」，不影响任何一行指标。DONE 里会记
@@ -112,11 +128,17 @@
   python backfill.py --all --from 2026-09-21 --to 2026-10-08 --dry-run
   python backfill.py --all --from 2026-09-21 --to 2026-10-08
   ```
-- **产物保留 30 个交易日**：`prune_outputs.py` 只保留最近 `DSM_KEEP_DAYS`（默认 30）
-  个交易日的目录与带日期的文件；裁剪用 `git rm`（同时删索引与工作区）。
+- **产物保留：站点 30 天 + 统计历史 21 天 = 51 个交易日**。`prune_outputs.py`
+  默认保留 `DSM_KEEP_DAYS`(30) + `HISTORY_DAYS`(21)，裁剪用 `git rm`（同时删索引与工作区）。
   `output/stock_charts.html`（3.2 MB、每日重建、站点不引用）已不再入库。
+
+  为什么必须多留 21 天：站点归档要展示 30 天，而重建归档报告需要
+  `strategy_summary` 的 20 日滚动胜率窗口。只留 30 天时，最老那几天重建出来会
+  退化成「历史不足」—— 实测已提交的 2026-09-18 港股报告写着「近20日胜率 49%，
+  样本68」，重建却变成「历史不足：仅 20 个交易日」。多出的 21 天只作为**统计
+  历史**，不出现在站点上（站点窗口由 `build_pages.MAX_DAYS = DSM_KEEP_DAYS` 控制）。
 - **等待预算**：各步骤通过 `DSM_DEADLINE_SEC` 限制最长等待，超出即抛
-  `DeadlineExceeded` → 不写 DONE → 由 workflow 的重试步骤补跑，
+  `DeadlineExceeded` → 不写 DONE → 由下一个 cron 补跑，
   而不是在里面死等到 job 超时。
 - **价格源只有腾讯一个，而且它也会挂**：腾讯对云厂商出口 IP 会返回
   `501 + JS 挑战页`（body 是 `var i=location.href;var v=window.bt...`）。
@@ -145,6 +167,14 @@
 - **失败诊断要留痕**：workflow 会把 `run_*.log` 与 `failed_*.csv` 作为 artifact
   上传（保留 14 天）。fetch 层的重试明细以前只进 stdout，仓库里的 `run_*.log`
   只有三行，事后完全无法判断「重试了几次、哪个主机失败」。
+  **落盘日志只记诊断**：逐标的的完成回显（`[ 12] 600000 … 日J=… MA20=…`）改为
+  只进 stdout —— 它是 metrics CSV 的重复抄写，实测占了落盘日志 143 行里的 113 行
+  （约 17KB / 22.7KB），却把真正的诊断淹没。现在落盘日志约 20 行。
+- **历史面板必须时点隔离**：`strategy_summary._load_history(as_of=...)` 只使用
+  `<= as_of` 的日期。没有它，重建一份历史报告会读到**报告日之后**才产生的行情，
+  把「当时不可能知道的胜率」写进归档页。实测这个前视是真实存在的：不隔离时重建
+  2026-09-18 的报告会读到 2026-10-08（29 个交易日），而「近 20 日胜率」的窗口
+  需要的是 08-19~09-17 —— 整个窗口都落在报告日之后。
 - **workflow YAML 结构守卫**：`tests/test_workflows.py` 会检查 `run: |` 块有没有
   被顶格内容截断（内联多行 Python 最容易踩）。这不是洁癖：块被截断会让**整份
   workflow 非法**，GitHub 以「workflow file issue」在 0 秒失败且日志为空 ——
@@ -213,10 +243,24 @@ T 日收盘后出信号  →  T+1 开盘价建仓  →  持有 h 个交易日后
 ## 手动运行
 
 ```powershell
-python run_daily.py
+python runner.py a      # A股（等价于 python run_daily.py）
+python runner.py etf    # ETF
+python runner.py hk     # 港股通
 ```
 
 或双击 `run.bat`（静默）。当天已完成会自动跳过；未完成会自动续跑。
+
+只重建站点（不采集，例如改完页面样式后重新部署）：
+
+```powershell
+python build_pages.py            # 报告由 metrics CSV 现场物化，约 55 秒 / 90 份
+```
+
+回填后或裁剪后补生成某几天的报告：
+
+```powershell
+python reports.py ensure a 2026-09-21 2026-09-22
+```
 
 ## 开机自动运行
 
@@ -245,12 +289,17 @@ powershell -ExecutionPolicy Bypass -File .\remove_autostart.ps1
 
 项目已托管到 GitHub，由 `.github/workflows/daily.yml` 定时执行，无需开机：
 
-- **时间**：工作日北京时间约 17:30（GitHub 定时任务可能有几分钟到半小时延迟）
+- **时间**：6 个触发点（工作日北京时间 16:30 / 17:00 / 17:30 / 19:00 / 21:30 / 次日 01:00）。
+  GitHub 的 schedule 是 best-effort，**实测延迟 4~8 小时**（不是「几分钟到半小时」——
+  早期 README 就是这么写的，而这个错误认知正是 2026-09 丢掉 8 个交易日的原因之一）。
+  多触发点是**有意的冗余**：先到的跑完写 DONE，后到的自动跳过；某一档恰好撞上
+  数据源封禁窗口时，下一档就是它的重试。
 - **流程**：A股 → ETF → 港股 → **买入参考邮件** → 自动把 `output*` 结果提交回仓库（历史走势图持续累积）
 - **邮件**：3 封市场报告（含"📌 今日速览"动态策略摘要，按近20日次日胜率自动选优）
   + 1 封跨市场「今日买入参考」（按胜率排序，最多10只，无命中不发）
-- **GitHub 预览**：根目录 `摘要-A股.md` / `摘要-ETF.md` / `摘要-港股.md` / `摘要-买入参考.md` 每日自动更新；
-  各日期目录下有完整 Markdown 版报告 `report_日期.md`
+- **GitHub 预览**：根目录 `摘要-A股.md` / `摘要-ETF.md` / `摘要-港股.md` / `摘要-买入参考.md` 每日自动更新。
+  各日期目录下的 `report_日期.md` / `report_日期.html` 仍会生成（邮件与站点都用它），
+  但**不入库** —— 它们是派生数据，由 `build_pages.py` 从 metrics CSV 现场重建。
 - **手机适配**：报告 HTML 已针对移动端优化（窄屏字体/布局自适应）
 - **手动触发**：仓库页 Actions → daily-metrics → Run workflow
 - **日志查看**：Actions 运行记录里可看每步输出

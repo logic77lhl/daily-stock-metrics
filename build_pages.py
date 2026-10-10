@@ -41,6 +41,13 @@ except Exception:  # pragma: no cover
 
 
 def collect():
+    """收集每个市场每天的 **数据**（metrics CSV），而不是派生的报告 HTML。
+
+    为什么改判据：日报 HTML/MD 已不再入库（实测一次日常提交里 .html 占
+    2973/4014 行 = 74%，而它完全可由 CSV 重建）。判据必须锚在**源头**上，
+    否则站点会在「报告没入库」时整片空掉。报告由 `materialize()` 在构建时
+    从 CSV 物化出来。
+    """
     entries = {}
     for label, out_dir, key in MARKETS:
         full_dir = os.path.join(BASE_DIR, out_dir)
@@ -48,10 +55,36 @@ def collect():
             continue
         for name in os.listdir(full_dir):
             day_dir = os.path.join(full_dir, name)
-            rep = os.path.join(day_dir, f"report_{name}.html")
-            if DATE_RE.match(name) and os.path.isdir(day_dir) and os.path.exists(rep):
-                entries.setdefault(name, {})[key] = rep
+            if not (DATE_RE.match(name) and os.path.isdir(day_dir)):
+                continue
+            metrics = os.path.join(day_dir, f"metrics_{name}.csv")
+            if os.path.exists(metrics):
+                entries.setdefault(name, {})[key] = metrics
     return entries
+
+
+def materialize(dates):
+    """把 (日期, {key: metrics_csv}) 物化成 (日期, {key: report_html})。
+
+    报告是派生数据，不入库；构建时按 CSV 重建。已在磁盘上的（例如刚跑完采集
+    的当日）不会重复生成。生成失败的 key 会被剔除，而不是留下一个指向空文件
+    的链接 —— 首页的过期横幅与 warnings 仍会如实列出缺块。
+    """
+    import reports
+
+    out = []
+    for date, keys in dates:
+        resolved = {}
+        for key, metrics in keys.items():
+            day_dir = os.path.dirname(metrics)
+            html = reports.ensure(metrics, day_dir, date, key)
+            if html:
+                resolved[key] = html
+            else:
+                print(f"::warning::{date} {key} 报告物化失败（数据在但报告没生成）")
+        if resolved:
+            out.append((date, resolved))
+    return out
 
 
 def _latest(pattern, out_dir=None):
@@ -978,7 +1011,9 @@ footer{{text-align:center;color:#98a1b3;font-size:11.5px;padding:16px 12px 28px;
 
 def main():
     entries = collect()
-    dates = [(d, entries[d]) for d in sorted(entries, reverse=True)[:MAX_DAYS]]
+    # 只物化会进归档的那 MAX_DAYS 天：更早的日期只是滚动统计的历史，
+    # 不出现在站点上，没必要为它们生成 HTML（实测 90 份约 52 秒）。
+    dates = materialize([(d, entries[d]) for d in sorted(entries, reverse=True)[:MAX_DAYS]])
     if os.path.isdir(DOCS_DIR):
         shutil.rmtree(DOCS_DIR)
     os.makedirs(DOCS_DIR, exist_ok=True)

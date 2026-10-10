@@ -156,31 +156,27 @@ def repair_industry(key: str, days: list[datetime.date]) -> dict:
 
 def _write_report(metrics_csv: str, day_dir: str, iso: str, label: str,
                   log_file: str | None = None) -> str | None:
-    """生成当日 HTML 报告。
+    """生成当日 HTML 报告 —— 走 `reports.write`，与线上采集路径同一段组装逻辑。
 
-    必须有这一步：`build_pages.collect()` 是靠 `report_<日期>.html` 判断
-    「这一天有没有产物」的。只写 metrics CSV + DONE 的话，回填出来的日期
-    在归档页上是**看不见的** —— 数据补回来了，但读者依然看不到
-    （第一次回填就踩了这个：站点从 30 天掉到 22 天）。
+    为什么必须共用：原来这里只拼「策略速览」一块，于是**回填出来的 A 股报告
+    比当日发布的少了三块**（大盘宽度仪表盘、行业板块温度榜、邮件精选）。
+    实测证据：把回填日与重建版做文本比对，已提交侧只有 1 个 token 被替换
+    （生成时间戳），其余 962 个 token 全是重建版**多出来**的内容 ——
+    也就是说回填版本是当日版本的真子集。
+
+    另外这里也不再自己拼 extra_html：`reports.assemble_extras` 里的温度卡是
+    从 market_breadth CSV 重绘的，采集路径与重建路径因此不可能不一致。
     """
-    import generate_report
-    import strategy_summary
+    import reports
 
-    summary = None
-    try:
-        summary = strategy_summary.build_summary(
-            metrics_csv, os.path.dirname(day_dir), label)
-    except Exception as exc:
-        _log(f"  [warn] {iso} 策略速览生成失败（不影响报告主体）: "
-             f"{type(exc).__name__}: {exc}", log_file)
-    try:
-        return generate_report.generate_report(
-            metrics_csv, day_dir,
-            extra_html=summary["html"] if summary else None,
-            extra_md=summary["md"] if summary else None)
-    except Exception as exc:
-        _log(f"  [warn] {iso} 报告生成失败: {type(exc).__name__}: {exc}", log_file)
+    key = {"A股": "a", "ETF": "etf", "港股通": "hk"}.get(label)
+    if key is None:
+        _log(f"  [warn] {iso} 未知市场标签 {label!r}，跳过报告", log_file)
         return None
+    out = reports.write(metrics_csv, day_dir, iso, key)
+    if out is None:
+        _log(f"  [warn] {iso} 报告生成失败", log_file)
+    return out
 
 
 def _log(msg: str, log_file: str | None = None) -> None:
