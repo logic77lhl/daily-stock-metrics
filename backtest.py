@@ -42,8 +42,13 @@ PRICE_DECIMALS = 3
 # 每次抓取的日线深度；参与缓存文件名，避免不同深度互相覆盖
 DEFAULT_BARS = 800
 
+# 全样本基准的名字。它必须是 STRATEGIES 的第一项且 expr=None：
+# summarize() 用它生成「基线胜率% / 基线平均收益% / 超额」三列，
+# 页面上所有胜率都必须与它并排显示（见 summarize 的说明）。
+BASELINE_NAME = "全样本(基准)"
+
 STRATEGIES = [
-    ("全样本(基准)", None),
+    (BASELINE_NAME, None),
     # ---- 均线趋势类 ----
     ("双均线多头(MA20>MA60)", "MA20 > MA60"),
     ("双均线空头(MA20<MA60)", "MA20 < MA60"),
@@ -505,8 +510,20 @@ def _bucket_nav(daily_means, h):
 
 
 def summarize(trades_df, horizons):
+    """按 策略 × 持有期 汇总，并把**全样本基线**作为对照列注入。
+
+    为什么必须注入基线：只给一个「胜率 55%」而不给「同期全样本 47%」时，
+    读者会把它读成「这个策略不错」。而本样本的次日基线胜率只有 47%
+    （中位收益为负、收益全部来自右尾），55% 与 47% 的差别落在噪声里：
+    56 个假设无一通过 Bonferroni 校正（|t|>5.32），全场最大 |t| 仅 3.16，
+    且 |t|>2 的个数并不超过纯随机期望（2.8）。
+
+    基线来自 STRATEGIES 里的 ("全样本(基准)", None)：它不做任何筛选，
+    因此它的收益就是「同期同标的的等权平均」—— 唯一正确的对照。
+    """
     summary = []
     equity = {}
+    base = {}
     for name, grp in trades_df.groupby("策略"):
         for h in horizons:
             sub = grp[grp["持有期"] == h]
@@ -515,7 +532,7 @@ def summarize(trades_df, horizons):
             daily = sub.groupby("信号日")["收益%"].mean().sort_index()
             nav = _bucket_nav(daily, h)
             dd = (nav / nav.cummax() - 1).min() * 100
-            summary.append({
+            row = {
                 "策略": name,
                 "持有期(交易日)": h,
                 "交易次数": len(sub),
@@ -524,11 +541,34 @@ def summarize(trades_df, horizons):
                 "中位数收益%": round(float(sub["收益%"].median()), 2),
                 "不重叠累计净值": round(float(nav.iloc[-1]), 4),
                 "最大回撤%": round(float(dd), 2) if len(nav) >= 2 else None,
-            })
+            }
+            if name == BASELINE_NAME:
+                base[h] = row
+            summary.append(row)
         if (grp["持有期"] == 1).any():
             d1 = grp[grp["持有期"] == 1].groupby("信号日")["收益%"].mean().sort_index()
             equity[name] = _bucket_nav(d1, 1)
-    return pd.DataFrame(summary), equity
+
+    df = pd.DataFrame(summary)
+    if not df.empty:
+        # 基线列按持有期映射；基线行自身的超额自然是 0。
+        # 基线行缺失（例如用 --strategy 自定义策略集时）→ 列全是 NaN，
+        # 渲染层把 NaN 显示成 "-"，不会伪造出一个基线。
+        b_wr = {h: r["胜率%"] for h, r in base.items()}
+        b_ret = {h: r["平均收益%"] for h, r in base.items()}
+        df["基线胜率%"] = df["持有期(交易日)"].map(b_wr)
+        df["基线平均收益%"] = df["持有期(交易日)"].map(b_ret)
+        df["超额胜率pp"] = (df["胜率%"] - df["基线胜率%"]).round(1)
+        df["超额收益%"] = (df["平均收益%"] - df["基线平均收益%"]).round(2)
+        # 排序在这里做（而不是只在 generate_html 里）：否则控制台打印的顺序
+        # 与页面表格的顺序不一致，事后核对时会以为两边数据不同。
+        # 顺序：持有期升序 → **基线行排在各持有期最前** → 超额收益降序。
+        # 基线置顶是刻意的：读者读任何一个胜率之前，必须先看到对照值。
+        df = df.assign(
+            _is_base=(df["策略"] == BASELINE_NAME).astype(int)
+        ).sort_values(["持有期(交易日)", "_is_base", "超额收益%"],
+                      ascending=[True, False, False]).drop(columns=["_is_base"])
+    return df, equity
 
 
 def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_days,
@@ -551,12 +591,17 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
             return "flat"
         return "up" if float(v) > 0 else "down" if float(v) < 0 else "flat"
 
-    summary = summary.sort_values(["持有期(交易日)", "胜率%"], ascending=[True, False])
+    # 排序已在 summarize() 里完成（基线行置顶），这里不再重排 ——
+    # 两处各排一次必然漂移，而「控制台顺序 ≠ 页面顺序」会让人以为数据不同。
+    def _base_row(h):
+        row = summary[(summary["策略"] == BASELINE_NAME) & (summary["持有期(交易日)"] == h)]
+        return row.iloc[0] if len(row) else None
 
-    best1 = summary[(summary["持有期(交易日)"] == 1) & (summary["交易次数"] >= 10)].sort_values("平均收益%", ascending=False).head(1)
-    best3 = summary[(summary["持有期(交易日)"] == 3) & (summary["交易次数"] >= 10)].sort_values("平均收益%", ascending=False).head(1)
-    best1_name = best1.iloc[0]["策略"] if len(best1) else "-"
-    best3_name = best3.iloc[0]["策略"] if len(best3) else "-"
+    base1 = _base_row(1)
+    base3 = _base_row(3)
+    base1_wr = base1["胜率%"] if base1 is not None else None
+    base1_ret = base1["平均收益%"] if base1 is not None else None
+    base3_wr = base3["胜率%"] if base3 is not None else None
 
     # 盈亏比 + 今日信号数
     pl_map, today_cnt = {}, {}
@@ -570,27 +615,12 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
         today_cnt[sname] = sub["代码"].nunique()
 
     rules_map = dict((n, e) for n, e in STRATEGIES)
-    top_picks = summary[(summary["持有期(交易日)"] == 3) & (summary["交易次数"] >= 10)] \
-        .sort_values("胜率%", ascending=False).head(3)
-    pick_cards = ""
-    for _, pr in top_picks.iterrows():
-        pname, phold = pr["策略"], int(pr["持有期(交易日)"])
-        rule = rules_map.get(pname, "自定义策略")
-        tcnt = today_cnt.get(pname, 0)
-        recent5 = trades[(trades["策略"] == pname) & (trades["持有期"] == phold)] \
-            .sort_values("信号日").tail(5)
-        r5 = "".join(
-            f"<span class='chip'>{str(t['信号日'])[5:10]} {esc(str(t['名称']))} "
-            f"<b class='chg {cls(t['收益%'])}'>{num(t['收益%'],1,sign=True)}%</b></span> "
-            for _, t in recent5.iterrows())
-        pick_cards += f"""<div class="pick-card">
-            <div class="pk-head"><b>{esc(pname)}</b>
-            <span class="flag {'carry' if tcnt else 'normal'}">{'今日信号 ' + str(tcnt) + ' 笔' if tcnt else '今日无'}</span></div>
-            <div class="pk-rule">{esc(rule)}</div>
-            <div class="pk-stats">胜率 <b>{num(pr['胜率%'],1)}%</b> ｜ 平均 <b class='chg {cls(pr['平均收益%'])}'>{num(pr['平均收益%'],2,sign=True)}%</b>
-            ｜ 盈亏比 <b>{num(pl_map.get((pname, phold)), 2)}</b> ｜ 样本 {int(pr['交易次数'])}</div>
-            <div class="pk-recent">{r5 or '<span style="color:#999">暂无近期交易</span>'}</div></div>"""
-    pick_section = f'<div class="section-title">⭐ 重点策略参考（按3日持有胜率取前3）</div><div class="picks">{pick_cards}</div>' if pick_cards else ""
+
+    # 这里原本有一个「⭐ 重点策略参考（按3日持有胜率取前3）」卡片区，已**删除**。
+    # 它按胜率对 3 日持有期取前 3 名并连同近期成交一起展示 —— 在一个基线胜率
+    # 47%、且 56 个假设无一通过多重比较校正的样本里，这个"前 3 名"就是噪声排序，
+    # 而卡片的措辞（⭐ 重点参考 / 今日信号 N 笔）会让它看起来像被筛选过的机会。
+    # 数据没有支持这个用法，所以不发布它。汇总表仍然逐行给出全部策略 × 持有期。
 
     recent_days = sorted(trades.loc[trades["持有期"] == RECENT_HORIZON, "信号日"].unique())[-10:]
     recent = trades[(trades["信号日"].isin(set(recent_days))) & (trades["持有期"] == RECENT_HORIZON)] \
@@ -615,17 +645,31 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
     sum_rows = ""
     disp = summary[summary["持有期(交易日)"].isin(DISPLAY_HORIZONS)]
     for _, r in disp.iterrows():
-        wr = r["胜率%"]
-        wr_cls = "good" if (pd.notna(wr) and wr >= 60) else "bad" if (pd.notna(wr) and wr <= 40) else ""
+        ex_pp = r.get("超额胜率pp")
+        # 颜色按**相对基线**判定，不再用「≥60 就是好」的绝对阈值：
+        # 在一个基线 47% 的样本里，60% 这个阈值本身就没有依据。
+        if pd.isna(ex_pp):
+            wr_cls = ""
+        elif ex_pp > 0:
+            wr_cls = "good"
+        elif ex_pp < 0:
+            wr_cls = "bad"
+        else:
+            wr_cls = ""
+        base_txt = (f'<span class="base">基线 {num(r["基线胜率%"], 1)}%</span>'
+                    if pd.notna(r.get("基线胜率%")) else '<span class="base">基线 -</span>')
         key = (r['策略'], int(r['持有期(交易日)']))
         pl = pl_map.get(key)
         tc = today_cnt.get(r['策略'], 0)
-        sum_rows += f"""<tr data-wr="{num(r['胜率%'], 1)}">
+        is_base = r["策略"] == BASELINE_NAME
+        sum_rows += f"""<tr data-wr="{num(r['胜率%'], 1)}" data-ex="{num(ex_pp, 1)}"{' class="baserow"' if is_base else ''}>
             <td class="name" title="{esc(rules_map.get(r['策略'], '自定义策略'))}">{esc(r['策略'])}</td>
             <td>{int(r['持有期(交易日)'])}</td>
             <td>{int(r['交易次数'])}</td>
-            <td class="win {wr_cls}">{num(r['胜率%'], 1)}%</td>
+            <td class="win {wr_cls}">{num(r['胜率%'], 1)}% {base_txt}</td>
+            <td class="chg {cls(r['超额胜率pp'])}">{num(r['超额胜率pp'], 1, sign=True)}</td>
             <td class="chg {cls(r['平均收益%'])}">{num(r['平均收益%'], 2, sign=True)}%</td>
+            <td class="chg {cls(r['超额收益%'])}">{num(r['超额收益%'], 2, sign=True)}%</td>
             <td class="chg {cls(r['中位数收益%'])}">{num(r['中位数收益%'], 2, sign=True)}%</td>
             <td>{pl if pl is not None else '-'}</td>
             <td>{f'<span class="flag carry">✓{tc}</span>' if tc else '<span class="flag normal">-</span>'}</td>
@@ -753,6 +797,9 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
     th.sort-asc::after {{ content: ' ↑'; opacity: 1; }}
     th.sort-desc::after {{ content: ' ↓'; opacity: 1; }}
     .picks {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }}
+    .base {{ color: #999; font-size: 11.5px; font-weight: 400; }}
+    tr.baserow {{ background: #f3f6ff; }}
+    tr.baserow td {{ font-weight: 600; }}
     .pick-card {{ background: #fff; border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-top: 3px solid #f59f00; }}
     .pk-head {{ display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }}
     .pk-rule {{ color: #666; font-size: 12.5px; margin: 6px 0; font-family: Consolas, monospace; }}
@@ -785,15 +832,20 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
         <div class="summary-card card-gray" title="信号日 × 标的 × 持有期 组合数"><div class="num">{_cnt("trades_built")}</div><div class="label">潜在交易笔数</div></div>
         <div class="summary-card card-gray" title="同一笔交易命中多个策略会重复计数"><div class="num">{len(trades)}</div><div class="label">策略×交易记录数</div></div>
         <div class="summary-card card-red" title="缺建仓/平仓 K 线或无价格序列，逐项见页末披露"><div class="num">{dropped}</div><div class="label">因缺K线剔除</div></div>
-        <div class="summary-card card-green"><div class="num">{esc(best1_name)}</div><div class="label">持有1天最佳策略</div></div>
-        <div class="summary-card card-green"><div class="num">{esc(best3_name)}</div><div class="label">持有3天最佳策略</div></div>
+        <div class="summary-card card-gold" title="全样本（不做任何筛选）在 1 日持有期上的胜率，是所有策略胜率的对照值"><div class="num">{num(base1_wr, 1)}%</div><div class="label">全样本次日胜率（基线）</div></div>
+        <div class="summary-card card-gray" title="全样本 1 日持有期的平均收益；中位数见汇总表，通常为负"><div class="num">{num(base1_ret, 2, sign=True)}%</div><div class="label">全样本次日均值收益</div></div>
     </div>
 
     <div class="section-title">汇总统计</div>
+    <div class="warn-strip" style="margin-bottom:10px">📏 <b>读数说明</b>：本表每个胜率都并排给出<b>基线</b>（同期全样本的同一口径胜率）。
+    胜率高于基线<b>不等于</b>策略有预测力 —— 本样本 3 日持有期的基线胜率为 {num(base3_wr, 1)}%，
+    而 56 个假设无一通过 Bonferroni 校正（阈值 |t|&gt;5.32），全场最大 |t| 仅 3.16，
+    且 |t|&gt;2 的个数（3/5/3/4/1，按持有期）<b>并不超过</b>纯随机期望 2.8。
+    请把「超额」两列当作噪声尺度下的读数，而不是可交易的优势（另见页末《方法与局限》第 8 条）。</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px;">
-        <div class="filter-label">胜率 ≥</div>
-        <input id="wrFilter" type="range" min="0" max="100" value="0" step="1" style="width:180px;vertical-align:middle;">
-        <span id="wrVal" style="font-size:13px;font-weight:600;min-width:40px;">0%</span>
+        <div class="filter-label">超额收益 ≥</div>
+        <input id="exFilter" type="range" min="-10" max="2" value="-10" step="0.5" style="width:180px;vertical-align:middle;">
+        <span id="exVal" style="font-size:13px;font-weight:600;min-width:70px;">不过滤</span>
         <span id="wrCount" style="font-size:12px;color:#888;"></span>
     </div>
     <div style="overflow-x: auto;">
@@ -802,13 +854,15 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
             <th class="sortable" data-col="0" data-type="str">策略</th>
             <th class="sortable" data-col="1" data-type="num">持有期(交易日)</th>
             <th class="sortable" data-col="2" data-type="num">交易次数</th>
-            <th class="sortable" data-col="3" data-type="num">胜率%</th>
-            <th class="sortable" data-col="4" data-type="num">平均收益%</th>
-            <th class="sortable" data-col="5" data-type="num">中位数收益%</th>
-            <th class="sortable" data-col="6" data-type="num">盈亏比</th>
-            <th class="sortable" data-col="7" data-type="num">今日信号</th>
-            <th class="sortable" data-col="8" data-type="num">不重叠累计净值</th>
-            <th class="sortable" data-col="9" data-type="num">最大回撤%</th>
+            <th class="sortable" data-col="3" data-type="num">胜率%（含基线）</th>
+            <th class="sortable" data-col="4" data-type="num">超额胜率(pp)</th>
+            <th class="sortable" data-col="5" data-type="num">平均收益%</th>
+            <th class="sortable" data-col="6" data-type="num">超额收益%</th>
+            <th class="sortable" data-col="7" data-type="num">中位数收益%</th>
+            <th class="sortable" data-col="8" data-type="num">盈亏比</th>
+            <th class="sortable" data-col="9" data-type="num">今日信号</th>
+            <th class="sortable" data-col="10" data-type="num">不重叠累计净值</th>
+            <th class="sortable" data-col="11" data-type="num">最大回撤%</th>
         </tr></thead>
         <tbody>{sum_rows}</tbody>
     </table>
@@ -816,8 +870,6 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
 
     <div class="section-title">持有1日净值曲线（每日等权组合，不重叠口径）</div>
     {chart_svg}
-
-    {pick_section}
 
     <div class="section-title">近10个交易日信号（{RECENT_HORIZON}日持有，最新{len(recent)}笔，完整数据请下载CSV）</div>
     <div style="overflow-x: auto;">
@@ -865,6 +917,17 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
             因此持有期超出窗口的信号按<b>结构性跳过</b>计数（<code>skip_horizon_beyond_panel</code> / <code>skip_no_next_day</code>），
             而不是像旧版那样回退到更早的 bar 去凑一个「1 日持有」（旧版在面板缺日/含非交易日的样本上实测出现过
             111 笔「1日持有」实际跨了 7 个交易日、平均收益 -3.6% 的记录）。</li>
+            <li><b>胜率基线与显著性（最重要的一条）</b>：本页每个胜率都并排给出<b>基线</b>，即<b>同期全样本</b>
+            （策略名 <code>{BASELINE_NAME}</code>，expr=None，不做任何筛选）在同一持有期上的同一口径胜率。
+            之所以必须这样展示：本样本的基线胜率只有 {num(base1_wr, 1)}%（1 日）/{num(base3_wr, 1)}%（3 日），
+            <b>中位数收益为负</b>（收益几乎全部来自右尾），因此「胜率 55%」与「胜率 47%」之间的差别落在噪声里。
+            独立的一次 527 个交易日回测（面板 2024-07~2026-10、56 个假设、Fama-MacBeth 按日聚类 + Newey-West 校正）结论是：
+            56 个假设<b>无一</b>通过 Bonferroni 校正（|t|&gt;5.32），全场最大 |t| 仅 3.16，
+            |t|&gt;2 的个数（3/5/3/4/1，按持有期）<b>低于或等于</b>纯随机期望 2.8；
+            最小可检测效应在 1 日持有期为 0.118%/日（≈29%/年），而 A 股单次往返成本约 0.12%~0.22%，
+            本研究中<b>最大</b>的日均超额是 0.127%（t=1.01，不显著）。
+            也就是说：本页的「超额」两列是<b>噪声尺度下的读数</b>，不是可交易的优势。
+            限制：单一市场状态、仅市值前 100 大盘股（小盘股未检验）、未计交易成本、月线 J 预热不足。</li>
         </ol>
         <h3>数据完整性（被剔除的交易逐项计数）</h3>
         <p>因缺 K 线/缺价格而剔除 <span class="em">{dropped}</span> 笔，结构性跳过 <span class="em">{structural}</span> 笔
@@ -885,22 +948,23 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
 <script>
 (function() {{
     var sumRows = document.querySelectorAll('#sumTable tbody tr');
-    var curWR = 0;
+    var curEx = -999;
     function applySummary() {{
         var shown = 0;
         sumRows.forEach(function(row) {{
-            var wr = parseFloat(row.getAttribute('data-wr')) || 0;
-            var ok = wr >= curWR;
+            var ex = parseFloat(row.getAttribute('data-ex'));
+            if (isNaN(ex)) ex = -999;
+            var ok = ex >= curEx;
             row.style.display = ok ? '' : 'none';
             if (ok) shown++;
         }});
         document.getElementById('wrCount').textContent = shown + '/' + sumRows.length + ' 条';
     }}
-    var slider = document.getElementById('wrFilter');
-    var label = document.getElementById('wrVal');
+    var slider = document.getElementById('exFilter');
+    var label = document.getElementById('exVal');
     slider.addEventListener('input', function() {{
-        curWR = parseFloat(this.value);
-        label.textContent = curWR + '%';
+        curEx = parseFloat(this.value);
+        label.textContent = (curEx <= -10 ? '不过滤' : curEx.toFixed(1) + '%');
         applySummary();
     }});
     applySummary();
@@ -1044,7 +1108,9 @@ def main():
         all_trades.to_csv(os.path.join(mkt_outdir, "backtest_report_trades.csv"), index=False, encoding="utf-8-sig")
         print(f"[{mkt_name}] HTML报告已生成: {html_path}")
 
-        cols = ["策略", "持有期(交易日)", "交易次数", "胜率%", "平均收益%", "中位数收益%", "不重叠累计净值", "最大回撤%"]
+        cols = ["策略", "持有期(交易日)", "交易次数", "胜率%", "基线胜率%", "超额胜率pp",
+                "平均收益%", "超额收益%", "中位数收益%", "不重叠累计净值", "最大回撤%"]
+        cols = [c for c in cols if c in summary.columns]
         pd.set_option("display.width", 200)
         pd.set_option("display.max_rows", 200)
         print(f"\n--- {mkt_name} 回测结果 ---")

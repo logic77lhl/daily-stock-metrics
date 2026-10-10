@@ -1,11 +1,16 @@
 # -*- coding: utf-8 -*-
-"""动态高胜率策略摘要。
+"""策略摘要（描述性）。
 
-用历史 metrics 数据滚动统计各内置策略"次日胜率"，自动选出近期表现最好的
+用历史 metrics 数据滚动统计各内置策略"次日胜率"，列出近期表现最好的
 前 K 个策略（动态调整），并给出今日命中的标的。纯本地计算，不重新拉行情。
+
+**必须同时显示基线，否则这个数字会系统性误导读者。**
+实测本样本的次日上涨比例（基线）只有 47% 左右 —— 在一个基线 47% 的样本里，
+「胜率 55%」与「胜率 47%」的差别没有意义（见 README「胜率基线与超额」一节：
+56 个假设无一通过 Bonferroni 校正，滚动胜率的自相关 r=+0.02、t=1.09）。
+所以这里不再单独发布胜率，而是把**同期全样本次日上涨比例**一并列出。
 """
 import glob
-import html
 import os
 
 import pandas as pd
@@ -62,16 +67,38 @@ def _load_history(market_dir, exclude_date=None, as_of=None):
     return panel.drop_duplicates(subset=["日期", "代码"], keep="last")
 
 
+def _baseline_win_rate(next_ret, window):
+    """同期「全样本次日上涨比例」= 胜率的对照基线。
+
+    没有这个数，「近20日胜率 55%」是不可解释的：读者无从知道 55% 是好还是差。
+    实测本样本的基线是 47% 左右（中位收益为负、收益全部来自右尾），
+    所以 55% 看着像"好"，其实落在噪声范围内。
+
+    口径刻意与策略胜率完全一致：同一个窗口、同一批标的、同一种次日收益
+    （fill_method=None，不做前向填充）。
+    """
+    if next_ret is None or not len(window):
+        return None
+    block = next_ret.reindex(window)
+    if block.empty:
+        return None
+    vals = pd.Series(block.to_numpy(dtype="float64").ravel()).dropna()
+    if vals.empty:
+        return None
+    return float((vals > 0).mean())
+
+
 def _ranked_strategies(panel):
     """按最近 ROLLING_DAYS 个信号日的次日表现给策略排序。
 
-    返回 ``(ranked, note)``：
+    返回 ``(ranked, note, baseline)``：
 
     * ``ranked`` = ``[(名称, 表达式, 胜率, 样本数)]``，最多 TOP_K 条；
-    * ``ranked`` 为空时 ``note`` 说明原因（历史不足 / 策略全部评估失败）。
+    * ``ranked`` 为空时 ``note`` 说明原因（历史不足 / 策略全部评估失败）；
+    * ``baseline`` = 同期全样本次日上涨比例（无数据时为 None）。
     """
     if panel is None or panel.empty:
-        return [], "无历史数据"
+        return [], "无历史数据", None
 
     prices = panel.pivot_table(index="日期", columns="代码", values="最新价", aggfunc="first").sort_index()
     # 0 或负价格会让 pct_change 产生 ±inf，而 (s > 0) 会把 +inf 当成一次「赢」，
@@ -87,8 +114,9 @@ def _ranked_strategies(panel):
     if len(dates) < ROLLING_DAYS + 1:
         # 页面写的是「近 20 日胜率」。旧代码只要求 ≥5 天，于是 5~20 天历史时
         # 会拿 4 个信号日冒充 20 日胜率。宁可显式显示「历史不足」。
-        return [], f"历史不足：仅 {len(dates)} 个交易日，需 ≥{ROLLING_DAYS + 1} 日"
+        return [], f"历史不足：仅 {len(dates)} 个交易日，需 ≥{ROLLING_DAYS + 1} 日", None
     window = dates[-(ROLLING_DAYS + 1):-1]
+    baseline = _baseline_win_rate(next_ret, window)
 
     stats = {}
     failed = []
@@ -132,7 +160,7 @@ def _ranked_strategies(panel):
         note = f"{len(failed)} 个策略因评估失败未统计：{shown}{more}"
     if not ranked and note is None:
         note = f"近{ROLLING_DAYS}日内没有满足样本量（≥{MIN_TRADES}）的策略"
-    return [(name, expr, wr, n) for name, (expr, wr, n, _) in ranked[:TOP_K]], note
+    return [(name, expr, wr, n) for name, (expr, wr, n, _) in ranked[:TOP_K]], note, baseline
 
 
 def _today_hits(today_df, expr):
@@ -184,6 +212,12 @@ def _overview(today_df):
     return "，".join(bits)
 
 
+def _wr_label(wr, baseline, n):
+    """把「胜率」渲染成「胜率 55%（基线 47%）」——基线缺失时明确标注，不省略。"""
+    base_txt = f"基线 {baseline * 100:.0f}%" if baseline is not None else "基线未知"
+    return f"近{ROLLING_DAYS}日胜率 {wr * 100:.0f}%（{base_txt}，样本{n}）"
+
+
 def build_summary(metrics_csv, market_dir, market_label, as_of=None):
     """生成今日速览。返回 {"html":..., "md":...}；历史不足时给出显式占位文本。
 
@@ -198,14 +232,23 @@ def build_summary(metrics_csv, market_dir, market_label, as_of=None):
     html_parts = [f"<li>📊 <b>{market_label}</b>：{_overview(today_df)}</li>"]
     md_parts = [f"- **{market_label}**：{_overview(today_df)}"]
 
-    ranked, note = _ranked_strategies(panel)
+    ranked, note, baseline = _ranked_strategies(panel)
     if ranked:
         for name, expr, wr, n in ranked:
             hits = _today_hits(today_df, expr)
             html_parts.append(f"<li>🎯 <b>{_esc(name)}</b>"
-                              f"<span style=\"color:#888\">（近{ROLLING_DAYS}日胜率 {wr * 100:.0f}%，样本{n}）</span>"
+                              f"<span style=\"color:#888\">（{_esc(_wr_label(wr, baseline, n))}）</span>"
                               f"<br>今日: {_fmt_hits(hits)}</li>")
-            md_parts.append(f"- 🎯 **{_md_esc(name)}**（近{ROLLING_DAYS}日胜率 {wr * 100:.0f}%，样本{n}）→ 今日: {_fmt_hits(hits)}")
+            md_parts.append(f"- 🎯 **{_md_esc(name)}**（{_md_esc(_wr_label(wr, baseline, n))}）"
+                            f"→ 今日: {_fmt_hits(hits)}")
+        # 基线的解释必须跟着数字走。只写「胜率 55%」而把 47% 的基线留在别处，
+        # 等于让读者自己猜 55% 算不算好 —— 实测这正是最容易误读的一处。
+        if baseline is not None:
+            caveat = (f"基线 = 同期全样本次日上涨比例（{baseline * 100:.0f}%）。"
+                      f"胜率高于基线不等于有预测力：实测该排序对未来 20 日无预测力"
+                      f"（自相关 r=+0.02），且本样本 56 个假设无一通过多重比较校正。")
+            html_parts.append(f"<li style=\"color:#888\">📏 {_esc(caveat)}</li>")
+            md_parts.append(f"- 📏 {_md_esc(caveat)}")
     else:
         html_parts.append(f"<li>⏳ {_esc(note)}，暂无策略胜率统计</li>")
         md_parts.append(f"- ⏳ {_md_esc(note)}，暂无策略胜率统计")
@@ -231,91 +274,19 @@ def write_root_summary(filename, md_text, date_str):
     return path
 
 
-def build_buy_list(markets, date_str=None):
-    """跨市场"今日买入参考"：按策略胜率从高到低，合并去重取前10。
-
-    markets: [(市场标签, 今日metrics_csv路径, 历史output目录), ...]
-    date_str: 可选，展示用日期，会写入标题。
-    返回 {"html":..., "md":..., "count":N}；无命中或历史不足时 count=0。
-    """
-    entries = []
-    for label, mcsv, mdir in markets:
-        try:
-            today_df = pd.read_csv(mcsv, dtype={"代码": str})
-        except Exception as exc:
-            _warn(f"今日 metrics 读取失败，跳过 {label}（{mcsv}）：{type(exc).__name__}: {exc}")
-            continue
-        today = os.path.basename(os.path.dirname(mcsv))
-        # as_of 用 metrics 自身的日期，而不是展示用的 date_str：
-        # 时点隔离必须锚在数据日期上（见 _load_history 的说明）
-        panel = _load_history(mdir, exclude_date=today, as_of=today)
-        ranked, note = _ranked_strategies(panel)
-        if not ranked:
-            _warn(f"{label} 暂不参与买入参考：{note}")
-            continue
-        for name, expr, wr, n in ranked:
-            hits = _today_hits(today_df, expr)
-            for _, r in hits.iterrows():
-                chg = r.get("涨跌幅")
-                entries.append({
-                    "市场": label,
-                    "名称": r["名称"],
-                    "代码": str(r["代码"]),
-                    "涨跌幅": float(chg) if pd.notna(chg) else None,
-                    "策略": name,
-                    "胜率%": round(wr * 100, 1),
-                    "样本数": n,
-                })
-
-    if not entries:
-        return {"html": "", "md": "", "count": 0, "picks": []}
-
-    df = pd.DataFrame(entries)
-    df = df.sort_values(["胜率%", "样本数"], ascending=False)
-    df = df.drop_duplicates(subset=["市场", "代码"], keep="first")
-    # 每个市场最多 4 只，保证 A股/ETF/港股 均衡出现
-    main_pool = df.groupby("市场", sort=False).head(4)
-    rest_pool = df.drop(main_pool.index)
-    df = pd.concat([main_pool, rest_pool]).head(10)
-    df = df.sort_values(["胜率%", "样本数"], ascending=False)
-
-    md_lines = ["| 市场 | 名称 | 代码 | 今日涨跌 | 入选策略 | 近20日胜率 | 样本 |",
-                "|---|---|---|---|---|---|---|"]
-    html_rows = ""
-    for _, r in df.iterrows():
-        chg = r["涨跌幅"]
-        chg_str = f"{chg:+.2f}%" if chg is not None else "-"
-        chg_color = "#c62828" if (chg or 0) > 0 else "#2e7d32" if (chg or 0) < 0 else "#666"
-        md_lines.append(f"| {r['市场']} | **{_md_esc(r['名称'])}** | {_md_esc(r['代码'])} | {chg_str} | {_md_esc(r['策略'])} | {r['胜率%']}% | {r['样本数']} |")
-        html_rows += (f"<tr>"
-                      f"<td>{r['市场']}</td>"
-                      f"<td style=\"text-align:left;font-weight:600\">{_esc(r['名称'])}</td>"
-                      f"<td>{_esc(r['代码'])}</td>"
-                      f"<td style=\"color:{chg_color};font-weight:600\">{chg_str}</td>"
-                      f"<td style=\"text-align:left\">{_esc(r['策略'])}</td>"
-                      f"<td><b>{r['胜率%']}%</b></td>"
-                      f"<td>{r['样本数']}</td></tr>")
-
-    date_inner = f"{date_str}，" if date_str else ""
-    md = ("## 🎯 今日买入参考（%s按胜率排序 TOP%d）\n\n%s\n\n"
-          "> 胜率为该入选策略近20个交易日的次日胜率，仅供研究参考，不构成投资建议\n" % (date_inner, len(df), "\n".join(md_lines)))
-
-    html = ("<div style=\"background:#fff;border-radius:10px;padding:14px 16px;"
-            "box-shadow:0 1px 3px rgba(0,0,0,0.08);font-size:14px\">"
-            f"<div style=\"font-weight:700;color:#1a1a2e;margin-bottom:10px\">🎯 今日买入参考（{date_inner}按胜率排序）</div>"
-            "<div style=\"overflow-x:auto\"><table style=\"width:100%;border-collapse:collapse;font-size:13px\">"
-            "<thead><tr style=\"background:#1a1a2e;color:#fff\">"
-            "<th style=\"padding:7px 6px\">市场</th><th style=\"padding:7px 6px\">名称</th>"
-            "<th style=\"padding:7px 6px\">代码</th><th style=\"padding:7px 6px\">今日涨跌</th>"
-            "<th style=\"padding:7px 6px\">入选策略</th><th style=\"padding:7px 6px\">近20日胜率</th>"
-            "<th style=\"padding:7px 6px\">样本</th></tr></thead>"
-            f"<tbody>{html_rows}</tbody></table></div>"
-            "<div style=\"color:#999;font-size:12px;margin-top:8px\">胜率=入选策略近20个交易日次日胜率；仅供研究，不构成投资建议</div>"
-            "</div>")
-    # 结构化结果：调用方（run_buy_daily）原来是从**自己刚生成的 Markdown** 里
-    # 用正则反解 名称/代码，那是脆弱的字符串往返 —— Markdown 这边已经做了转义
-    # （`|` -> `\|`、`<` -> `&lt;`），反解回来的是转义后的名字；而名字里含 `**`
-    # 时正则会直接失配，让「往期推荐复盘」的历史静默缺项。直接给结构化数据。
-    picks = [{"市场": str(r["市场"]), "名称": str(r["名称"]), "代码": str(r["代码"])}
-             for _, r in df.iterrows()]
-    return {"html": html, "md": md, "count": len(df), "picks": picks}
+# ---------------------------------------------------------------------------
+# 这里原本有一个 `build_buy_list()`（跨市场「今日买入参考」，按滚动胜率取 TOP10）。
+# 它连同 run_buy_daily.py / buylist.html / recommend_history.json / 复盘邮件
+# 一起被**删除**了，因为一次 527 个交易日的回测证伪了它的机制：
+#
+#   * 入选组合的跟踪期胜率确实更高（53.85% vs 全部 46.72%）——机制在"选"这件事上有效；
+#   * 但入选组合的**次日平均收益更低**（+0.0289% vs 全部 +0.0612%，
+#     随机 3 只 +0.0530%），也就是说它稳定地选到了"过去赢、接下来输"的标的；
+#   * 组合只跑赢"随机 3 只"49.7% 的交易日（无技能应为 50%）；
+#   * 「跟踪 20 日胜率」与「之后 20 日胜率」的自相关 r=+0.0214（t=1.09）——胜率本身不持续；
+#   * 选择技能 = −0.0323%（t=−0.86）。
+#
+# 结论：这个机制在原理上不可能有效，而不是"参数没调好"。留着一个每天发信、
+# 每天写历史、每天在首页占一屏的功能去展示一个已被证伪的信号，是纯粹的误导。
+# 详细方法与限制见 README「胜率基线与超额」一节。
+# ---------------------------------------------------------------------------

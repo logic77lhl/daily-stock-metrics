@@ -1,20 +1,29 @@
 name: daily-metrics
 
 on:
+  # ── 触发方式（2026-10 重做）───────────────────────────────────────────
+  #
+  # GitHub 的 `schedule` 是 best-effort，实测**延迟中位数 4.64 小时、最大 7.80 小时**
+  # （对 52 次可归因的 daily-metrics 运行统计）。它根本不适合「收盘后尽快出数据」
+  # 这个需求：北京的 16:30 触发点经常在次日 00:00~02:00 才开跑。
+  #
+  # 原来用「6 个 cron 互相补跑」来对冲延迟，代价是每天 6 次触发、其中 5 次只是
+  # 撞上「今天已完成，跳过」—— 于是 Actions 历史里全是噪声，
+  # 而真正的红灯（数据确实缺了）被淹没在里面。heartbeat.yml 又额外加了 4 次
+  # 触发（它自己也是个 cron，同样被延迟），合计每天 10 次触发去追一个 4~8 小时的
+  # 抖动。heartbeat 已删除。
+  #
+  # 现在：**主触发是外部的免费 cron 直接打 workflow_dispatch**（秒级启动，
+  # 实测 createdAt == startedAt）。配置方法见 README「触发方式」一节。
+  # workflow_dispatch 是唯一不受 schedule 抖动影响的入口，而它的触发时刻
+  # 完全由我们决定 —— 这正是原来想要而 schedule 给不了的东西。
+  #
+  # 下面保留**一个** schedule 作为纯兜底：万一外部 cron 服务挂了/令牌过期，
+  # 数据不至于整天不更新。它落在北京时间次日 01:00（A股 15:00、港股 16:00 都已
+  # 收盘），且这一档实测最准时（延迟 0.04~0.70 小时）。
+  # DONE 防重保证它与外部触发不会重复采集。
   schedule:
-    # GitHub 的 schedule 是 best-effort。**实测延迟 4~8 小时**（不是 README 早期
-    # 写的「几分钟到半小时」）：北京的 16:30 触发点经常在次日 00:00~02:00 才开跑。
-    # 这一点以前是致命的 —— 跨过午夜后 `date +%F` 变成第二天，`hour < 15` 护栏
-    # 判「未到收盘」直接跳过，而 gate 又把「跳过」当绿灯，于是整天数据静默丢失。
-    # 现在目标日由 trading_calendar.collection_target() 按「最近一个已收盘且
-    # 仍是最新一根 K 线的交易日」推导，跨午夜不再有歧义，晚到的触发点反而成了
-    # 补跑窗口。多触发点 + DONE 防重：先到的跑，后到的自动跳过。
-    - cron: "30 8 * * 1-5"   # 北京时间 16:30
-    - cron: "0 9 * * 1-5"    # 北京时间 17:00
-    - cron: "30 9 * * 1-5"   # 北京时间 17:30
-    - cron: "0 11 * * 1-5"   # 北京时间 19:00
-    - cron: "30 13 * * 1-5"  # 北京时间 21:30（实测这一档最常真正落地）
-    - cron: "0 17 * * 1-5"   # 北京时间次日 01:00（跨午夜补跑窗口）
+    - cron: "0 17 * * 1-5"   # 北京时间次日 01:00（唯一兜底，正常情况会被 DONE 跳过）
   workflow_dispatch:
     inputs:
       # 改完代码或回填完历史后，常常只想把站点重新构建部署一次，而不想再跑一遍
@@ -43,10 +52,15 @@ env:
   # 产物保留最近多少个交易日（prune_outputs.py 与 build_pages 共用同一数值，
   # 避免「站点宣称 120 天、仓库里只剩 30 天」的错位）
   DSM_KEEP_DAYS: "30"
-  # 全局最小请求间隔（秒）。8 线程 × 每标的 3 个周期，不节流约 50 次/秒 ——
-  # 实测会把腾讯打到限流（响应变非 JSON），随后整批标的失败。
-  # 0.30 秒 ≈ 3.3 次/秒；想更保守就调大（代价是运行时间变长）。
+  # 全局最小请求间隔（秒）。8 线程 × 每标的 1 个周期（周/月已改为本地聚合，
+  # 见 fetch_metrics.resample_period）。0.30 秒 ≈ 3.3 次/秒 —— 这是**生产上
+  # 长期验证过**的速率，刻意不再调小：调小只是把 A股 那 34 秒的节流下限压到
+  # 10 秒，收益有限，而一旦腾讯限流就是整批标的失败（113 只全灭）。
   DSM_REQUEST_INTERVAL: "0.30"
+  # 「取名单」步骤的硬预算（秒）。实测 2026-10-09 三次 A 股运行里这一步花掉
+  # 348s / 348s / 259s，而抓 113 只标的的指标只要 52s —— 名单只是成分，
+  # 失败有观察池降级路径，所以超预算立刻降级，不再干等。见 http_util.list_deadline。
+  DSM_LIST_DEADLINE_SEC: "45"
 
 jobs:
   run-daily:
@@ -78,20 +92,24 @@ jobs:
           python tests/test_calendar.py
           python tests/test_workflows.py
           python tests/test_http_util.py
-          python tests/test_buy_list.py
+          python tests/test_kline_agg.py
           python tests/test_backtest.py
           python tests/test_degradation.py
           python tests/test_gate.py
           python tests/test_util.py
 
-      # 目标日的**唯一**判断入口。输出 target_a/target_hk（应采集的交易日）、
-      # expected_a/expected_hk（gate 要求必须存在 DONE 的交易日）与 collect_* 开关。
+      # 目标日的**唯一**判断入口。输出 target_a/target_hk（应采集的交易日）与
+      # expected_a/expected_hk（gate 要求必须存在 DONE 的交易日）。
       #
       # 为什么把「该采集哪天」和「该有哪天」分开：两者在盘中是不同的。
       # 10:00 时最新一根 K 线是今天的实时 bar，此时采集昨天会把今天写成昨天
       # （2026-10-02 那次脏数据就是这么来的），所以 collect=false；
       # 但「昨天」的 DONE 仍然必须存在，否则 gate 必须判红 —— 旧版把
       # 「跳过」和「通过」都当绿灯，这才是 8 天数据丢失却 Actions 全绿的根因。
+      #
+      # 这里**只**为 gate 推导 expected_*：采集步骤的开关不再由 workflow 判断，
+      # 因为 runner 自己就会调 collection_target() 决定跑不跑、跑哪天 ——
+      # 同一件事在 workflow 里再判一遍，就是第二份会漂移的判据。
       - name: Resolve target trading day
         id: target
         run: |
@@ -101,86 +119,21 @@ jobs:
           # （而不是引用自己的 outputs，那会打印出「A/ETF= HK=」这种误导性空值）。
           python trading_calendar.py plan --json
 
-      - name: Run A股 daily
-        if: env.MODE != 'site-only' && steps.target.outputs.collect_a == 'true'
-        continue-on-error: true
-        env:
-          DSM_DEADLINE_SEC: "2700"
-        run: python run_daily.py
-
-      - name: Run ETF daily
-        if: env.MODE != 'site-only' && steps.target.outputs.collect_a == 'true'
-        continue-on-error: true
-        env:
-          DSM_DEADLINE_SEC: "2700"
-        run: python run_etf_daily.py
-
-      - name: Run 港股 daily
-        if: env.MODE != 'site-only' && steps.target.outputs.collect_hk == 'true'
-        continue-on-error: true
-        env:
-          DSM_DEADLINE_SEC: "1500"
-        run: python run_hk_daily.py
-
-      - name: Build buy list email
-        if: env.MODE != 'site-only' && steps.target.outputs.collect_a == 'true'
-        continue-on-error: true
-        env:
-          DSM_DEADLINE_SEC: "600"
-        run: python run_buy_daily.py
-
-      - name: Run backtest
-        if: env.MODE != 'site-only' && steps.target.outputs.collect_a == 'true'
-        continue-on-error: true
-        env:
-          DSM_DEADLINE_SEC: "600"
-        run: python backtest.py
-
-      - name: Build value screen
-        if: env.MODE != 'site-only' && steps.target.outputs.collect_a == 'true'
-        continue-on-error: true
-        env:
-          DSM_DEADLINE_SEC: "600"
-        run: python build_value.py
-
-      # 这里曾经有一个「3 轮重试未完成市场」的步骤（每轮 sleep 180，最多再全量
-      # 重采 9 次）。它被**删除**了，因为实测它一次都没救回过运行：
+      # 唯一的执行入口。本机 run.bat 调的是**同一个** run_all.py ——
+      # 以前这里是 11 个内联步骤，而 run.bat 是另外 4 行，两者跑的不是同一件事
+      # （本机不生成回测/价值标的/站点），于是「修好一处」只到得了其中一条。
       #
-      #   抽样 3 个失败运行，全部是「第 1 轮重试后仍缺 → 第 2 轮重试后仍缺」。
-      #   原因很直接 —— 东财对云厂商出口 IP 的 RST 是**整批、按主机**的，
-      #   实测同一分钟 4 个主机同时 RemoteDisconnected，而封禁窗口约 10 分钟。
-      #   重试步骤的 sleep 180 就落在这同一个窗口里，注定撞同一堵墙。
+      # run_all.py 内部每一步都是独立子进程、各带自己的 DSM_DEADLINE_SEC
+      # （http_util.DEFAULT_DEADLINE 是 import 时读一次的环境常量，
+      # 放在同一个进程里就没法给不同步骤不同预算）。
       #
-      # 真正有效的是**跨 cron 重试**：同一个封禁窗口过去后再跑一次就成功了。
-      # 实测证据（按天的成功/失败序列）：
-      #   09-21  XXOOOO   09-24  XXXXXO   09-25  XXXXXO   09-29  XXOOOO
-      # 前几次失败、后面必然成功 —— 这不是"经常出错"，而是同一个瞬时故障被
-      # 6 个 cron 放大成了十几次红灯。删掉 CI 内重试后，失败运行从 5~10 分钟
-      # 降到 2 分钟以内，而成功率不受影响（机会留给下一个 cron）。
-      #
-      # 注意：fetch 层本身**仍然**有快速失败与主机退役（http_util.HostPool），
-      # 所以单次运行不会再去烧 153 秒 × 4 主机的退避。两者是不同的层次：
-      # 进程内快速放弃，跨 cron 择时重试。
-
-      # 裁剪要在 Build site 之前：站点按最终存在的目录生成归档页，
-      # 否则 docs 里会有指向「已被裁掉的报告」的死链。
-      - name: Prune outputs
-        if: always()
-        run: python prune_outputs.py
-
-      - name: Build site
-        id: build
-        if: always()
-        env:
-          DSM_DEADLINE_SEC: "300"
-          TARGET_A: ${{ steps.target.outputs.expected_a }}
-          TARGET_HK: ${{ steps.target.outputs.expected_hk }}
-        run: python build_pages.py
-
-      # 完成检查与红/绿裁决已合并到最后的 `Completion gate`（gate.py）：
-      # 原来这里先算出一个 complete 结论、最后再据此决定退出码，两段都在 bash 里，
-      # 而「哪些市场缺数据」的循环还有第三份拷贝。判据写三遍必然漂移，且最关键
-      # 的安全逻辑只能靠 CI 验证。现在只剩一处、且可单测。
+      # 退出码语义：**只有「构建站点」失败才返回非零**。其余步骤的成败交给
+      # gate.py 裁决 —— 否则「一个市场被限流」会被放大成「整天产物作废」，
+      # 这正是 2026-09-21~09-30 那 8 天数据丢失的形态。
+      # 不写 continue-on-error：建站失败必须让这个 job 变红。
+      - name: Run pipeline
+        id: pipeline
+        run: python run_all.py --mode "$MODE"
 
       # 无论是否完整都提交已成功的产出：旧版 Check 步骤先 exit 1，
       # 于是「一个市场失败」被放大成「当天全部产物丢失」，远端永远缺这一天
@@ -202,7 +155,7 @@ jobs:
             exit 0
           fi
           git commit -m "daily results $(TZ=Asia/Shanghai date +%F)"
-          # 手动补跑可能与定时任务或 heartbeat 补触发重叠，push 前先 rebase
+          # 手动补跑可能与外部 cron 触发重叠，push 前先 rebase
           for i in 1 2 3; do
             if git pull --rebase --autostash --quiet origin main && git push --quiet; then
               echo "提交成功（第 $i 次尝试）"
@@ -216,12 +169,14 @@ jobs:
 
       # 诊断要留痕：fetch 层的重试明细以前只进 stdout，仓库里的 run_*.log
       # 只有三行，事后完全无法判断「重试了几次、哪个主机失败」。
+      # run_all_summary.json 是各步骤的返回码与耗时 —— 一眼看出时间花在哪一步。
       - name: Upload run logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: run-logs-${{ github.run_id }}
           path: |
+            run_all_summary.json
             output/*/run_*.log
             output_etf/*/run_*.log
             output_hk/*/run_*.log
@@ -239,17 +194,17 @@ jobs:
       # 中途崩溃会留下一个没有 index.html 的目录；如果照样部署，就会把
       # 上一次的好站点覆盖掉。outcome 判断保证失败时保留线上版本。
       - name: Setup Pages
-        if: always() && steps.build.outcome == 'success'
+        if: always() && steps.pipeline.outcome == 'success'
         uses: actions/configure-pages@v5
 
       - name: Upload site
-        if: always() && steps.build.outcome == 'success'
+        if: always() && steps.pipeline.outcome == 'success'
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs
 
       - name: Deploy to GitHub Pages
-        if: always() && steps.build.outcome == 'success'
+        if: always() && steps.pipeline.outcome == 'success'
         uses: actions/deploy-pages@v4
 
       # 唯一的红/绿裁决点。原来这里是**两段** bash：一段算出 complete、另一段
@@ -257,7 +212,7 @@ jobs:
       # 到 gate.py —— 它可以在本地直接跑，也能单测（见 tests/test_gate.py）。
       #
       # 它同时管两件事：
-      #   1. 目标交易日必须有有效 DONE（瞬时抖动 → 下一个 cron 补跑成功 → 绿；
+      #   1. 目标交易日必须有有效 DONE（瞬时抖动 → 下一个触发点补跑成功 → 绿；
       #      真正的缺陷 → 始终没有 DONE → 红）；
       #   2. **回看窗口内不能有空洞**。旧版只校验「最近一个交易日」，于是某天一旦
       #      永久丢失，它只在当天被判红，之后目标日往前滚动，那天再也不会被检查

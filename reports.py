@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import os
 
+import fsutil
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # key 必须与 build_pages.MARKETS 的第三个元素一致（站点目录名 / 报告文件名）
@@ -58,42 +60,44 @@ def _breadth_card(day_dir: str, iso: str) -> str:
         return ""
 
 
-def _review_html(iso: str) -> str:
-    """往期推荐复盘。只读 metrics CSV 与 recommend_history.json，不联网。"""
+def summary_block(metrics_csv: str, day_dir: str, iso: str, key: str):
+    """「📌 今日速览」块（含基线对照）。返回 (html, md)；失败返回 ("", "")。
+
+    单独抽出来是因为它有**两个**消费者：报告本身（assemble_extras）和
+    合并摘要邮件（_write_digest）。让它们各算一份就会漂移 ——
+    而这个块正是「胜率必须并排给出基线」那条约束的落点。
+    """
+    import strategy_summary
+
+    spec = MARKET_SPECS[key]
+    market_dir = os.path.dirname(day_dir)
     try:
-        import run_buy_daily
-        hist = run_buy_daily._load_hist()
-        html, _md = run_buy_daily.build_review(hist, iso)
-        return html or ""
+        # as_of=iso：只用截至该交易日的历史，避免重建时引入未来的胜率（前视）
+        summary = strategy_summary.build_summary(
+            metrics_csv, market_dir, spec["label"], as_of=iso)
     except Exception as exc:
-        print(f"[报告] {iso} 复盘块生成失败（跳过该块）: {type(exc).__name__}: {exc}")
-        return ""
+        print(f"[报告] {iso} 策略速览生成失败（不影响报告主体）: {type(exc).__name__}: {exc}")
+        return "", ""
+    if not summary:
+        return "", ""
+    return summary.get("html") or "", summary.get("md") or ""
 
 
 def assemble_extras(metrics_csv: str, day_dir: str, iso: str, key: str):
-    """返回 (extra_html, extra_md, review_html)。
+    """返回 (extra_html, extra_md)。
 
     rich 市场（A 股）顶部：温度卡 → 大盘宽度 → 板块温度 → 策略速览；
     底部：邮件速览精选 → 机会榜完整表。其余市场只有策略速览。
+
+    这里原来还返回第三个值 review_html（「往期推荐复盘」，来自已删除的
+    买入参考）。买入参考整块被删除后复盘自然也不存在了 —— 它唯一的输入
+    recommend_history.json 就是买入参考写的历史。
     """
     spec = MARKET_SPECS[key]
-    label = spec["label"]
-    market_dir = os.path.dirname(day_dir)
-
-    import strategy_summary
-
-    summary = None
-    try:
-        # as_of=iso：只用截至该交易日的历史，避免重建时引入未来的胜率（前视）
-        summary = strategy_summary.build_summary(metrics_csv, market_dir, label, as_of=iso)
-    except Exception as exc:
-        print(f"[报告] {iso} 策略速览生成失败（不影响报告主体）: {type(exc).__name__}: {exc}")
-
-    summ_html = summary["html"] if summary else ""
-    summ_md = summary["md"] if summary else ""
+    summ_html, summ_md = summary_block(metrics_csv, day_dir, iso, key)
 
     if not spec["rich"]:
-        return (summ_html or None), (summ_md or None), ""
+        return (summ_html or None), (summ_md or None)
 
     import market_insights
 
@@ -124,18 +128,72 @@ def assemble_extras(metrics_csv: str, day_dir: str, iso: str, key: str):
     extra_html = (top_html + bottom_html) or None
     parts = [p for p in (sector_md, breadth_md, summ_md, picks_md, opp_md) if p]
     extra_md = ("\n\n".join(parts)) if parts else None
-    return extra_html, extra_md, _review_html(iso)
+    return extra_html, extra_md
 
 
-def write(metrics_csv: str, day_dir: str, iso: str, key: str,
-          append_review: bool = True) -> str | None:
-    """生成 report_<iso>.html / .md。失败返回 None（不抛，调用方决定降级）。"""
+def digest_path(day_dir: str, iso: str) -> str:
+    return os.path.join(day_dir, f"digest_{iso}.html")
+
+
+def _write_digest(metrics_csv: str, day_dir: str, iso: str, key: str) -> None:
+    """写一份「合并摘要邮件」用的紧凑片段。
+
+    为什么不让 runner 各自发一封邮件：三个市场 × 每天一封 = 每天 3 封邮件，
+    而每封的正文都是一份 160KB 的完整报告（会被邮件客户端截断）。
+    现在三个市场各写一个片段，由 send_digest.py 合成**一封**邮件，
+    完整报告作为附件（附件不会被截断）。
+
+    片段只包含「这个市场今天怎么样」的摘要，不含明细表 ——
+    明细表在附件与站点里。它自己算 summary_block，因此不依赖报告是否已存在，
+    `reports.ensure()` 在「报告已在磁盘上」的路径上也能补齐它。
+    """
+    import pandas as pd
+
+    label = MARKET_SPECS[key]["label"]
+    n = 0
+    up = down = None
+    avg = None
+    try:
+        df = pd.read_csv(metrics_csv, dtype={"代码": str})
+        n = len(df)
+        chg = pd.to_numeric(df.get("涨跌幅"), errors="coerce")
+        if chg is not None and chg.notna().any():
+            up = int((chg > 0).sum())
+            down = int((chg < 0).sum())
+            avg = float(chg.mean())
+    except Exception as exc:
+        print(f"[报告] {iso} 摘要统计失败: {type(exc).__name__}: {exc}")
+
+    bits = [f"共 {n} 只"]
+    if up is not None:
+        bits.append(f"上涨 {up} / 下跌 {down}")
+        bits.append(f"平均 {avg:+.2f}%")
+    stat = "，".join(bits)
+
+    summ_html, _ = summary_block(metrics_csv, day_dir, iso, key)
+
+    html = (
+        f'<div style="background:#fff;border-radius:10px;padding:14px 16px;margin-bottom:14px;'
+        f'box-shadow:0 1px 3px rgba(0,0,0,0.08)">'
+        f'<div style="font-size:16px;font-weight:700;color:#1a1a2e;margin-bottom:4px">'
+        f'{label}<span style="font-weight:400;color:#888;font-size:12.5px"> ｜ {iso}</span></div>'
+        f'<div style="font-size:13px;color:#555;margin-bottom:8px">{stat}</div>'
+        f'{summ_html or "<div style=\'color:#999;font-size:13px\'>暂无速览</div>"}'
+        f'</div>')
+    fsutil.atomic_write_text(digest_path(day_dir, iso), html)
+
+
+def write(metrics_csv: str, day_dir: str, iso: str, key: str) -> str | None:
+    """生成 report_<iso>.html / .md（+ 邮件用的 digest_<iso>.html）。
+
+    失败返回 None（不抛，调用方决定降级）。
+    """
     import generate_report
 
     if not os.path.exists(metrics_csv):
         print(f"[报告] {iso} 缺 metrics CSV，跳过：{metrics_csv}")
         return None
-    extra_html, extra_md, review = assemble_extras(metrics_csv, day_dir, iso, key)
+    extra_html, extra_md = assemble_extras(metrics_csv, day_dir, iso, key)
     try:
         html_path = generate_report.generate_report(
             metrics_csv, day_dir, title=MARKET_SPECS[key]["title"],
@@ -143,17 +201,16 @@ def write(metrics_csv: str, day_dir: str, iso: str, key: str,
     except Exception as exc:
         print(f"[报告] {iso} 生成失败: {type(exc).__name__}: {exc}")
         return None
-
-    if append_review and review:
-        try:
-            import fsutil
-            with open(html_path, "r", encoding="utf-8") as fh:
-                content = fh.read()
-            fsutil.atomic_write_text(
-                html_path, content.replace("</body>", review + "</body>"))
-        except Exception as exc:
-            print(f"[报告] {iso} 追加复盘失败（不影响报告主体）: {type(exc).__name__}: {exc}")
+    _safe_digest(metrics_csv, day_dir, iso, key)
     return html_path
+
+
+def _safe_digest(metrics_csv: str, day_dir: str, iso: str, key: str) -> None:
+    """摘要片段失败只影响邮件正文；报告与站点照旧，所以不抛。"""
+    try:
+        _write_digest(metrics_csv, day_dir, iso, key)
+    except Exception as exc:
+        print(f"[报告] {iso} 摘要片段生成失败（不影响报告）: {type(exc).__name__}: {exc}")
 
 
 def ensure(metrics_csv: str, day_dir: str, iso: str, key: str) -> str | None:
@@ -161,9 +218,15 @@ def ensure(metrics_csv: str, day_dir: str, iso: str, key: str) -> str | None:
 
     这就是「报告不入库」的支点：仓库里只有 CSV + DONE，站点构建时在这里把
     HTML 物化出来。已在磁盘上（例如刚跑完采集的当日）则不重复生成。
+
+    但**摘要片段总是补齐**：它比报告小得多，而且是合并摘要邮件的输入 ——
+    「报告已经在磁盘上」这条路径（同一天重跑、手动补跑）如果跳过它，
+    邮件就会静默地少掉一个市场。
     """
     html_path, _ = report_paths(day_dir, iso)
     if os.path.exists(html_path) and os.path.getsize(html_path) > 0:
+        if not os.path.exists(digest_path(day_dir, iso)):
+            _safe_digest(metrics_csv, day_dir, iso, key)
         return html_path
     return write(metrics_csv, day_dir, iso, key)
 

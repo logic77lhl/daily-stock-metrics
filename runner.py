@@ -17,9 +17,12 @@
     1. 名单（失败 → 观察池历史降级）
     2. 指标（逐只实抓，失败明细单独落盘）
     3. 报告（reports.write：采集路径与重建路径共用同一段组装逻辑）
-    4. 质量门（**必须在发邮件之前**，否则被拒绝的数据也会发出去）
-    5. 邮件
-    6. 写 DONE（质量门的唯一出口）
+    4. 质量门（**必须通过**，否则不写 DONE）
+    5. 写 DONE（质量门的唯一出口）
+
+邮件不在这里发：三个市场各发一封 = 每天 3 封，且正文都是会被客户端截断的
+完整报告。改为由流水线末尾的 `send_digest.py` 合成一封，且**只收录 DONE 有效
+（=质量门通过）的市场** —— 「先判后发」因此从时序约定变成了结构约束。
 
 A 股额外有：大盘温度、本地聚合洞察、个股走势图、往期推荐复盘。
 """
@@ -31,6 +34,8 @@ import os
 import sys
 import time
 from dataclasses import dataclass
+
+import http_util
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_TOP = 100
@@ -88,7 +93,14 @@ class _Run:
 
 
 def _step_list(ctx: _Run) -> str:
-    """步骤1：取名单。失败则降级到观察池历史（返回 universe 标记）。"""
+    """步骤1：取名单。失败则降级到观察池历史（返回 universe 标记）。
+
+    这一步有**自己的硬预算**（http_util.list_deadline，默认 45s）。理由是实测出来
+    的一笔账：2026-10-09 三次 A 股运行里，取名单分别花掉 348s / 348s / 259s，
+    而整个「抓 113 只标的指标」只花了 52s —— 一轮运行 73% 的时间在等一份成分名单。
+    名单失败本来就有降级路径（观察池历史名单，指标仍逐只实抓），所以超预算就立刻
+    降级，把重试机会留给下一个触发点，而不是让整天数据一起卡死。
+    """
     spec, day_dir, iso = ctx.spec, ctx.day_dir, ctx.iso
     list_csv = os.path.join(day_dir, f"{spec.list_prefix}_{iso}.csv")
     if _already_done(list_csv):
@@ -98,19 +110,25 @@ def _step_list(ctx: _Run) -> str:
     ctx.wlog(spec.list_step_msg)
     fetch = importlib.import_module(spec.list_module)
     universe = "eastmoney"
+    budget = http_util.list_deadline()
+    started = time.monotonic()
     try:
-        fetch.run(top=DEFAULT_TOP, out_path=list_csv, log_file=ctx.log_file, note=ctx.wlog)
+        fetch.run(top=DEFAULT_TOP, out_path=list_csv, log_file=ctx.log_file,
+                  note=ctx.wlog, deadline=budget)
     except Exception as exc:
         # 东财对云厂商出口 IP 会整批 RST（实测 4 主机 × 12 次全失败，28 个失败
         # 运行里 27 个是这一个原因）。用观察池历史名单降级，远好于整天数据全丢。
-        ctx.wlog(f"步骤1失败({type(exc).__name__}: {exc})，降级为观察池历史名单")
+        ctx.wlog(f"步骤1失败(耗时 {time.monotonic() - started:.0f}s，"
+                 f"预算 {budget.budget if budget.budget is not None else '不限'}s，"
+                 f"{type(exc).__name__}: {exc})，降级为观察池历史名单")
         import stock_pool
         stock_pool.list_from_pool(ctx.out_dir_abs, list_csv, iso,
                                   prefix=spec.list_prefix)
         universe = "pool-fallback"
         print(f"::warning::{spec.label} 名单接口不可用，已降级为观察池历史名单"
               f"（指标仍为当日实抓，仅名单成分可能滞后）")
-    ctx.wlog(f"步骤1完成 -> {list_csv}（名单来源: {universe}）")
+    ctx.wlog(f"步骤1完成 -> {list_csv}（名单来源: {universe}，"
+             f"耗时 {time.monotonic() - started:.0f}s）")
     return universe
 
 
@@ -173,7 +191,6 @@ def _extra_a_steps(ctx: _Run, metrics_csv: str) -> None:
 def run(spec: MarketSpec) -> int:
     import quality
     import reports
-    import send_email
     import trading_calendar
 
     if sys.stdout is None:
@@ -220,30 +237,25 @@ def run(spec: MarketSpec) -> int:
             return 1
         ctx.wlog(f"步骤3完成 -> {html_path}")
 
-        if spec.rich:
-            try:
-                ctx.wlog("步骤4: 生成个股股价走势图…")
-                import generate_stock_charts
-                ctx.wlog(f"步骤4完成 -> {generate_stock_charts.run(out_dir)}")
-            except Exception as exc:
-                ctx.wlog(f"步骤4失败(不影响主流程): {type(exc).__name__}: {exc}")
+        # 这里原本还有「步骤4: 生成个股股价走势图」（generate_stock_charts）。
+        # 它被**删除**了：336 行代码、0.9 秒、1.97 MB 的 output/stock_charts.html，
+        # 在 build_pages 里**零引用**（站点从不链接它），也不入库（.gitignore），
+        # 因此除了每天多写一个没人看的 2MB 文件之外没有任何作用。
 
-        # 质量门必须在发邮件**之前**：原来是先发后判，一次未通过的质量门
-        # 会连发两封（下一个 cron 再发一封）包含被拒绝数据的邮件。
+        # 质量门必须在产出摘要**之前**：原来是先发后判，一次未通过的质量门
+        # 会连发两封（下一个触发点再发一封）包含被拒绝数据的邮件。
+        # 现在邮件由流水线末尾的 send_digest.py 统一发送，而它**只收录
+        # DONE 有效（=质量门通过）的市场** —— 顺序约束因此变成结构性的。
         report = quality.assess(metrics_csv, stats["expected"], stats, expected_date=iso)
         if not report.ok:
             ctx.wlog(f"数据质量门未通过：{report.checks}")
             return quality.fail(day_dir, spec.label, report)
 
-        ctx.wlog("步骤5: 发送邮件报告…")
-        ok = send_email.send_report(html_path, subject=f"{spec.label} KDJ 多周期信号报告 - {iso}")
-        ctx.wlog(f"步骤5完成: {'邮件已发送' if ok else '邮件发送失败(请检查邮箱配置)'}")
-
         extra = {"universe": universe}
         if spec.rich:
             extra["stats_success_ratio"] = f"{stats['success_ratio']:.4f}"
         quality.succeed(day_dir, spec.label, iso, report, extra=extra)
-        ctx.wlog(f"===== 全部完成 {iso} =====")
+        ctx.wlog(f"===== 全部完成 {iso}（邮件由流水线末尾统一发送）=====")
         return 0
     except Exception as exc:
         ctx.wlog(f"任务失败: {type(exc).__name__}: {exc}")

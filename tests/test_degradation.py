@@ -37,7 +37,6 @@ import requests  # noqa: E402
 import fetch_metrics  # noqa: E402
 import quality  # noqa: E402
 import runner  # noqa: E402
-import run_buy_daily  # noqa: E402
 import strategy_summary  # noqa: E402
 
 # 2026-10-09（周五）22:00 北京时间：已收盘、且下一交易日 10-12 尚未开盘，
@@ -123,11 +122,7 @@ def _patch_stack(root: str, blocked, metrics_writer):
         mock.patch("fetch_hk.run", blocked),
         mock.patch("fetch_metrics.run", metrics_writer),
         mock.patch("fetch_market_breadth.run", _conn_error),
-        mock.patch("generate_stock_charts.run",
-                   lambda *a, **k: os.path.join(root, "stock_charts.html")),
         mock.patch("send_email.send_report", lambda *a, **k: True),
-        mock.patch.object(run_buy_daily, "_load_hist", lambda *a, **k: {}),
-        mock.patch.object(run_buy_daily, "build_review", lambda *a, **k: ("", "")),
         # 根目录摘要是**入库文件**，测试绝不能碰仓库工作区
         mock.patch.object(strategy_summary, "write_root_summary", lambda *a, **k: None),
     ]
@@ -363,6 +358,163 @@ def test_history_is_point_in_time() -> None:
         shutil.rmtree(out_dir, ignore_errors=True)
 
 
+def test_win_rate_always_shows_a_baseline() -> None:
+    """每一个胜率都必须并排给出基线 —— 这是本项目最容易误导读者的一处。
+
+    为什么必须有这条守卫：本样本的次日基线胜率只有 43~47%，而中位收益为负
+    （收益全部来自右尾）。脱离基线看「胜率 55%」会读成「这个策略不错」，
+    而它落在噪声里 —— 独立回测里 56 个假设无一通过多重比较校正。
+    「加了基线」这件事一旦被后人重构掉，表现只是页面上少了一段文字，
+    不会有任何报错，所以只能由测试钉死。
+    """
+    out_dir = tempfile.mkdtemp(prefix="dsm-baseline-")
+    try:
+        # 25 个交易日 × 12 只：够 ROLLING_DAYS(20)+1 的窗口
+        days = pd.bdate_range("2026-09-01", periods=25)
+        for i, day in enumerate(days):
+            iso = day.strftime("%Y-%m-%d")
+            day_dir = os.path.join(out_dir, iso)
+            os.makedirs(day_dir, exist_ok=True)
+            rows = []
+            for k in range(12):
+                row = {col: None for col in fetch_metrics.FIELDS}
+                # 造一个「6 只涨、6 只跌」的确定性序列，让基线恰为 50%
+                step = 1.0 if k % 2 == 0 else -1.0
+                row.update({
+                    "排名": k + 1, "代码": f"{600000 + k:06d}", "名称": f"样本{k:03d}",
+                    "数据日期": iso,
+                    "日线J": 10.0 if k < 3 else 90.0,
+                    "周线J": 10.0 if k < 3 else 90.0,
+                    "月线J": 10.0 if k < 3 else 90.0,
+                    "昨日日线J": 10.0, "昨日周线J": 10.0, "昨日月线J": 10.0,
+                    "最新价": 10.0 + i * step,
+                    "涨跌幅": step, "MA20": 10.0, "MA60": 9.5, "双均线多头": 1.0,
+                    "价距MA20%": 1.0, "量比": 2.0, "量比30": 1.0,
+                    "成交额(亿)": 10.0, "行业": "银行Ⅱ",
+                })
+                rows.append(row)
+            pd.DataFrame(rows, columns=list(fetch_metrics.FIELDS)).to_csv(
+                os.path.join(day_dir, f"metrics_{iso}.csv"), index=False,
+                encoding="utf-8-sig")
+
+        last = days[-1].strftime("%Y-%m-%d")
+        metrics = os.path.join(out_dir, last, f"metrics_{last}.csv")
+
+        panel = strategy_summary._load_history(out_dir, exclude_date=last, as_of=last)
+        ranked, _note, baseline = strategy_summary._ranked_strategies(panel)
+        assert baseline is not None, "基线算不出来（窗口或价格序列有问题）"
+        assert 0.0 <= baseline <= 1.0, f"基线应是比例，实际 {baseline}"
+
+        out = strategy_summary.build_summary(metrics, out_dir, "A股", as_of=last)
+        for kind, text in (("html", out["html"]), ("md", out["md"])):
+            assert "基线" in text, (
+                f"{kind} 里没有基线 —— 胜率会被脱离对照地发布（这正是要修掉的误导）")
+            assert "预测力" in text, f"{kind} 里缺少「胜率不等于预测力」的说明"
+        assert f"{baseline * 100:.0f}%" in out["md"], "基线数值没有出现在速览里"
+        print(f"  [PASS] 速览里的胜率并排给出基线（本夹具基线 {baseline * 100:.0f}%），"
+              f"且带「无预测力」说明")
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
+def test_digest_only_includes_markets_that_passed_the_gate() -> None:
+    """合并摘要邮件只收录 DONE 有效的市场 —— 「先判后发」必须是结构约束。
+
+    原来每个市场各发一封，而「质量门在发信之前」只是一条**时序约定**：
+    谁把两段代码的顺序调换一下，被拒绝的数据就会被发出去，且没有任何报错。
+    现在发信人只看 DONE，不看指标。
+    """
+    import send_digest
+
+    root = tempfile.mkdtemp(prefix="dsm-digest-")
+    try:
+        iso = "2026-10-09"
+        # A股：有效 DONE + 摘要片段 → 收录
+        a_dir = os.path.join(root, "output", iso)
+        os.makedirs(a_dir, exist_ok=True)
+        Path(a_dir, "DONE").write_text(
+            "status=ok\ndate=%s\nmarket=A股\nrows=113\n" % iso, encoding="utf-8")
+        Path(a_dir, f"digest_{iso}.html").write_text("<div>A股摘要</div>", encoding="utf-8")
+        Path(a_dir, f"report_{iso}.html").write_text("<html>A股报告</html>", encoding="utf-8")
+
+        # 港股：有报告但没有有效 DONE（质量门未通过）→ 必须被排除
+        hk_dir = os.path.join(root, "output_hk", iso)
+        os.makedirs(hk_dir, exist_ok=True)
+        Path(hk_dir, f"digest_{iso}.html").write_text("<div>港股摘要</div>", encoding="utf-8")
+        Path(hk_dir, f"report_{iso}.html").write_text("<html>港股报告</html>", encoding="utf-8")
+
+        # ETF：目录都不存在 → 排除
+        with mock.patch.object(send_digest, "BASE_DIR", root):
+            frags, atts, included, skipped = send_digest._collect(iso)
+            assert included == ["A股"], f"只应收录 A股，实际 {included}"
+            assert len(frags) == 1 and "A股摘要" in frags[0]
+            assert len(atts) == 1 and atts[0].endswith(f"report_{iso}.html")
+            assert any("港股通" in s for s in skipped), f"跳过原因里应点名港股通：{skipped}"
+            assert any("ETF" in s for s in skipped), f"跳过原因里应点名 ETF：{skipped}"
+
+            html = send_digest.build_html(iso, frags, included, skipped)
+            assert "A股摘要" in html and "港股摘要" not in html, "被拒市场的摘要泄漏进了邮件"
+            assert "未收录" in html, "被跳过的市场必须在邮件里显式说明"
+        print("  [PASS] 合并摘要只收录 DONE 有效的市场，被拒市场的摘要不会进邮件")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_homepage_backtest_card_shows_excess_not_bare_win_rate() -> None:
+    """首页「回测超额速览」必须展示**相对基线的超额**，而不是裸胜率。
+
+    这里原来是「回测胜率速览」：按胜率取 TOP2 并把胜率当亮点。
+    在本样本（基线 47%、中位收益为负）里，脱离基线看 55% 会读成「好」——
+    这正是要修掉的误导。所以卡片必须：
+      1. 打印超额收益（策略均值 − 全样本基线均值），不把裸胜率当卖点；
+      2. 把基线数值写出来；
+      3. 说明「无一通过多重比较校正」。
+    旧格式 summary.csv（没有超额列）也必须能优雅降级，而不是崩掉或退回裸胜率。
+    """
+    import build_pages
+
+    root = tempfile.mkdtemp(prefix="dsm-btcard-")
+    try:
+        folder = os.path.join(root, "backtest_results", "个股")
+        os.makedirs(folder, exist_ok=True)
+
+        def write_summary(rows, path):
+            pd.DataFrame(rows).to_csv(path, index=False, encoding="utf-8-sig")
+
+        common = {"持有期(交易日)": 5, "交易次数": 500, "中位数收益%": -0.05}
+        write_summary([
+            dict(common, **{"策略": "全样本(基准)", "胜率%": 47.0, "平均收益%": 0.10,
+                            "基线胜率%": 47.0, "基线平均收益%": 0.10, "超额收益%": 0.0}),
+            dict(common, **{"策略": "甲策略", "胜率%": 55.0, "平均收益%": 0.35,
+                            "基线胜率%": 47.0, "基线平均收益%": 0.10, "超额收益%": 0.25}),
+            dict(common, **{"策略": "乙策略", "胜率%": 52.0, "平均收益%": -0.20,
+                            "基线胜率%": 47.0, "基线平均收益%": 0.10, "超额收益%": -0.30}),
+        ], os.path.join(folder, "summary.csv"))
+
+        with mock.patch.object(build_pages, "BASE_DIR", root):
+            card = build_pages.build_backtest_summary()
+
+        assert card, "有 summary.csv 却生不出卡片"
+        assert "+0.25%" in card, f"应展示超额收益：{card[:400]}"
+        assert "全样本" not in card.split("mini-note")[0].replace("全样本(基准)", ""), \
+            "基线行本身不该被当作「策略」展示"
+        assert "基线胜率 47.0%" in card, "必须把基线数值印出来"
+        assert "多重比较" in card, "必须说明无一通过多重比较校正"
+        assert "回测胜率速览" not in card, "标题不应再叫「胜率速览」"
+
+        # 旧格式（没有超额列）→ 优雅降级，不崩
+        write_summary([
+            dict(common, **{"策略": "全样本(基准)", "胜率%": 47.0, "平均收益%": 0.10}),
+            dict(common, **{"策略": "甲策略", "胜率%": 55.0, "平均收益%": 0.35}),
+        ], os.path.join(folder, "summary.csv"))
+        with mock.patch.object(build_pages, "BASE_DIR", root):
+            legacy = build_pages.build_backtest_summary()
+        assert legacy, "旧格式 summary.csv 也必须能出卡片"
+        print("  [PASS] 首页回测卡展示「超额 + 基线 + 无显著性」；旧格式 summary.csv 优雅降级")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def main() -> int:
     print("降级链路端到端自检")
     print("=" * 58)
@@ -373,6 +525,9 @@ def main() -> int:
     test_style_externalized_for_site_but_kept_in_report()
     test_quality_gate_rejects_stale_bar_date()
     test_history_is_point_in_time()
+    test_win_rate_always_shows_a_baseline()
+    test_digest_only_includes_markets_that_passed_the_gate()
+    test_homepage_backtest_card_shows_excess_not_bare_win_rate()
     print("=" * 58)
     print("全部通过")
     return 0

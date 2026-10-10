@@ -8,8 +8,10 @@
 所以本文件把契约逐条钉死，并把 P6 差分验证查出的三处**有意差异**写清楚 ——
 它们要么不可达，要么比旧行为更正确，不能靠「反正没人这么调」蒙过去。
 
-另外守一条容易被后人破坏的约束：`gate.py` 会被 heartbeat **在没有依赖的环境里**
-直接运行（实测 pandas 不可导入），所以它的 import 链不许碰 pandas。
+另外守一条容易被后人破坏的约束：`gate.py` 的 import 链不许碰 pandas。
+它现在由 workflow 的「Completion gate」步骤调用（装了依赖），
+但保持「轻量到可以随时在任何环境里跑」仍然有价值 —— 这是它能在本地、
+在 CI、在事后排障时**用同一段代码**回答「到底缺没缺数据」的前提。
 """
 
 from __future__ import annotations
@@ -134,10 +136,11 @@ def test_all_callers_share_one_implementation() -> None:
 def test_gate_runs_without_pandas() -> None:
     """gate.py 的 import 链不许依赖 pandas。
 
-    为什么：`heartbeat.yml` 用 `python3 gate.py --lookback 0` 做兜底探测，
-    而心跳**不安装任何依赖**。实测在该环境里 `import pandas` 会抛 ImportError。
-    一旦有人让 gate（或它 import 的 quality / trading_calendar）间接依赖 pandas，
-    心跳就会静默失效 —— 那正是 2026-09 丢数据无人察觉的原因之一。
+    为什么仍然要守：完成门是「到底缺没缺数据」的**唯一**裁决实现，
+    它的价值就在于可以随时、在任何环境里用同一段代码回答这个问题
+    （本地排障、CI、事后考古）。一旦它的 import 链拉进 pandas，
+    「轻量到随手能跑」就没了，而这个项目已经有过「判据写了三份、然后漂移」
+    的真实事故（那份循环曾在 shell 里有两份拷贝）。
 
     做法：把一份「一 import 就抛 ImportError」的假 pandas 放到 PYTHONPATH 最前面。
     """
@@ -160,7 +163,7 @@ def test_gate_runs_without_pandas() -> None:
         out = (proc.stdout or "") + (proc.stderr or "")
         assert proc.returncode == 0, f"gate 在无 pandas 环境下失败：\n{out[-800:]}"
         assert "gate ok=" in out, f"没有拿到预期输出：\n{out[-400:]}"
-        print("  [PASS] gate.py 在没有 pandas 的环境里仍能导入并运行（心跳的硬约束）")
+        print("  [PASS] gate.py 在没有 pandas 的环境里仍能导入并运行（完成门保持轻量）")
 
 
 def main() -> int:

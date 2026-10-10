@@ -3,15 +3,18 @@ __pycache__/
 autostart_errors.log
 backtest_results/kline_cache/
 
+# run_all.py 的产物：本地无控制台（pythonw）时的统一输出，以及各步骤的返回码/耗时
+run_all.log
+run_all_summary.json
+
 # build_pages.py 生成的站点，经 GitHub Pages artifact 部署，不入库
 docs/
 
 # 回测产物与 kline 缓存，每次重跑覆盖，不入库
 backtest_results/
 
-# 3.2MB 的单文件、每日重建，且不被 docs/ 站点引用（仅本地查看），不入库。
-# 由 prune_outputs.py 一次性从索引移除。
-/output/stock_charts.html
+# 这里曾有一条 /output/stock_charts.html（3.2MB、每日重建、无人引用）。
+# 生成它的 generate_stock_charts.py 已整体删除，所以规则也一并移除。
 
 # 日报 HTML/MD 是**派生数据**：完全可由 metrics_<日期>.csv 重建
 # （generate_report 只依赖 CSV），构建时由 build_pages.materialize 物化。
@@ -24,3 +27,9 @@ output_etf/*/report_*.html
 output_etf/*/report_*.md
 output_hk/*/report_*.html
 output_hk/*/report_*.md
+
+# 合并摘要邮件用的紧凑片段（由 reports._write_digest 生成），同样是派生数据
+output/*/digest_*.html
+output_etf/*/digest_*.html
+output_hk/*/digest_*.html
+_digest_preview_*.html

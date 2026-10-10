@@ -271,6 +271,59 @@ def test_summary_has_drawdown_for_all_horizons():
     print("  [PASS] h>1 也有最大回撤（基于不重叠净值），净值列名已改为不重叠口径")
 
 
+def test_summary_injects_baseline_and_excess():
+    """summarize() 必须为每个 策略×持有期 注入基线，并算出超额。
+
+    这是「胜率不能脱离基线发布」在数据层的落点：页面、控制台、首页卡片
+    全都读这几列。没有它们，一个 55% 的胜率会被当成亮点，而本样本的基线
+    只有 41~43%（中位收益为负）。
+    """
+    def rows(strategy, h, rets):
+        return pd.DataFrame({
+            "策略": [strategy] * len(rets),
+            "持有期": [h] * len(rets),
+            "信号日": pd.to_datetime(
+                [f"2026-09-{14 + i:02d}" for i in range(len(rets))]),
+            "收益%": rets,
+        })
+
+    trades = pd.concat([
+        rows(bt.BASELINE_NAME, 1, [1.0, -1.0, 1.0, -1.0]),      # 基线胜率 50%
+        rows("甲策略", 1, [1.0, 1.0, 1.0, -1.0]),                 # 75%，超额 +25pp
+        rows("乙策略", 1, [-1.0, -1.0, 1.0, -1.0]),               # 25%，超额 -25pp
+        rows(bt.BASELINE_NAME, 3, [2.0, -2.0]),                   # 基线胜率 50%
+        rows("甲策略", 3, [2.0, 2.0]),                            # 100%
+    ], ignore_index=True)
+
+    summary, _ = bt.summarize(trades, [1, 3])
+    for col in ("基线胜率%", "基线平均收益%", "超额胜率pp", "超额收益%"):
+        assert col in summary.columns, f"缺少基线列 {col}"
+
+    def get(name, h):
+        return summary[(summary["策略"] == name) & (summary["持有期(交易日)"] == h)].iloc[0]
+
+    for h in (1, 3):
+        base = get(bt.BASELINE_NAME, h)
+        assert base["基线胜率%"] == 50.0, base["基线胜率%"]
+        assert base["超额胜率pp"] == 0.0 and base["超额收益%"] == 0.0, "基线行超额应为 0"
+
+    jia = get("甲策略", 1)
+    assert jia["胜率%"] == 75.0 and jia["基线胜率%"] == 50.0
+    assert jia["超额胜率pp"] == 25.0, jia["超额胜率pp"]
+    yi = get("乙策略", 1)
+    assert yi["超额胜率pp"] == -25.0, yi["超额胜率pp"]
+
+    # 排序：持有期升序 → 基线行置顶 → 超额降序（控制台与页面必须同序）
+    h1 = summary[summary["持有期(交易日)"] == 1]["策略"].tolist()
+    assert h1[0] == bt.BASELINE_NAME, f"基线行应排在该持有期最前，实际 {h1}"
+    assert h1[1] == "甲策略" and h1[-1] == "乙策略", h1
+
+    # 没有基线策略时（--strategy 自定义）→ 列存在但为 NaN，绝不伪造基线
+    no_base, _ = bt.summarize(rows("甲策略", 1, [1.0, -1.0]), [1])
+    assert pd.isna(no_base.iloc[0]["基线胜率%"]), "没有基线策略时不该编出一个基线"
+    print("  [PASS] summarize 注入基线/超额列，基线行置顶，缺基线时不伪造")
+
+
 # ── 7. eval_expr 别名列 ────────────────────────────────────────────
 
 def test_eval_expr_alias_columns():
@@ -364,6 +417,7 @@ def main() -> int:
     test_drop_counters_and_suspension_holding_days()
     test_bucket_nav_is_not_overlapping()
     test_summary_has_drawdown_for_all_horizons()
+    test_summary_injects_baseline_and_excess()
     test_eval_expr_alias_columns()
     test_deadline_gate_stops_fetching_offline()
     print("=" * 62)

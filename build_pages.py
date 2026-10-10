@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""把每日报告整理为 GitHub Pages 站点(docs/)：日期索引 + 回测/买入参考/价值标的页。
+"""把每日报告整理为 GitHub Pages 站点(docs/)：日期索引 + 回测/价值标的页。
 
 用法:
     python build_pages.py
@@ -508,9 +508,17 @@ def build_value_summary(latest):
 
 
 def build_backtest_summary():
-    """首页「回测胜率速览」：三市场 持有期=5日 胜率 TOP2 策略。"""
+    """首页「回测超额速览」：三市场 持有期=5日 超额收益 TOP2 策略。
+
+    这里原来叫「回测胜率速览」，按**胜率**取 TOP2 并把胜率当作亮点展示 ——
+    那会系统性误导：本样本的基线胜率只有 47% 左右（全样本、同一持有期），
+    脱离基线看 55% 会读成「好」。现在改为展示**相对基线的超额**，
+    并把基线值一并印出来；若 summary.csv 还是旧格式（没有超额列），
+    就退回只显示基线，而不是退回显示裸胜率。
+    """
     srcs = [("A股", "个股"), ("ETF", "ETF"), ("港股", "HK")]
     blocks = ""
+    base_bits = []
     for label, folder in srcs:
         path = os.path.join(BASE_DIR, "backtest_results", folder, "summary.csv")
         if not os.path.exists(path):
@@ -521,23 +529,46 @@ def build_backtest_summary():
             df = df[_pd.to_numeric(df["持有期(交易日)"], errors="coerce") == 5]
             if df.empty:
                 continue
-            df = df.sort_values("胜率%", ascending=False).head(2)
-            items = "".join(
-                f'<span class="v-item"><b>{r["策略"]}</b>'
-                f'<em>{r["胜率%"]:.0f}%</em></span>'
-                for _, r in df.iterrows())
+            base_wr = None
+            if "基线胜率%" in df.columns:
+                b = df[df["策略"].astype(str).str.startswith("全样本")]
+                if len(b):
+                    base_wr = _pd.to_numeric(b.iloc[0]["基线胜率%"], errors="coerce")
+            if "超额收益%" in df.columns:
+                df = df.assign(_ex=_pd.to_numeric(df["超额收益%"], errors="coerce"))
+                df = df[df["策略"].astype(str).str.startswith("全样本") == False]  # noqa: E712
+                df = df.sort_values("_ex", ascending=False).head(2)
+                items = "".join(
+                    f'<span class="v-item"><b>{r["策略"]}</b>'
+                    f'<em>{r["_ex"]:+.2f}%</em></span>'
+                    for _, r in df.iterrows() if _pd.notna(r["_ex"]))
+            else:
+                df = df.sort_values("胜率%", ascending=False).head(2)
+                items = "".join(
+                    f'<span class="v-item"><b>{r["策略"]}</b>'
+                    f'<em>{r["胜率%"]:.0f}%</em></span>'
+                    for _, r in df.iterrows())
+            if not items:
+                continue
+            if base_wr is not None and _pd.notna(base_wr):
+                base_bits.append(f"{label} 基线胜率 {float(base_wr):.1f}%")
             blocks += (f'<div class="v-row"><span class="v-mkt { {"A股":"a","ETF":"etf","HK":"hk","港股":"hk"}.get(label,"a") }">{label}</span>'
                        + items + "</div>")
         except Exception:
             continue
     if not blocks:
         return ""
-    return (f'<div class="mini-card"><div class="mini-title">🧪 回测胜率速览（持有5日）'
-            f'</div>{blocks}<div class="mini-note">胜率为历史回测值，不预示未来</div></div>')
+    note = "；".join(base_bits) if base_bits else ""
+    note = ("数字为持有5日的超额收益（策略均值 − 全样本基线均值）。"
+            + (f"{note}。" if note else "")
+            + "56 个假设无一通过多重比较校正，请视为噪声尺度下的读数")
+    return (f'<div class="mini-card"><div class="mini-title">🧪 回测超额速览（持有5日）'
+            f'<a class="more" href="backtest-a.html">完整报告 →</a></div>{blocks}'
+            f'<div class="mini-note">{note}</div></div>')
 
 
 def build_strategy_summary(latest):
-    """首页「高胜率策略速览」：复用 strategy_summary 的今日速览卡。"""
+    """首页「策略速览」：复用 strategy_summary 的今日速览卡（内含基线对照）。"""
     try:
         import strategy_summary as ss
         m_csv, _ = _latest_a_paths(latest)
@@ -730,7 +761,11 @@ footer{{text-align:center;color:#98a1b3;font-size:12px;padding:14px 12px 30px;li
 
 
 def collect_extras():
-    """回测报告 / 最新买入参考 / 最新价值标的。返回 docs 文件名列表。"""
+    """回测报告 / 最新价值标的。返回 docs 文件名列表。
+
+    这里原来还会复制 buylist.html（「今日买入参考」）。该功能已被回测证伪并
+    整体删除，详见 strategy_summary.py 末尾的说明。
+    """
     extras = []
     for src_key, dst_key in BT_SOURCES:
         src = os.path.join(BASE_DIR, "backtest_results", src_key, "backtest_report.html")
@@ -740,10 +775,6 @@ def collect_extras():
         csv_src = os.path.join(BASE_DIR, "backtest_results", src_key, "backtest_report_trades.csv")
         if os.path.exists(csv_src):
             shutil.copy(csv_src, os.path.join(DOCS_DIR, f"backtest-{dst_key}-trades.csv"))
-    bl = _latest("buylist_*.html")
-    if bl:
-        shutil.copy(bl, os.path.join(DOCS_DIR, "buylist.html"))
-        extras.append("buylist.html")
     vl = _latest("value_*.html")
     if vl:
         shutil.copy(vl, os.path.join(DOCS_DIR, "value.html"))
@@ -859,8 +890,6 @@ def build_index(dates, extras, ctx):
         nav += '<a class="pill ins" href="insights.html">📡 市场洞察</a>'
     if "value.html" in extras:
         nav += '<a class="pill val" href="value.html">💎 价值标的</a>'
-    if "buylist.html" in extras:
-        nav += '<a class="pill buy" href="buylist.html">🎯 今日买入参考</a>'
     for src_key, dst_key in BT_SOURCES:
         label = {"a": "A股", "etf": "ETF", "hk": "港股"}[dst_key]
         if f"backtest-{dst_key}.html" in extras:
@@ -1028,7 +1057,7 @@ footer{{text-align:center;color:#98a1b3;font-size:11.5px;padding:16px 12px 28px;
 </style></head><body>
 <header><div class="head-wrap">
 <h1>📈 每日<span>市场洞察</span></h1>
-<p>大盘温度 · 板块景气 · 超跌机会 · 高胜率策略 · 价值标的</p>
+<p>大盘温度 · 板块景气 · 超跌机会 · 策略命中 · 价值标的</p>
 <div class="stats">
 <span class="chip">📅 已收录 {len(dates)} 个交易日</span>
 <span class="chip">📊 {total_reports} 份报告</span>
@@ -1070,7 +1099,7 @@ def main():
                 fh.write(externalize_style(body))
     extras = collect_extras()
 
-    # 「最新」必须是**有 A 股报告**的那一天：洞察页/今日摘要/价值标的/买入参考
+    # 「最新」必须是**有 A 股报告**的那一天：洞察页/今日摘要/价值标的
     # 全都读 A 股的产物。原来取的是「任一市场的最新日期」—— 一旦某天只有
     # ETF 或港股成功，洞察页就会整块消失、导航 pill 也随之不见，
     # 而日志里没有任何提示（静默降级）。

@@ -63,6 +63,24 @@ def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信�
     today = os.path.basename(out_dir)
     has_yesterday = "昨日日线J" in df.columns
 
+    # 全空列不发布。规则是**数据驱动**的，不是按市场写死的：
+    #   港股通的 PE/PB **历史分位**恒为 0% 填充率（东财的港股通快照只有 PE/PB
+    #   当前值 f9/f23，没有历史序列，而分位必须由历史序列算出来），
+    #   港股通也没有行业字段；ETF 的 PE/PB **5年分位**恒为 0%（同理）。
+    # 实测填充率：港股 PE历史分位% 0.0% / PB历史分位% 0.0% / 行业 0.0%；
+    # ETF PE5年分位% 0.0% / PB5年分位% 0.0%。
+    # 渲染一列恒为 "-" 的表，读者会以为「今天没数据」而不是「这个市场没有这项」。
+    def _has(col):
+        return col in df.columns and df[col].notna().any()
+
+    has_pe = _has("PE_TTM")
+    has_pe_pct = _has("PE历史分位%")
+    has_pb = _has("PB_MRQ")
+    has_pb_pct = _has("PB历史分位%")
+    hidden_cols = [c for c, ok in (("PE_TTM", has_pe), ("PE历史分位%", has_pe_pct),
+                                   ("PB_MRQ", has_pb), ("PB历史分位%", has_pb_pct))
+                   if c in df.columns and not ok]
+
     overbought_counts = {"日线J": 0, "周线J": 0, "月线J": 0}
     oversold_counts = {"日线J": 0, "周线J": 0, "月线J": 0}
     newlow_counts = {"日线J": 0, "周线J": 0, "月线J": 0}
@@ -140,10 +158,10 @@ def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信�
             {f'<td>{y_sig_display}</td>' if has_yesterday else ''}
             <td class="price">{close_str}</td>
             <td class="chg {chg_cls}">{chg_str}</td>
-            <td>{pe}</td>
-            <td>{pe_pct}</td>
-            <td>{pb}</td>
-            <td>{pb_pct}</td>
+            {f'<td>{pe}</td>' if has_pe else ''}
+            {f'<td>{pe_pct}</td>' if has_pe_pct else ''}
+            {f'<td>{pb}</td>' if has_pb else ''}
+            {f'<td>{pb_pct}</td>' if has_pb_pct else ''}
         </tr>"""
 
     total = len(df)
@@ -266,10 +284,10 @@ def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信�
                 {f'<th>昨日信号</th>' if has_yesterday else ''}
                 <th>最新价</th>
                 <th>涨跌幅</th>
-                <th>PE_TTM</th>
-                <th>PE分位%</th>
-                <th>PB_MRQ</th>
-                <th>PB分位%</th>
+                {f'<th>PE_TTM</th>' if has_pe else ''}
+                {f'<th>PE分位%</th>' if has_pe_pct else ''}
+                {f'<th>PB_MRQ</th>' if has_pb else ''}
+                {f'<th>PB分位%</th>' if has_pb_pct else ''}
             </tr>
         </thead>
         <tbody>
@@ -277,6 +295,7 @@ def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信�
         </tbody>
     </table>
     </div>
+    {f'<div class="footer" style="padding-top:0">本期无下列数据，已隐藏对应列：{"、".join(hidden_cols)}</div>' if hidden_cols else ''}
 
     <div class="footer">
         本报告由 每周自动指标 系统生成 ｜ 仅供参考，不构成投资建议
@@ -325,10 +344,13 @@ def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信�
 
 
 def _markdown_table(df):
-    cols = [c for c in ["排名", "代码", "名称", "日线J", "周线J", "月线J",
-                        "最新价", "涨跌幅", "PE_TTM", "PE历史分位%",
-                        "PB_MRQ", "PB历史分位%", "MA20", "MA60", "双均线多头",
-                        "量比", "PE5年分位%", "PB5年分位%", "行业"] if c in df.columns]
+    wanted = ["排名", "代码", "名称", "日线J", "周线J", "月线J",
+              "最新价", "涨跌幅", "PE_TTM", "PE历史分位%",
+              "PB_MRQ", "PB历史分位%", "MA20", "MA60", "双均线多头",
+              "量比", "PE5年分位%", "PB5年分位%", "行业"]
+    # 全空列不发布（与 HTML 表同一规则）：港股通没有 PE/PB 历史分位与行业，
+    # ETF 没有 PE/PB 5年分位，渲染出来只会是一整列 "-"。
+    cols = [c for c in wanted if c in df.columns and df[c].notna().any()]
     def cell(v):
         if pd.isna(v):
             return "-"

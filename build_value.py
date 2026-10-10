@@ -165,7 +165,7 @@ def _html_table(df):
                  f"<td>{round(r['市值(亿)'],0):,.0f}</td>"
                  f"<td style='text-align:left'>{'-' if pd.isna(r.get('行业')) or not r.get('行业') else _esc(r['行业'])}</td></tr>")
     # 14 列 + white-space:nowrap 在 390px 视口必然溢出：必须给横向滚动容器，
-    # 与其他模块（opportunity_board / buylist / 报告表格）保持一致。
+    # 与其他模块（opportunity_board / 报告表格）保持一致。
     return f"""
 <div style="overflow-x:auto">
 <table>

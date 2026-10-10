@@ -75,6 +75,43 @@ def send_report(html_path, subject=None, attach_html=True):
         return False
 
 
+def send_html(html_content, subject, attachments=()):
+    """发送一封 HTML 邮件，可选若干附件。
+
+    与 send_report 的差别：正文由调用方给（不是从文件读整份报告），
+    附件可以给多个。合并摘要邮件用它 —— 三个市场的完整报告作为附件
+    （附件不会被客户端截断），正文只放摘要。
+    """
+    if not SENDER_EMAIL or not SENDER_AUTH_CODE:
+        print("[邮件] 未配置发件邮箱，跳过发送")
+        return False
+    try:
+        msg = MIMEMultipart("mixed")
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = RECIPIENT_EMAIL
+        msg["Subject"] = f"[{SOURCE_TAG}] {subject}" if SOURCE_TAG else subject
+        msg.attach(MIMEText(html_content, "html", "utf-8"))
+        for path in attachments:
+            if not os.path.exists(path):
+                continue
+            with open(path, "rb") as f:
+                att = MIMEBase("application", "octet-stream")
+                att.set_payload(f.read())
+            encoders.encode_base64(att)
+            att.add_header("Content-Disposition", "attachment",
+                           filename=os.path.basename(path))
+            msg.attach(att)
+        # timeout 必给：没有它，SMTP 握手/发送卡住会一直挂到 job 的 180 分钟上限
+        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=30) as server:
+            server.login(SENDER_EMAIL, SENDER_AUTH_CODE)
+            server.send_message(msg)
+        print(f"[邮件] 已发送至 {RECIPIENT_EMAIL}（附件 {len(attachments)} 个）")
+        return True
+    except Exception as e:
+        print(f"[邮件] 发送失败: {e}")
+        return False
+
+
 def send_report_by_dir(out_dir):
     today = datetime.now().strftime("%Y-%m-%d")
     html_path = os.path.join(out_dir, f"report_{today}.html")

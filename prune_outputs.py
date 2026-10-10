@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """产物保留策略：output / output_etf / output_hk 只保留最近 N 个交易日。
 
-背景：受控文件里 809/843 是每日产物，每天还会新增 15~20 个；其中
-``output/stock_charts.html`` 单文件 3.2 MB 且每天重建。仓库会无限膨胀。
+背景：受控文件里 809/843 是每日产物，每天还会新增 15~20 个。仓库会无限膨胀。
+（`output/stock_charts.html` 单文件 3.2 MB 且每天重建 —— 那个功能已整体删除，
+见 generate_stock_charts.py 的移除说明。）
 
 三个必须注意的实现细节（都是踩过或差一点踩到的）：
 
@@ -36,20 +37,16 @@ BASE_DIR = Path(__file__).resolve().parent
 
 MARKETS = ("output", "output_etf", "output_hk")
 
-# 产物文件名里的日期：BUY_DONE_2026-08-26 / buylist_2026-08-26.html / ...
+# 产物文件名里的日期：top100_2026-08-26.csv / metrics_2026-08-26.csv / ...
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
-
-# 不入库的大文件（3.2 MB，每日重建，且不被 docs/ 站点引用，仅本地查看）
-CHART_FILE = "output/stock_charts.html"
 
 # 必须保留、不参与裁剪的文件（跨天累积的状态或当日站点片段）
 # 注意这里只列**市场目录根下**的文件名：逐日目录里的 DONE 是随目录一起保留的，
 # 在根下并不存在名为 DONE 的文件（旧版把它列在这里，是一条永远不命中的死配置）。
+# recommend_history.json / buy_today.html / buy_review.html 曾在此列 ——
+# 它们属于已删除的「今日买入参考」，现在没有任何生产者了。
 KEEP_FILES = frozenset({
     "watchlist.json",        # stock_pool 的历史追踪状态，丢了下游历史就断
-    "recommend_history.json",
-    "buy_today.html",
-    "buy_review.html",
 })
 
 # 站点归档窗口之外**额外**保留多少个交易日，专供滚动统计重建使用。
@@ -131,15 +128,6 @@ def prune_market(market: str, keep: int, dry_run: bool) -> dict:
     return result
 
 
-def remove_chart(dry_run: bool) -> bool:
-    """一次性移除 output/stock_charts.html，之后由 .gitignore 兜住。"""
-    path = BASE_DIR / CHART_FILE
-    if not path.exists():
-        return False
-    _remove_from_git(path, dry_run)
-    return True
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="裁剪每日产物，只保留最近 N 个交易日")
     site_days = int(os.environ.get("DSM_KEEP_DAYS", "30"))
@@ -159,7 +147,6 @@ def main(argv: list[str] | None = None) -> int:
              "history_days": HISTORY_DAYS, "dry_run": args.dry_run, "markets": {}}
     for market in MARKETS:
         stats["markets"][market] = prune_market(market, args.keep, args.dry_run)
-    stats["chart_removed"] = remove_chart(args.dry_run)
     print(json.dumps(stats, ensure_ascii=False, indent=2))
     return 0
 
