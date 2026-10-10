@@ -16,6 +16,16 @@ on:
     - cron: "30 13 * * 1-5"  # 北京时间 21:30（实测这一档最常真正落地）
     - cron: "0 17 * * 1-5"   # 北京时间次日 01:00（跨午夜补跑窗口）
   workflow_dispatch:
+    inputs:
+      # 改完代码或回填完历史后，常常只想把站点重新构建部署一次，而不想再跑一遍
+      # 采集（数据源被限流时那只会白白失败并把 run 判红）。
+      mode:
+        description: "full = 采集+构建+部署；site-only = 只重建并部署站点"
+        type: choice
+        options:
+          - full
+          - site-only
+        default: full
 
 concurrency:
   group: daily-metrics
@@ -28,6 +38,8 @@ permissions:
 
 env:
   TZ: Asia/Shanghai
+  # schedule 触发时 inputs.mode 为空 -> 回退到 full
+  MODE: ${{ inputs.mode || 'full' }}
   # 产物保留最近多少个交易日（prune_outputs.py 与 build_pages 共用同一数值，
   # 避免「站点宣称 120 天、仓库里只剩 30 天」的错位）
   DSM_KEEP_DAYS: "30"
@@ -82,42 +94,42 @@ jobs:
           echo "目标(校验): A/ETF=${{ steps.target.outputs.expected_a }} HK=${{ steps.target.outputs.expected_hk }}"
 
       - name: Run A股 daily
-        if: steps.target.outputs.collect_a == 'true'
+        if: env.MODE != 'site-only' && steps.target.outputs.collect_a == 'true'
         continue-on-error: true
         env:
           DSM_DEADLINE_SEC: "2700"
         run: python run_daily.py
 
       - name: Run ETF daily
-        if: steps.target.outputs.collect_a == 'true'
+        if: env.MODE != 'site-only' && steps.target.outputs.collect_a == 'true'
         continue-on-error: true
         env:
           DSM_DEADLINE_SEC: "2700"
         run: python run_etf_daily.py
 
       - name: Run 港股 daily
-        if: steps.target.outputs.collect_hk == 'true'
+        if: env.MODE != 'site-only' && steps.target.outputs.collect_hk == 'true'
         continue-on-error: true
         env:
           DSM_DEADLINE_SEC: "1500"
         run: python run_hk_daily.py
 
       - name: Build buy list email
-        if: steps.target.outputs.collect_a == 'true'
+        if: env.MODE != 'site-only' && steps.target.outputs.collect_a == 'true'
         continue-on-error: true
         env:
           DSM_DEADLINE_SEC: "600"
         run: python run_buy_daily.py
 
       - name: Run backtest
-        if: steps.target.outputs.collect_a == 'true'
+        if: env.MODE != 'site-only' && steps.target.outputs.collect_a == 'true'
         continue-on-error: true
         env:
           DSM_DEADLINE_SEC: "600"
         run: python backtest.py
 
       - name: Build value screen
-        if: steps.target.outputs.collect_a == 'true'
+        if: env.MODE != 'site-only' && steps.target.outputs.collect_a == 'true'
         continue-on-error: true
         env:
           DSM_DEADLINE_SEC: "600"
@@ -128,7 +140,7 @@ jobs:
       # 这里 —— 关键是这里的重试发生在**不同时刻**，那才是有意义的。
       # 三个 runner 都有 DONE 防重 + 已生成文件跳过逻辑，重复执行是安全的。
       - name: Retry unfinished markets
-        if: always() && (steps.target.outputs.collect_a == 'true' || steps.target.outputs.collect_hk == 'true')
+        if: always() && env.MODE != 'site-only' && (steps.target.outputs.collect_a == 'true' || steps.target.outputs.collect_hk == 'true')
         continue-on-error: true
         env:
           DSM_DEADLINE_SEC: "1800"
@@ -200,9 +212,19 @@ jobs:
             fi
           done
           if [ -n "$MISSING" ]; then
-            echo "::error::以下市场在目标交易日缺有效 DONE:$MISSING"
-            echo "complete=false" >> "$GITHUB_OUTPUT"
-            echo "missing=$MISSING" >> "$GITHUB_OUTPUT"
+            if [ "$MODE" = "site-only" ]; then
+              # site-only 是**显式**的「只重建站点」，本轮根本没尝试采集，
+              # 所以缺数据不算失败（站点首页的红色横幅仍然会如实列出）。
+              # 注意这与旧版「把跳过当绿灯」的区别：那是**意外**跳过、
+              # 且没有任何人知道；这里是用户主动选择、且页面上可见。
+              echo "::warning::site-only 模式：以下市场缺目标交易日数据（未尝试采集）:$MISSING"
+              echo "complete=n/a" >> "$GITHUB_OUTPUT"
+              echo "missing=$MISSING" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::以下市场在目标交易日缺有效 DONE:$MISSING"
+              echo "complete=false" >> "$GITHUB_OUTPUT"
+              echo "missing=$MISSING" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "全部市场在目标交易日均已完成"
             echo "complete=true" >> "$GITHUB_OUTPUT"
@@ -286,6 +308,10 @@ jobs:
         run: |
           if [ "${{ steps.completion.outputs.complete }}" = "true" ]; then
             echo "全部市场完成，通过"
+            exit 0
+          fi
+          if [ "${{ steps.completion.outputs.complete }}" = "n/a" ]; then
+            echo "site-only 模式：未尝试采集，跳过完成门（缺数据已在站点横幅上标出）"
             exit 0
           fi
           echo "::error::目标交易日 A/ETF=${{ steps.target.outputs.expected_a }} HK=${{ steps.target.outputs.expected_hk }} 仍有市场未完成：${{ steps.completion.outputs.missing }}"
