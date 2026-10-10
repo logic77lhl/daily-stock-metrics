@@ -261,7 +261,7 @@ def build_buy_list(markets, date_str=None):
                 })
 
     if not entries:
-        return {"html": "", "md": "", "count": 0}
+        return {"html": "", "md": "", "count": 0, "picks": []}
 
     df = pd.DataFrame(entries)
     df = df.sort_values(["胜率%", "样本数"], ascending=False)
@@ -305,4 +305,10 @@ def build_buy_list(markets, date_str=None):
             f"<tbody>{html_rows}</tbody></table></div>"
             "<div style=\"color:#999;font-size:12px;margin-top:8px\">胜率=入选策略近20个交易日次日胜率；仅供研究，不构成投资建议</div>"
             "</div>")
-    return {"html": html, "md": md, "count": len(df)}
+    # 结构化结果：调用方（run_buy_daily）原来是从**自己刚生成的 Markdown** 里
+    # 用正则反解 名称/代码，那是脆弱的字符串往返 —— Markdown 这边已经做了转义
+    # （`|` -> `\|`、`<` -> `&lt;`），反解回来的是转义后的名字；而名字里含 `**`
+    # 时正则会直接失配，让「往期推荐复盘」的历史静默缺项。直接给结构化数据。
+    picks = [{"市场": str(r["市场"]), "名称": str(r["名称"]), "代码": str(r["代码"])}
+             for _, r in df.iterrows()]
+    return {"html": html, "md": md, "count": len(df), "picks": picks}

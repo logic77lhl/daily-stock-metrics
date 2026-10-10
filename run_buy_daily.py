@@ -7,6 +7,7 @@
 """
 
 import datetime
+import html
 import json
 import os
 import sys
@@ -79,10 +80,14 @@ def build_review(hist, today):
     md_lines = ["| 推荐日 | 标的数 | 上涨 | 平均涨幅 | 明细 |", "|---|---|---|---|---|"]
     for date, n, win, avg, detail in rows:
         color = "#c62828" if avg > 0 else "#2e7d32" if avg < 0 else "#666"
-        html_rows += (f"<tr><td>{date}</td><td>{n}</td><td style='color:#2e7d32'>{win}</td>"
+        # detail 里是**第三方来源的股票名**（经 metrics CSV 与历史 JSON 一路带过来），
+        # 必须转义后再进 HTML；Markdown 侧还要转义 `|`，否则会把表格列切断。
+        html_rows += (f"<tr><td>{html.escape(str(date))}</td><td>{n}</td>"
+                      f"<td style='color:#2e7d32'>{win}</td>"
                       f"<td style='color:{color};font-weight:700'>{avg:+.2f}%</td>"
-                      f"<td style='text-align:left'>{detail}</td></tr>")
-        md_lines.append(f"| {date} | {n} | {win} | {avg:+.2f}% | {detail} |")
+                      f"<td style='text-align:left'>{html.escape(str(detail))}</td></tr>")
+        md_lines.append(f"| {date} | {n} | {win} | {avg:+.2f}% | "
+                        f"{str(detail).replace('|', chr(92) + '|')} |")
     review_html = ("<div style=\"background:#fff;border-radius:10px;padding:14px 16px;margin-top:12px;"
                    "box-shadow:0 1px 3px rgba(0,0,0,0.08);font-size:13px\">"
                    "<div style=\"font-weight:700;margin-bottom:8px\">📊 往期推荐复盘（次日表现）</div>"
@@ -168,12 +173,9 @@ def main():
     strategy_summary.write_root_summary(
         "摘要-买入参考.md", result["md"] + "\n\n" + review_md, today)
 
-    picks = []
-    import re as _re
-    for line in result["md"].splitlines():
-        m = _re.match(r"\|\s*(A股|ETF|港股)\s*\|\s*\*\*(.+?)\*\*\s*\|\s*(\d+)\s*\|", line)
-        if m:
-            picks.append({"市场": m.group(1), "名称": m.group(2), "代码": m.group(3)})
+    # 直接取结构化结果，不再用正则从自己刚生成的 Markdown 里反解名称/代码
+    # （Markdown 已做转义，反解会双重转义；名字含 `**` 时还会静默解析失败）。
+    picks = [dict(p) for p in (result.get("picks") or [])]
     hist = {d: p for d, p in hist.items()
             if d >= (datetime.date.today() - datetime.timedelta(days=30)).strftime("%Y-%m-%d")}
     hist[today] = picks[-10:]

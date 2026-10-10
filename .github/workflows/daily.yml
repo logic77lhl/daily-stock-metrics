@@ -77,6 +77,9 @@ jobs:
         run: |
           python tests/test_calendar.py
           python tests/test_workflows.py
+          python tests/test_http_util.py
+          python tests/test_buy_list.py
+          python tests/test_backtest.py
 
       # 目标日的**唯一**判断入口。输出 target_a/target_hk（应采集的交易日）、
       # expected_a/expected_hk（gate 要求必须存在 DONE 的交易日）与 collect_* 开关。
