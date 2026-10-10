@@ -80,6 +80,7 @@ jobs:
           python tests/test_http_util.py
           python tests/test_buy_list.py
           python tests/test_backtest.py
+          python tests/test_degradation.py
 
       # 目标日的**唯一**判断入口。输出 target_a/target_hk（应采集的交易日）、
       # expected_a/expected_hk（gate 要求必须存在 DONE 的交易日）与 collect_* 开关。
@@ -140,41 +141,24 @@ jobs:
           DSM_DEADLINE_SEC: "600"
         run: python build_value.py
 
-      # 东财对云厂商出口 IP 会**整批** RST（实测 4 个主机同时 RemoteDisconnected，
-      # 12 次重试全失败）。fetch 层现在快速失败（约 45s 而不是 351s），把机会留给
-      # 这里 —— 关键是这里的重试发生在**不同时刻**，那才是有意义的。
-      # 三个 runner 都有 DONE 防重 + 已生成文件跳过逻辑，重复执行是安全的。
-      - name: Retry unfinished markets
-        if: always() && env.MODE != 'site-only' && (steps.target.outputs.collect_a == 'true' || steps.target.outputs.collect_hk == 'true')
-        continue-on-error: true
-        env:
-          DSM_DEADLINE_SEC: "1800"
-          TARGET_A: ${{ steps.target.outputs.expected_a }}
-          TARGET_HK: ${{ steps.target.outputs.expected_hk }}
-        run: |
-          for round in 1 2 3; do
-            MISSING=""
-            for pair in "output:run_daily.py:$TARGET_A" \
-                        "output_etf:run_etf_daily.py:$TARGET_A" \
-                        "output_hk:run_hk_daily.py:$TARGET_HK"; do
-              d="${pair%%:*}"; rest="${pair#*:}"; s="${rest%%:*}"; day="${rest##*:}"
-              if [ -z "$day" ]; then
-                echo "::warning::$d 无法确定目标交易日，跳过重试"
-                continue
-              fi
-              if ! python quality.py check "$d/$day/DONE"; then
-                MISSING="$MISSING $d@$day"
-                echo "第 $round 轮重试 $s ..."
-                python "$s" || true
-              fi
-            done
-            if [ -z "$MISSING" ]; then
-              echo "全部市场任务均已完成"
-              exit 0
-            fi
-            echo "第 $round 轮重试后仍缺:$MISSING"
-            [ "$round" = "3" ] || sleep 180
-          done
+      # 这里曾经有一个「3 轮重试未完成市场」的步骤（每轮 sleep 180，最多再全量
+      # 重采 9 次）。它被**删除**了，因为实测它一次都没救回过运行：
+      #
+      #   抽样 3 个失败运行，全部是「第 1 轮重试后仍缺 → 第 2 轮重试后仍缺」。
+      #   原因很直接 —— 东财对云厂商出口 IP 的 RST 是**整批、按主机**的，
+      #   实测同一分钟 4 个主机同时 RemoteDisconnected，而封禁窗口约 10 分钟。
+      #   重试步骤的 sleep 180 就落在这同一个窗口里，注定撞同一堵墙。
+      #
+      # 真正有效的是**跨 cron 重试**：同一个封禁窗口过去后再跑一次就成功了。
+      # 实测证据（按天的成功/失败序列）：
+      #   09-21  XXOOOO   09-24  XXXXXO   09-25  XXXXXO   09-29  XXOOOO
+      # 前几次失败、后面必然成功 —— 这不是"经常出错"，而是同一个瞬时故障被
+      # 6 个 cron 放大成了十几次红灯。删掉 CI 内重试后，失败运行从 5~10 分钟
+      # 降到 2 分钟以内，而成功率不受影响（机会留给下一个 cron）。
+      #
+      # 注意：fetch 层本身**仍然**有快速失败与主机退役（http_util.HostPool），
+      # 所以单次运行不会再去烧 153 秒 × 4 主机的退避。两者是不同的层次：
+      # 进程内快速放弃，跨 cron 择时重试。
 
       # 裁剪要在 Build site 之前：站点按最终存在的目录生成归档页，
       # 否则 docs 里会有指向「已被裁掉的报告」的死链。
