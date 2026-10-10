@@ -25,17 +25,7 @@ if sys.stdout is None:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def _esc(val):
-    """把第三方数据（股票/行业名称等）安全地写进 HTML。"""
-    if val is None or pd.isna(val):
-        return "-"
-    return html.escape(str(val), quote=True)
-
-
-def _md_esc(val):
-    if val is None or pd.isna(val):
-        return "-"
-    return str(val).replace("|", "\\|").replace("<", "&lt;").replace(">", "&gt;")
+from util import esc as _esc, md_esc as _md_esc  # noqa: E402
 
 
 def _fnum(v, digits=1, suffix="", sign=False, comma=False):
@@ -97,19 +87,10 @@ _CHIP_ORDER = [
 _DIVERGENCE_KEYS = ("divergence_dw", "divergence_wd", "partial")
 
 
-def _temp_label(t):
-    """0-100 温度 → 口语化档位（与综合温度口径一致，沿用 fetch_market_breadth._temp_band）。"""
-    if pd.isna(t):
-        return "-"
-    if t < 20:
-        return "冰点"
-    if t < 40:
-        return "低迷"
-    if t < 60:
-        return "温和"
-    if t < 80:
-        return "偏热"
-    return "过热"
+# 阈值表统一在 util.temp_band。原来这里的 docstring 写着「沿用
+# fetch_market_breadth._temp_band」，但它其实是**另一份拷贝** —— 改了那边不会
+# 影响这边，页面上的档位就会互相矛盾。
+from util import temp_band as _temp_label  # noqa: E402
 
 
 def _temp_color(t):

@@ -22,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 
 import http_util
+import util
 
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
@@ -31,13 +32,8 @@ elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 # 并发抓 F10 页面时每个线程各持一个 Session
 _local = threading.local()
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    ),
-    "Referer": "https://quote.eastmoney.com/",
-}
+# UA 由 http_util.BROWSER_HEADERS 提供（make_session 会合并），这里只放 Referer。
+HEADERS = http_util.EM_HEADERS
 
 HOSTS = [
     "https://push2delay.eastmoney.com/api/qt/clist/get",
@@ -47,8 +43,10 @@ HOSTS = [
 ]
 
 F10_TEMPLATE = "https://fundf10.eastmoney.com/jbgk_{code}.html"
+# UA 从 http_util.BROWSER_HEADERS 取（HEADERS 现在只有 Referer，
+# 因为 make_session 会合并浏览器指纹）—— 这样 UA 只有一处定义。
 F10_HEADERS = {
-    "User-Agent": HEADERS["User-Agent"],
+    "User-Agent": http_util.BROWSER_HEADERS["User-Agent"],
     "Referer": "https://fundf10.eastmoney.com/",
 }
 
@@ -91,12 +89,12 @@ def _num(value, default=0.0):
     停牌/无数据的行会返回字符串 `"-"`。原来的
     `data.sort(key=lambda x: x.get("f20") or 0)` 对 `"-"` 得到的是 `"-"` 本身
     （非空字符串是 truthy），于是 str 与 float 比较直接 TypeError。
+
+    **刻意保留 `default=0.0` 这个与 util.num 不同的契约**：这里的返回值要当
+    排序键用，调用方需要「缺失也是数值」。把两种失败语义硬并成一个函数，
+    比留两个更危险。
     """
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return default
-    return default if number != number else number  # NaN 兜底
+    return util.num(value, default)
 
 
 THEME_RULES = [

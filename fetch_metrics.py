@@ -5,7 +5,6 @@ import threading
 import socket
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import requests
 import pandas as pd
 
 import fsutil
@@ -37,13 +36,7 @@ FIELDS = [
     "行业",
 ]
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    ),
-    "Referer": "https://quote.eastmoney.com/",
-}
+HEADERS = http_util.EM_HEADERS
 
 TX_HOSTS = [
     "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
@@ -82,11 +75,13 @@ def get_session():
     global _PROXY
     if _PROXY is None:
         _PROXY = _detect_proxy()
-    s = requests.Session()
-    s.headers.update(HEADERS)
-    if _PROXY:
-        s.proxies.update({"http": _PROXY, "https": _PROXY})
-    return s
+    # 必须走 http_util.make_session：原来这里是裸 `requests.Session()` +
+    # 只设 UA/Referer，于是**丢掉了 Accept / Accept-Language / Connection** ——
+    # 而 http_util 的注释明确指出这几个头缺失是云厂商出口 IP 被整批 RST 的
+    # 可疑诱因，这里又恰好是打腾讯（价格源）的模块。六个 fetch 模块里只有
+    # 这一个绕过了统一 Session 构造。
+    return http_util.make_session(HEADERS, proxies=({"http": _PROXY, "https": _PROXY}
+                                                    if _PROXY else None))
 
 
 def thread_session():

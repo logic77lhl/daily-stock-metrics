@@ -28,16 +28,7 @@ def _warn(msg):
     print(f"[策略摘要] {msg}")
 
 
-def _esc(val):
-    if val is None or pd.isna(val):
-        return "-"
-    return html.escape(str(val), quote=True)
-
-
-def _md_esc(val):
-    if val is None or pd.isna(val):
-        return "-"
-    return str(val).replace("|", "\\|").replace("<", "&lt;").replace(">", "&gt;")
+from util import esc as _esc, md_esc as _md_esc  # noqa: E402
 
 
 def _load_history(market_dir, exclude_date=None, as_of=None):

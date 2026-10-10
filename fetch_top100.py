@@ -8,9 +8,7 @@ import http_util
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
 
-HEADERS = {
-    "Referer": "https://quote.eastmoney.com/",
-}
+HEADERS = http_util.EM_HEADERS
 
 URL = "https://82.push2.eastmoney.com/api/qt/clist/get"
 

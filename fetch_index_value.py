@@ -14,14 +14,11 @@ import http_util
 CSI_PE_URL = "https://www.csindex.com.cn/csindex-home/perf/indexCsiDsPe"
 DJ_URL = "https://danjuanfunds.com/djapi/index_eva/dj"
 
-CSI_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36",
-    "Referer": "https://www.csindex.com.cn/",
-}
-DJ_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36",
-    "Referer": "https://danjuanfunds.com/",
-}
+# 只放各家**特有**的 Referer：UA 由 http_util.BROWSER_HEADERS 提供，
+# 而这里的 session 正是 fetch_metrics 用 make_session 建的那个（requests 会把
+# 会话头与请求头合并），所以再抄一份 UA 只会造成两处指纹各自漂移。
+CSI_HEADERS = {"Referer": "https://www.csindex.com.cn/"}
+DJ_HEADERS = {"Referer": "https://danjuanfunds.com/"}
 
 INDEX_CODE_MAP = {
     "中证A500指数": "000510",

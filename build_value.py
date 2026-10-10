@@ -34,17 +34,9 @@ def _num(s):
     return pd.to_numeric(s, errors="coerce")
 
 
-def _esc(val):
-    """名称/代码/行业来自第三方接口，写进 HTML 前必须转义。"""
-    if val is None or pd.isna(val):
-        return "-"
-    return html.escape(str(val), quote=True)
-
-
-def _md_esc(val):
-    if val is None or pd.isna(val):
-        return "-"
-    return str(val).replace("|", "\\|").replace("<", "&lt;").replace(">", "&gt;")
+# 实现在 util（三处逐字相同的拷贝之一）。保留 `_esc`/`_md_esc` 名字，
+# 避免改动三十多处调用点 —— 关键是**实现**只有一份。
+from util import esc as _esc, md_esc as _md_esc  # noqa: E402
 
 
 def _round_or_dash(v, digits=1):

@@ -82,6 +82,7 @@ jobs:
           python tests/test_backtest.py
           python tests/test_degradation.py
           python tests/test_gate.py
+          python tests/test_util.py
 
       # 目标日的**唯一**判断入口。输出 target_a/target_hk（应采集的交易日）、
       # expected_a/expected_hk（gate 要求必须存在 DONE 的交易日）与 collect_* 开关。

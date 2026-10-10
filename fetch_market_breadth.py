@@ -11,9 +11,7 @@ if sys.stdout is None:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 
-HEADERS = {
-    "Referer": "https://quote.eastmoney.com/",
-}
+HEADERS = http_util.EM_HEADERS
 
 HOSTS = [
     "https://push2delay.eastmoney.com/api/qt/clist/get",
@@ -65,16 +63,9 @@ def _interp(x, anchors):
     return anchors[-1][1]
 
 
-def _temp_band(t):
-    if t < 20:
-        return "冰点"
-    if t < 40:
-        return "低迷"
-    if t < 60:
-        return "温和"
-    if t < 80:
-        return "偏热"
-    return "过热"
+# 阈值表统一在 util.temp_band。原来它和 market_insights._temp_label 各写
+# 一份，改一处就会出现「同一页面上对同一个温度给出不同档位」。
+from util import temp_band as _temp_band  # noqa: E402
 
 
 def _request_page(pn, pz=500, note=None):
@@ -120,13 +111,8 @@ def fetch_all(note=None):
     return list(seen.values())
 
 
-def _num(x):
-    try:
-        if x is None or x == "-" or x == "":
-            return None
-        return float(x)
-    except (TypeError, ValueError):
-        return None
+# 与 fetch_hk._num 是同一契约（失败返回 None），统一到 util.num。
+from util import num as _num  # noqa: E402
 
 
 def compute(rows):

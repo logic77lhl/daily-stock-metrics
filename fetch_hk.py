@@ -23,9 +23,7 @@ if sys.stdout is None:
 elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
 
-HEADERS = {
-    "Referer": "https://quote.eastmoney.com/",
-}
+HEADERS = http_util.EM_HEADERS
 
 HOSTS = [
     "https://push2delay.eastmoney.com/api/qt/clist/get",
@@ -38,18 +36,9 @@ FS = "b:MK0144"
 FIELDS = "f12,f14,f2,f3,f9,f20,f23,f6,f37,f41,f45,f46,f49"
 
 
-def _num(value):
-    """把东财字段安全转成 float；停牌行返回的是字符串 "-"。
-
-    必须归一化：`fetch_metrics` 对 `PE_TTM` 做 `float(...)`，拿到 "-" 会抛
-    ValueError，而那个异常在 `_process_one` 里是**整只股票**级别的失败 ——
-    一只停牌股的 PE 缺失会把它的全部指标一起丢掉。
-    """
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return None if number != number else number
+# 实现统一在 util.num（失败返回 None）。保留 `_num` 这个名字，避免改动
+# 二十多处调用点 —— 关键是被调用的**实现**只有一份。
+from util import num as _num  # noqa: E402
 
 
 def get_session():

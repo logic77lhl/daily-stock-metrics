@@ -45,6 +45,15 @@ BROWSER_HEADERS = {
 }
 
 
+# 东财各接口共用的 Referer。UA / Accept / Accept-Language 已由 BROWSER_HEADERS
+# 提供，所以这里只放各家**特有**的头。
+#
+# 为什么收敛：六个 fetch 模块原来各写一份 HEADERS，其中三份是逐字相同的
+# Referer-only、两份是逐字相同的 UA+Referer。UA 抄两份的代价不是行数 ——
+# 是改指纹时只会改到一处，于是同一个进程里对不同主机呈现两种浏览器身份。
+EM_HEADERS = {"Referer": "https://quote.eastmoney.com/"}
+
+
 def make_session(headers: dict | None = None, proxies: dict | None = None) -> requests.Session:
     """构造一个复用的 Session（连接池 + keep-alive）。
 
