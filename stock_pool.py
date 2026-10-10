@@ -45,8 +45,13 @@ def merge(path, list_df, today):
         pool[code] = ent
     pool = _prune(pool, today)
     try:
-        # 原子写：观察池是跨天累积的状态，写到一半被中断会丢失整池历史
-        fsutil.atomic_write_json(path, pool)
+        # 原子写：观察池是跨天累积的状态，写到一半被中断会丢失整池历史。
+        #
+        # indent=2 + sort_keys=True 是**刻意的**，而且必须与已提交的格式一致：
+        # 这个文件每天都会被重写并提交，用 json.dumps 的默认单行格式会让它
+        # 每天都在 git 里产生一次「整文件重写」（实测 567 行 → 1 行），
+        # 真正的改动（几只标的进出）完全被淹没。排好序还能让 diff 是逐行可读的。
+        fsutil.atomic_write_json(path, pool, indent=2, sort_keys=True)
     except OSError as exc:
         # 原来这里是裸 pass，写失败被完全吞掉 —— 意味着明天的追踪池会静默缩水
         print(f"[观察池] 写入失败（{path}）：{exc}")

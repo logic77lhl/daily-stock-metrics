@@ -529,6 +529,44 @@ def test_homepage_backtest_card_shows_excess_not_bare_win_rate() -> None:
         shutil.rmtree(root, ignore_errors=True)
 
 
+def test_watchlist_rewrite_is_byte_stable() -> None:
+    """观察池每天被重写并提交，格式必须稳定 —— 否则每天都在 git 里整文件重写。
+
+    实测：`json.dumps` 的默认单行格式会把已提交的 567 行文件写成 1 行，
+    于是「今天进了哪几只标的」这个真正的改动被 567 行噪声淹没。
+    修法是 indent=2 + sort_keys=True（与已提交格式一致）+ 行尾换行。
+    """
+    import stock_pool
+
+    root = tempfile.mkdtemp(prefix="dsm-pool-")
+    try:
+        pf = os.path.join(root, "watchlist.json")
+        list_df = pd.DataFrame({
+            "排名": [1, 2], "代码": ["600519", "000858"], "名称": ["贵州茅台", "五粮液"],
+        })
+        stock_pool.merge(pf, list_df, "2026-10-09")
+        first = Path(pf).read_text(encoding="utf-8")
+
+        assert first.endswith("\n"), "JSON 应以换行结尾（否则 diff 显示 \\ No newline）"
+        assert first.startswith("{\n  \""), f"应是 indent=2 的多行格式：{first[:40]!r}"
+        assert len(first.splitlines()) > 3, "不该是单行 JSON"
+
+        # 同样的输入再跑一次 → 字节完全一致（这才是「稳定」的定义）
+        stock_pool.merge(pf, list_df, "2026-10-09")
+        assert Path(pf).read_text(encoding="utf-8") == first, "重复写入必须字节稳定"
+
+        # 加入一只新标的 → 键序仍然有序
+        list_df2 = pd.concat([list_df, pd.DataFrame({
+            "排名": [3], "代码": ["000001"], "名称": ["平安银行"]})], ignore_index=True)
+        stock_pool.merge(pf, list_df2, "2026-10-09")
+        second = Path(pf).read_text(encoding="utf-8")
+        keys = [l.strip().split('"')[1] for l in second.splitlines() if l.startswith('  "')]
+        assert keys == sorted(keys), f"键必须有序，实际 {keys}"
+        print(f"  [PASS] 观察池写入字节稳定（{len(first.splitlines())} 行、键有序、行尾换行）")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def main() -> int:
     print("降级链路端到端自检")
     print("=" * 58)
@@ -542,6 +580,7 @@ def main() -> int:
     test_win_rate_always_shows_a_baseline()
     test_digest_only_includes_markets_that_passed_the_gate()
     test_homepage_backtest_card_shows_excess_not_bare_win_rate()
+    test_watchlist_rewrite_is_byte_stable()
     print("=" * 58)
     print("全部通过")
     return 0

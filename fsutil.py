@@ -36,5 +36,10 @@ def atomic_write_text(path, text: str, encoding: str = "utf-8") -> None:
     atomic_write_bytes(path, text.encode(encoding))
 
 
-def atomic_write_json(path, obj, encoding: str = "utf-8", **kwargs) -> None:
-    atomic_write_text(path, json.dumps(obj, ensure_ascii=False, **kwargs), encoding)
+def atomic_write_json(path, obj, encoding: str = "utf-8", newline: bool = True,
+                      **kwargs) -> None:
+    """原子写 JSON。默认补一个行尾换行（git 友好，也避免 diff 显示 "\\ No newline"）。"""
+    text = json.dumps(obj, ensure_ascii=False, **kwargs)
+    if newline:
+        text += "\n"
+    atomic_write_text(path, text, encoding)
