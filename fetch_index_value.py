@@ -6,10 +6,10 @@
 """
 
 import re
-import time
 
 import pandas as pd
-import requests
+
+import http_util
 
 CSI_PE_URL = "https://www.csindex.com.cn/csindex-home/perf/indexCsiDsPe"
 DJ_URL = "https://danjuanfunds.com/djapi/index_eva/dj"
@@ -84,50 +84,69 @@ def percentile(series, value):
     return round(float((s <= value).mean()) * 100, 2)
 
 
-def fetch_csi_pe(session, code, retries=4):
+def _accept_csi(payload):
+    """accept 回调：中证接口的形状校验。
+
+    字段名是 `peg`，但值是**指数的市盈率** —— 实测沪深300 在 2026-10-09 为 13.11，
+    典型的 PE 量级（不是 PEG）。按字段名猜会误判成「拿 PEG 当 PE 用」。
+    """
+    if not isinstance(payload, dict):
+        return None
+    data = payload.get("data")
+    if not isinstance(data, list) or not data:
+        return None
+    rows = [item for item in data
+            if isinstance(item, dict) and item.get("peg") is not None]
+    return rows or None
+
+
+def _accept_dj(payload):
+    """accept 回调：蛋卷估值快照的形状校验。"""
+    if not isinstance(payload, dict):
+        return None
+    items = (payload.get("data") or {}).get("items")
+    return items if isinstance(items, list) and items else None
+
+
+def fetch_csi_pe(session, code):
+    """中证指数官网的历史市盈率序列（全历史，可算历史分位）。
+
+    走 http_util：原来这里是手写重试循环，`timeout=20` 是标量（连接+读取共用），
+    而且完全不参与 `DSM_DEADLINE_SEC` 预算 —— 中证接口慢的时候会一路拖到 job 超时。
+    结尾的 `raise last_err if last_err else None` 还是个地雷：`last_err` 为 None 时
+    会执行 `raise None`，抛出的 `TypeError: exceptions must derive from BaseException`
+    把真实原因盖掉。
+    """
     if code in _CACHE["csi"]:
         return _CACHE["csi"][code]
-    last_err = None
-    for i in range(retries):
-        try:
-            r = session.get(CSI_PE_URL, params={"indexCode": code}, headers=CSI_HEADERS, timeout=20)
-            r.raise_for_status()
-            data = r.json().get("data") or []
-            if not data:
-                return None
-            ser = pd.Series([float(d["peg"]) for d in data])
-            _CACHE["csi"][code] = ser
-            return ser
-        except Exception as e:
-            last_err = e
-            time.sleep(1 + i)
-    raise last_err if last_err else None
+    rows = http_util.get_json(
+        session, CSI_PE_URL, params={"indexCode": code},
+        headers=CSI_HEADERS, retries=4, base_wait=1.0, accept=_accept_csi,
+    )
+    series = pd.Series([float(item["peg"]) for item in rows])
+    _CACHE["csi"][code] = series
+    return series
 
 
-def fetch_dan_juan(session, retries=4):
+def fetch_dan_juan(session):
+    """蛋卷基金指数估值快照（当前值 + 分位）。"""
     if _CACHE["dj"] is not None:
         return _CACHE["dj"]
-    last_err = None
-    for i in range(retries):
-        try:
-            r = session.get(DJ_URL, headers=DJ_HEADERS, timeout=20)
-            r.raise_for_status()
-            items = r.json()["data"]["items"]
-            idx = {}
-            for it in items:
-                idx[normalize(it.get("name"))] = {
-                    "name": it.get("name"),
-                    "pe": it.get("pe"),
-                    "pe_pct": it.get("pe_percentile"),
-                    "pb": it.get("pb"),
-                    "pb_pct": it.get("pb_percentile"),
-                }
-            _CACHE["dj"] = idx
-            return idx
-        except Exception as e:
-            last_err = e
-            time.sleep(1 + i)
-    raise last_err if last_err else None
+    items = http_util.get_json(
+        session, DJ_URL, headers=DJ_HEADERS,
+        retries=4, base_wait=1.0, accept=_accept_dj,
+    )
+    idx = {}
+    for it in items:
+        idx[normalize(it.get("name"))] = {
+            "name": it.get("name"),
+            "pe": it.get("pe"),
+            "pe_pct": it.get("pe_percentile"),
+            "pb": it.get("pb"),
+            "pb_pct": it.get("pb_percentile"),
+        }
+    _CACHE["dj"] = idx
+    return idx
 
 
 def normalize(text):
@@ -164,17 +183,24 @@ def match_dan_juan(dj, track, etf_name):
 
 
 def get_index_valuation(session, track, etf_name):
+    """返回 (PE, PE分位%, PB, PB分位%)；取不到的项为 None。
+
+    两个 `except` 原来是裸 `except Exception: pass`：中证或蛋卷挂掉时，ETF 报告的
+    PE/PB 列会**整列空白而没有任何告警**，读者无法区分「这个指数没有估值数据」
+    与「估值接口挂了」。现在至少留一条日志。
+    """
     pe = pe_pct = pb = pb_pct = None
     code = INDEX_CODE_MAP.get(track)
     if code:
         try:
             ser = fetch_csi_pe(session, code)
-            if ser is not None:
+            if ser is not None and len(ser):
                 now = float(ser.iloc[-1])
                 pe = round(now, 2)
                 pe_pct = percentile(ser, now)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[指数估值] 中证 PE 获取失败({track}/{code}): "
+                  f"{type(exc).__name__}: {str(exc)[:90]}")
     try:
         dj = fetch_dan_juan(session)
         m = match_dan_juan(dj, track, etf_name)
@@ -185,6 +211,7 @@ def get_index_valuation(session, track, etf_name):
             if pe is None and m["pe"]:
                 pe = round(float(m["pe"]), 2)
                 pe_pct = round(float(m["pe_pct"]) * 100, 2) if m["pe_pct"] is not None else None
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[指数估值] 蛋卷估值获取失败({track}): "
+              f"{type(exc).__name__}: {str(exc)[:90]}")
     return pe, pe_pct, pb, pb_pct
