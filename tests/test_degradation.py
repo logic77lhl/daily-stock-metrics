@@ -278,6 +278,42 @@ def test_reports_are_derived_from_csv() -> None:
         shutil.rmtree(root, ignore_errors=True)
 
 
+def test_style_externalized_for_site_but_kept_in_report() -> None:
+    """站点侧把基础样式外链，报告侧必须仍然自包含 —— 两边都不能丢样式。
+
+    为什么是双向契约：
+      * 站点侧 90 个归档页共用同一份 4686 字节样式表（合计约 421KB，其中
+        416KB 是纯重复），外链后浏览器只下一次；
+      * 但**邮件客户端会剥掉 `<link>`**，`output/` 下的报告也要能单独打开，
+        所以 `generate_report` 的产物必须内联。
+    两件事都失效时的表现都是「页面变丑」而不是报错，所以必须由测试挡住。
+    """
+    import build_pages
+    import generate_report
+    import site_css
+
+    base = "<style>\n    * { margin: 0; padding: 0; }\n    body { color: #333; }\n</style>"
+    frag = "<style>.chip2{color:red}</style>"
+    out = build_pages.externalize_style(f"<html><head>{base}{frag}</head><body>x</body></html>")
+    assert f'href="{site_css.REPORT_CSS_HREF_FROM_DATE_PAGE}"' in out, "站点侧应外链样式"
+    assert "* { margin: 0" not in out, "基础样式应被替换掉（否则重复依旧存在）"
+    assert ".chip2{color:red}" in out, "片段样式必须保留，否则卡片会掉样式"
+
+    # 报告侧：generate_report 的产物必须自包含（邮件要用）
+    tmp = tempfile.mkdtemp(prefix="dsm-css-")
+    try:
+        csv_path = os.path.join(tmp, "metrics.csv")
+        write_metrics(csv_path, TRADING_DAY, n=12)
+        path = generate_report.generate_report(csv_path, tmp, title="t")
+        html = Path(path).read_text(encoding="utf-8")
+        assert "* { margin: 0" in html, "报告必须内联基础样式（邮件客户端会剥掉 <link>）"
+        assert "report.css" not in html, "报告里不该出现站点资产链接"
+        assert site_css.REPORT_CSS in html, "报告内联的必须是同一份样式来源"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("  [PASS] 站点外链 assets/report.css，报告保持自包含（同一份样式来源）")
+
+
 def test_quality_gate_rejects_stale_bar_date() -> None:
     """数据完好但取自错误的一天 → 必须判不合格（2026-10-02 假期脏数据的补丁）。"""
     out_dir = tempfile.mkdtemp(prefix="dsm-stale-")
@@ -334,6 +370,7 @@ def main() -> int:
     test_empty_pool_fails_loudly_and_writes_no_done()
     test_report_log_has_no_per_symbol_echo()
     test_reports_are_derived_from_csv()
+    test_style_externalized_for_site_but_kept_in_report()
     test_quality_gate_rejects_stale_bar_date()
     test_history_is_point_in_time()
     print("=" * 58)

@@ -34,10 +34,51 @@ WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"
 # import 同级 market_insights（避免在 sys.path 未就绪时失败）
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
+import site_css  # noqa: E402
 try:
     import market_insights  # noqa: E402
 except Exception:  # pragma: no cover
     market_insights = None
+
+
+def _base_style_re():
+    """匹配报告里的**基础样式**块。
+
+    报告里不止一个 `<style>`：基础样式之外，嵌入的 market_insights /
+    strategy_summary 片段也各带一小段。基础样式是唯一以 `* {` 开头的那一份，
+    按这个特征定位才不会误伤片段样式（它们的顺序和数量都随数据变化）。
+    """
+    return re.compile(r"<style>\s*\* \{.*?</style>", re.DOTALL)
+
+
+def externalize_style(html_text):
+    """把内联的基础样式换成指向 `assets/report.css` 的链接。
+
+    为什么站点侧外链、报告侧保持内联：
+      * 邮件客户端会剥掉 `<link>`，`output/` 下的报告也要能单独打开 ——
+        所以 `generate_report` 产出的报告必须自包含；
+      * 站点侧有 90 个归档页共用**同一份 4686 字节**样式表（合计约 421KB，
+        其中 416KB 是纯重复），外链后浏览器只下载一次。
+
+    只在复制进 docs/ 时转换，源报告文件保持原样。
+    """
+    replacement = f'<link rel="stylesheet" href="{site_css.REPORT_CSS_HREF_FROM_DATE_PAGE}">'
+    new_text, n = _base_style_re().subn(lambda m: replacement, html_text, count=1)
+    if n == 0:
+        # 不是致命错误（报告仍自包含、能正常显示），但说明样式结构变了、
+        # 外链优化静默失效 —— 必须留痕。
+        print("::warning::报告里没找到基础样式块，未能外链（页面仍可正常显示）")
+    return new_text
+
+
+def write_css_asset():
+    """写出站点样式资产。返回写入的字节数。"""
+    asset_dir = os.path.join(DOCS_DIR, site_css.ASSET_DIR)
+    os.makedirs(asset_dir, exist_ok=True)
+    path = os.path.join(asset_dir, site_css.ASSET_NAME)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(site_css.REPORT_CSS)
+    return len(site_css.REPORT_CSS.encode("utf-8"))
 
 
 def collect():
@@ -1017,11 +1058,16 @@ def main():
     if os.path.isdir(DOCS_DIR):
         shutil.rmtree(DOCS_DIR)
     os.makedirs(DOCS_DIR, exist_ok=True)
+    css_bytes = write_css_asset()
     for date, keys in dates:
         dst = os.path.join(DOCS_DIR, date)
         os.makedirs(dst, exist_ok=True)
         for key, src in keys.items():
-            shutil.copy(src, os.path.join(dst, f"{key}.html"))
+            with open(src, "r", encoding="utf-8", errors="replace") as fh:
+                body = fh.read()
+            with open(os.path.join(dst, f"{key}.html"), "w", encoding="utf-8",
+                      newline="\n") as fh:
+                fh.write(externalize_style(body))
     extras = collect_extras()
 
     # 「最新」必须是**有 A 股报告**的那一天：洞察页/今日摘要/价值标的/买入参考
@@ -1062,7 +1108,8 @@ def main():
     with open(os.path.join(DOCS_DIR, "index.html"), "w", encoding="utf-8") as f:
         f.write(build_index(dates, extras, ctx))
     n_reports = sum(len(k) for _, k in dates)
-    print(f"站点已生成: {len(dates)} 天 / {n_reports} 份报告 + {len(extras)} 个附加页 -> {DOCS_DIR}")
+    print(f"站点已生成: {len(dates)} 天 / {n_reports} 份报告 + {len(extras)} 个附加页 "
+          f"+ assets/report.css({css_bytes} 字节) -> {DOCS_DIR}")
 
     # 返回值分级：最新一天三个市场的报告全缺 → 真的没东西可发布，判失败；
     # 只缺子板块 → 通过（已在页面上用 banner 说明）。
