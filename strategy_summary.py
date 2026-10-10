@@ -5,6 +5,7 @@
 前 K 个策略（动态调整），并给出今日命中的标的。纯本地计算，不重新拉行情。
 """
 import glob
+import html
 import os
 
 import pandas as pd
@@ -18,6 +19,27 @@ TOP_K = 3           # 展示策略数
 MAX_HITS = 6        # 每个策略最多列出的今日命中标的
 
 
+def _warn(msg):
+    """可见告警：这些消息会进 Actions 日志，而不是被静默吞掉。
+
+    静默 except 是这个模块最危险的失败模式 —— 页面照常渲染一个数字，
+    但那个数字是残缺窗口算出来的，读者完全无从分辨。
+    """
+    print(f"[策略摘要] {msg}")
+
+
+def _esc(val):
+    if val is None or pd.isna(val):
+        return "-"
+    return html.escape(str(val), quote=True)
+
+
+def _md_esc(val):
+    if val is None or pd.isna(val):
+        return "-"
+    return str(val).replace("|", "\\|").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def _load_history(market_dir, exclude_date=None):
     frames = []
     for path in sorted(glob.glob(os.path.join(market_dir, "????-??-??", "metrics_*.csv"))):
@@ -26,7 +48,9 @@ def _load_history(market_dir, exclude_date=None):
             continue
         try:
             df = pd.read_csv(path, dtype={"代码": str})
-        except Exception:
+        except Exception as exc:
+            # 静默 continue 会让「历史只剩 3 天」看起来和「历史上就只有 3 天」一样
+            _warn(f"历史文件解析失败，已跳过 {path}：{type(exc).__name__}: {exc}")
             continue
         if "最新价" not in df.columns:
             continue
@@ -39,42 +63,83 @@ def _load_history(market_dir, exclude_date=None):
 
 
 def _ranked_strategies(panel):
-    """按最近 ROLLING_DAYS 个信号日的次日表现给策略排序。返回 [(名称, 表达式, 胜率, 样本数)]。"""
+    """按最近 ROLLING_DAYS 个信号日的次日表现给策略排序。
+
+    返回 ``(ranked, note)``：
+
+    * ``ranked`` = ``[(名称, 表达式, 胜率, 样本数)]``，最多 TOP_K 条；
+    * ``ranked`` 为空时 ``note`` 说明原因（历史不足 / 策略全部评估失败）。
+    """
+    if panel is None or panel.empty:
+        return [], "无历史数据"
+
     prices = panel.pivot_table(index="日期", columns="代码", values="最新价", aggfunc="first").sort_index()
-    next_ret = prices.pct_change().shift(-1)
+    # 0 或负价格会让 pct_change 产生 ±inf，而 (s > 0) 会把 +inf 当成一次「赢」，
+    # 既污染胜率又污染 mean() 排序键。先屏蔽成 NaN，再交给 dropna 剔除
+    # （backtest.py:187 也是只接受正价格）。
+    prices = prices.where(prices > 0)
+    # fill_method=None：pandas 默认的 pad 会把「某天缺数据的股票」前向填充，
+    # 造出一个幽灵 0% 收益；0 不 > 0，于是每个缺口都被静默记成一次亏损，
+    # 系统性压低所有胜率。
+    next_ret = prices.pct_change(fill_method=None).shift(-1)
+
     dates = list(prices.index)
-    window = dates[-(ROLLING_DAYS + 1):-1] if len(dates) >= 2 else []
+    if len(dates) < ROLLING_DAYS + 1:
+        # 页面写的是「近 20 日胜率」。旧代码只要求 ≥5 天，于是 5~20 天历史时
+        # 会拿 4 个信号日冒充 20 日胜率。宁可显式显示「历史不足」。
+        return [], f"历史不足：仅 {len(dates)} 个交易日，需 ≥{ROLLING_DAYS + 1} 日"
+    window = dates[-(ROLLING_DAYS + 1):-1]
 
     stats = {}
+    failed = []
     for name, expr in backtest.STRATEGIES:
         if expr is None:
             continue
         rets = []
+        eval_failed = 0
         for d in window:
             g = panel[panel["日期"] == d]
             if g.empty:
                 continue
             try:
                 mask = backtest.eval_expr(g, expr)
-            except Exception:
-                break
+            except Exception as exc:
+                # 旧代码在这里 break：窗口被静默截断，剩下的累计值照样当成
+                # 「20 日胜率」发布。现在改为跳过该日，并让该策略整体退出统计 ——
+                # 不发布一个用残缺窗口算出来的数字。
+                eval_failed += 1
+                _warn(f"策略「{name}」在 {d.date()} 评估失败：{type(exc).__name__}: {exc}")
+                continue
             hits = g.loc[mask.fillna(False), "代码"]
             if hits.empty:
                 continue
-            r = next_ret.loc[d, hits]
+            # reindex 而不是 .loc：万一某个代码不在价格透视表里（例如代码列为空），
+            # .loc 会抛 KeyError 把整张卡片打没，reindex 只会得到 NaN 并被 dropna 剔除。
+            r = next_ret.loc[d].reindex(hits)
             rets.extend(r.dropna().tolist())
+        if eval_failed:
+            failed.append(name)
+            continue
         if len(rets) >= MIN_TRADES:
             s = pd.Series(rets)
             stats[name] = (expr, float((s > 0).mean()), len(s), float(s.mean()))
 
     ranked = sorted(stats.items(), key=lambda kv: (-kv[1][1], -kv[1][3]))
-    return [(name, expr, wr, n) for name, (expr, wr, n, _) in ranked[:TOP_K]]
+    note = None
+    if failed:
+        shown = "、".join(failed[:3])
+        more = f" 等{len(failed)}个" if len(failed) > 3 else ""
+        note = f"{len(failed)} 个策略因评估失败未统计：{shown}{more}"
+    if not ranked and note is None:
+        note = f"近{ROLLING_DAYS}日内没有满足样本量（≥{MIN_TRADES}）的策略"
+    return [(name, expr, wr, n) for name, (expr, wr, n, _) in ranked[:TOP_K]], note
 
 
 def _today_hits(today_df, expr):
     try:
         mask = backtest.eval_expr(today_df, expr)
-    except Exception:
+    except Exception as exc:
+        _warn(f"今日命中评估失败（策略表达式 {expr!r}）：{type(exc).__name__}: {exc}")
         return today_df.iloc[0:0]
     return today_df[mask.fillna(False)]
 
@@ -84,7 +149,7 @@ def _fmt_hits(hits):
     for _, r in hits.head(MAX_HITS).iterrows():
         chg = r.get("涨跌幅")
         chg_str = f"{float(chg):+.1f}%" if pd.notna(chg) else ""
-        parts.append(f"{r['名称']}({chg_str})")
+        parts.append(f"{_esc(r['名称'])}({chg_str})")
     more = len(hits) - min(len(hits), MAX_HITS)
     s = "、".join(parts) if parts else "无"
     if more > 0:
@@ -120,7 +185,7 @@ def _overview(today_df):
 
 
 def build_summary(metrics_csv, market_dir, market_label):
-    """生成今日速览。返回 {"html":..., "md":...}；历史不足时返回 None。"""
+    """生成今日速览。返回 {"html":..., "md":...}；历史不足时给出显式占位文本。"""
     today_df = pd.read_csv(metrics_csv, dtype={"代码": str})
     today = os.path.basename(os.path.dirname(metrics_csv))
     panel = _load_history(market_dir, exclude_date=today)
@@ -128,18 +193,21 @@ def build_summary(metrics_csv, market_dir, market_label):
     html_parts = [f"<li>📊 <b>{market_label}</b>：{_overview(today_df)}</li>"]
     md_parts = [f"- **{market_label}**：{_overview(today_df)}"]
 
-    if panel is not None and panel["日期"].nunique() >= 5:
-        ranked = _ranked_strategies(panel)
+    ranked, note = _ranked_strategies(panel)
+    if ranked:
         for name, expr, wr, n in ranked:
             hits = _today_hits(today_df, expr)
-            line = f"{name}｜近{ROLLING_DAYS}日胜率 {wr * 100:.0f}%（样本{n}）→ 今日: {_fmt_hits(hits)}"
-            html_parts.append(f"<li>🎯 <b>{name}</b>"
+            html_parts.append(f"<li>🎯 <b>{_esc(name)}</b>"
                               f"<span style=\"color:#888\">（近{ROLLING_DAYS}日胜率 {wr * 100:.0f}%，样本{n}）</span>"
                               f"<br>今日: {_fmt_hits(hits)}</li>")
-            md_parts.append(f"- 🎯 **{name}**（近{ROLLING_DAYS}日胜率 {wr * 100:.0f}%，样本{n}）→ 今日: {_fmt_hits(hits)}")
+            md_parts.append(f"- 🎯 **{_md_esc(name)}**（近{ROLLING_DAYS}日胜率 {wr * 100:.0f}%，样本{n}）→ 今日: {_fmt_hits(hits)}")
     else:
-        html_parts.append("<li>⏳ 历史数据积累中，暂无策略胜率统计</li>")
-        md_parts.append("- ⏳ 历史数据积累中，暂无策略胜率统计")
+        html_parts.append(f"<li>⏳ {_esc(note)}，暂无策略胜率统计</li>")
+        md_parts.append(f"- ⏳ {_md_esc(note)}，暂无策略胜率统计")
+    if ranked and note:
+        # 有策略被剔除时必须让读者看到，否则「只统计了 2 个策略」是隐形的
+        html_parts.append(f"<li>⚠️ {_esc(note)}</li>")
+        md_parts.append(f"- ⚠️ {_md_esc(note)}")
 
     html = ("<div style=\"background:#fff;border-radius:10px;padding:14px 18px;margin-bottom:16px;"
             "box-shadow:0 1px 3px rgba(0,0,0,0.08);font-size:14px;line-height:1.7\">"
@@ -169,13 +237,16 @@ def build_buy_list(markets, date_str=None):
     for label, mcsv, mdir in markets:
         try:
             today_df = pd.read_csv(mcsv, dtype={"代码": str})
-        except Exception:
+        except Exception as exc:
+            _warn(f"今日 metrics 读取失败，跳过 {label}（{mcsv}）：{type(exc).__name__}: {exc}")
             continue
         today = os.path.basename(os.path.dirname(mcsv))
         panel = _load_history(mdir, exclude_date=today)
-        if panel is None or panel["日期"].nunique() < 5:
+        ranked, note = _ranked_strategies(panel)
+        if not ranked:
+            _warn(f"{label} 暂不参与买入参考：{note}")
             continue
-        for name, expr, wr, n in _ranked_strategies(panel)[:5]:
+        for name, expr, wr, n in ranked:
             hits = _today_hits(today_df, expr)
             for _, r in hits.iterrows():
                 chg = r.get("涨跌幅")
@@ -208,13 +279,13 @@ def build_buy_list(markets, date_str=None):
         chg = r["涨跌幅"]
         chg_str = f"{chg:+.2f}%" if chg is not None else "-"
         chg_color = "#c62828" if (chg or 0) > 0 else "#2e7d32" if (chg or 0) < 0 else "#666"
-        md_lines.append(f"| {r['市场']} | **{r['名称']}** | {r['代码']} | {chg_str} | {r['策略']} | {r['胜率%']}% | {r['样本数']} |")
+        md_lines.append(f"| {r['市场']} | **{_md_esc(r['名称'])}** | {_md_esc(r['代码'])} | {chg_str} | {_md_esc(r['策略'])} | {r['胜率%']}% | {r['样本数']} |")
         html_rows += (f"<tr>"
                       f"<td>{r['市场']}</td>"
-                      f"<td style=\"text-align:left;font-weight:600\">{r['名称']}</td>"
-                      f"<td>{r['代码']}</td>"
+                      f"<td style=\"text-align:left;font-weight:600\">{_esc(r['名称'])}</td>"
+                      f"<td>{_esc(r['代码'])}</td>"
                       f"<td style=\"color:{chg_color};font-weight:600\">{chg_str}</td>"
-                      f"<td style=\"text-align:left\">{r['策略']}</td>"
+                      f"<td style=\"text-align:left\">{_esc(r['策略'])}</td>"
                       f"<td><b>{r['胜率%']}%</b></td>"
                       f"<td>{r['样本数']}</td></tr>")
 

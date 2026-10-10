@@ -1,9 +1,12 @@
 import os
 import sys
 import glob
+import html
 import pandas as pd
 from datetime import datetime
 
+import fsutil
+import signals
 from generate_report import signal_type
 
 if sys.stdout is None:
@@ -11,7 +14,6 @@ if sys.stdout is None:
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "output")
-DEFAULT_OUT_HTML = os.path.join(DEFAULT_OUTPUT_DIR, "stock_charts.html")
 
 SIGNAL_META = [
     ("overbought_resonance", "三周期共振超买", "#c0392b"),
@@ -26,6 +28,13 @@ SIGNAL_META = [
 ]
 SIGNAL_COLOR = {k: c for k, _, c in SIGNAL_META}
 NO_DATA_COLOR = "#f0f0f0"
+
+# 与 signals.py（唯一权威口径）的信号键保持同步：漏一个键不会报错，
+# 只会让色带上对应的信号静默变成「无数据」灰块 —— 所以在日志里显式告警。
+_MISSING_SIGNAL_KEYS = sorted({key for _lbl, key in signals.SIGNALS} - set(SIGNAL_COLOR))
+if _MISSING_SIGNAL_KEYS:
+    print(f"::warning::generate_stock_charts.SIGNAL_META 缺少信号键 {_MISSING_SIGNAL_KEYS}，"
+          f"这些信号在走势图色带上会显示为「无数据」")
 
 
 def text_on(color):
@@ -114,9 +123,19 @@ def signal_info(jd, jw, jm):
 
 
 def esc(val):
+    """写进 HTML/SVG 的转义。
+
+    旧实现 `return str(val)` 是个恒等函数 —— 比没有 helper 更危险：审阅者看到
+    `esc(` 就以为已经覆盖了。股票名称/代码来自第三方接口，从不校验。
+    """
     if val is None:
         return "-"
-    return str(val)
+    try:
+        if pd.isna(val):
+            return "-"
+    except (TypeError, ValueError):
+        pass
+    return html.escape(str(val), quote=True)
 
 
 MARGIN_LEFT = 66.0
@@ -211,7 +230,7 @@ def render_price_svg(stock, dates):
             f"{d}  收盘 {p['price']}"
             f"\n日J {esc(p['jd'])}  周J {esc(p['jw'])}  月J {esc(p['jm'])}"
             f"\n涨跌 {esc(p['chg'])}%  PE {esc(p['pe'])}  PB {esc(p['pb'])}"
-            f"\n信号 {p['signal']}"
+            f"\n信号 {esc(p['signal'])}"
         )
         parts.append(
             f'<circle cx="{X(i):.1f}" cy="{Y(p["price"]):.1f}" r="4" fill="#ffffff" stroke="#d43d45" '
@@ -240,7 +259,7 @@ def render_price_svg(stock, dates):
         p = pts.get(d)
         xx = X(i)
         color = SIGNAL_COLOR.get(p["signal_class"], NO_DATA_COLOR) if p else NO_DATA_COLOR
-        tooltip = f"{d}  {p['signal']}" if p else f"{d}  无数据"
+        tooltip = f"{d}  {esc(p['signal'])}" if p else f"{d}  无数据"
         if p:
             tooltip += (
                 f"\n日J {esc(p['jd'])}  周J {esc(p['jw'])}  月J {esc(p['jm'])}"
@@ -259,21 +278,20 @@ def stock_points(pts, dates):
 
 
 def build_html(stocks, dates, output_dir):
-    cards = []
     total = len(stocks)
     date_str = dates[-1] if dates else ""
-    cards_html = "\n".join(cards)
+    cards_html = ""
 
     for stock in stocks:
         svg = render_price_svg(stock, dates)
         last = stock["last"]
         sig_color = SIGNAL_COLOR.get(last["signal_class"], "#999")
         r_title = f"{int(stock['rank']):>3}" if stock["rank"] != 9999 else "-"
-        card = f"""<div class="card" data-k="{stock['code']} {stock['name']}">
+        card = f"""<div class="card" data-k="{esc(stock['code'])} {esc(stock['name'])}">
         <div class="card-head">
             <span class="rank">#{r_title}</span>
             <span class="sname">{esc(stock['name'])}</span>
-            <span class="scode">{stock['code']}</span>
+            <span class="scode">{esc(stock['code'])}</span>
             <span class="price">¥{esc(last['price'])}</span>
             <span class="badge" style="background:{sig_color};color:{text_on(sig_color)}">{esc(last['signal'])}</span>
         </div>
@@ -342,20 +360,28 @@ def build_html(stocks, dates, output_dir):
 </html>"""
     os.makedirs(output_dir, exist_ok=True)
     out = os.path.join(output_dir, "stock_charts.html")
-    with open(out, "w", encoding="utf-8") as f:
-        f.write(html)
+    # 这个文件会被提交进 git：裸 open().write 中断会留下半截页面
+    fsutil.atomic_write_text(out, html)
     print(f"个股走势图已生成: {out}  共 {total} 只, {len(dates)} 个交易日")
     return out
 
 
-def run(output_dir=DEFAULT_OUTPUT_DIR, out_html=DEFAULT_OUT_HTML):
+def run(output_dir=DEFAULT_OUTPUT_DIR):
     files = sorted(glob.glob(os.path.join(output_dir, "**", "metrics_*.csv"), recursive=True))
     if not files:
         print(f"错误: {output_dir} 下未找到任何 metrics_*.csv")
         return None
     print(f"扫描到 {len(files)} 个交易日数据…")
     days = load_all_days(output_dir)
+    if len(days) < len(files):
+        print(f"::warning::个股走势图：{len(files) - len(days)} 个 CSV 解析失败，已跳过")
     stocks, dates = build_stocks(days)
+    # 关键护栏：只看「文件列表非空」是不够的 —— 如果每个 CSV 都解析失败，
+    # stocks == []，build_html 会写出一份「共 0 只」的页面覆盖上一份好页面。
+    if not stocks or not dates:
+        print(f"错误: {len(files)} 个 CSV 全部无法解析出有效标的，"
+              f"保留上一次的 stock_charts.html 不覆盖")
+        return None
     return build_html(stocks, dates, output_dir)
 
 

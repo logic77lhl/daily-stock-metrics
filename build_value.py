@@ -14,10 +14,13 @@
 """
 
 import datetime
+import html
 import os
 import sys
 
 import pandas as pd
+
+import fsutil
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MIN_MKT_CAP = 300   # 亿
@@ -29,6 +32,26 @@ TOP_N = {"A股": 30, "港股": 30, "ETF": 10}
 
 def _num(s):
     return pd.to_numeric(s, errors="coerce")
+
+
+def _esc(val):
+    """名称/代码/行业来自第三方接口，写进 HTML 前必须转义。"""
+    if val is None or pd.isna(val):
+        return "-"
+    return html.escape(str(val), quote=True)
+
+
+def _md_esc(val):
+    if val is None or pd.isna(val):
+        return "-"
+    return str(val).replace("|", "\\|").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _round_or_dash(v, digits=1):
+    """缺失值一律渲染成 '-'：ETF 的 PE_TTM 天然为 NaN，旧代码会印出字面量 `nan`。"""
+    if v is None or pd.isna(v):
+        return "-"
+    return round(float(v), digits)
 
 
 def _pct100(s):
@@ -136,21 +159,27 @@ def _html_table(df):
         return "good" if v >= good else "bad" if v <= bad else ""
     rows = ""
     for _, r in df.iterrows():
-        chg_cols = f"<td>{r['市场']}</td><td style='text-align:left;font-weight:600'>{r['名称']}</td><td>{r['代码']}</td>"
+        chg_cols = (f"<td>{_esc(r['市场'])}</td>"
+                    f"<td style='text-align:left;font-weight:600'>{_esc(r['名称'])}</td>"
+                    f"<td>{_esc(r['代码'])}</td>")
         rows += ("<tr>" + chg_cols +
                  f"<td class='win {cls(r['综合分'])}'><b>{r['综合分']}</b></td>"
                  f"<td>{r['质量分']}</td><td>{r['成长分']}</td>"
                  f"<td class='win {cls(r['估值分'], 60)}'>{r['估值分']}</td><td>{r['规模分']}</td>"
                  f"<td>{'-' if pd.isna(r['ROE%']) else round(r['ROE%'],1)}</td>"
                  f"<td>{'-' if pd.isna(r['净利同比%']) or r['净利同比%']==0 else round(r['净利同比%'],1)}</td>"
-                 f"<td>{round(r['PE_TTM'],1)}</td>"
+                 f"<td>{_round_or_dash(r['PE_TTM'])}</td>"
                  f"<td>{round(r['PE5年分位%'],0) if pd.notna(r['PE5年分位%']) else '-'}</td>"
                  f"<td>{round(r['市值(亿)'],0):,.0f}</td>"
-                 f"<td style='text-align:left'>{'-' if pd.isna(r.get('行业')) or not r.get('行业') else r['行业']}</td></tr>")
+                 f"<td style='text-align:left'>{'-' if pd.isna(r.get('行业')) or not r.get('行业') else _esc(r['行业'])}</td></tr>")
+    # 14 列 + white-space:nowrap 在 390px 视口必然溢出：必须给横向滚动容器，
+    # 与其他模块（opportunity_board / buylist / 报告表格）保持一致。
     return f"""
+<div style="overflow-x:auto">
 <table>
 <thead><tr><th>市场</th><th>名称</th><th>代码</th><th>综合分</th><th>质量</th><th>成长</th><th>估值</th><th>规模</th><th>ROE%</th><th>净利同比%</th><th>PE</th><th>PE5年分位</th><th>市值(亿)</th><th>行业</th></tr></thead>
-<tbody>{rows}</tbody></table>"""
+<tbody>{rows}</tbody></table>
+</div>"""
 
 
 def main():
@@ -173,10 +202,10 @@ def main():
     for _, r in df.iterrows():
         np_ = "-" if pd.isna(r["净利同比%"]) or r["净利同比%"] == 0 else f"{r['净利同比%']:.1f}"
         md_lines.append(
-            f"| {r['排名']} | {r['市场']} | **{r['名称']}** | {r['代码']} | {r['综合分']} | "
-            f"{'-' if pd.isna(r['ROE%']) else round(r['ROE%'],1)} | {np_} | {round(r['PE_TTM'],1)} | "
+            f"| {r['排名']} | {_md_esc(r['市场'])} | **{_md_esc(r['名称'])}** | {_md_esc(r['代码'])} | {r['综合分']} | "
+            f"{'-' if pd.isna(r['ROE%']) else round(r['ROE%'],1)} | {np_} | {_round_or_dash(r['PE_TTM'])} | "
             f"{round(r['PE5年分位%']) if pd.notna(r['PE5年分位%']) else '-'} | {r['市值(亿)']:,.0f} | "
-            f"{'-' if pd.isna(r.get('行业')) or not r.get('行业') else r['行业']} |")
+            f"{'-' if pd.isna(r.get('行业')) or not r.get('行业') else _md_esc(r['行业'])} |")
     md = ("## 💎 价值投资标的 (A股%d只/港股%d只/ETF%d只)\n\n%s\n\n"
           "> 综合分 = 质量35%%(ROE/毛利率) + 估值35%%(PE/PB五年分位，越低越好) + 成长20%%(净利/营收增速) + 规模10%%；"
           "仅保留市值≥300亿，股票市场要求 0<PE≤60 且 PB≤12；仅供研究参考，不构成投资建议" % (a_cnt, h_cnt, e_cnt, "\n".join(md_lines)))
@@ -206,8 +235,8 @@ tr:hover td{{background:#f8f9fd}}
 </div></body></html>"""
 
     out_html = os.path.join(BASE_DIR, "output", f"value_{today}.html")
-    with open(out_html, "w", encoding="utf-8") as f:
-        f.write(html)
+    # 这个页面会被提交进 git 并复制成 docs/value.html：裸 open().write 中断会留下半截文件
+    fsutil.atomic_write_text(out_html, html)
     import strategy_summary
     strategy_summary.write_root_summary("摘要-价值标的.md", md, today)
     print(f"价值标的页已生成({len(df)}只): {out_html}")

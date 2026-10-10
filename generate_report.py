@@ -1,7 +1,11 @@
+import html
 import os
 import sys
 import pandas as pd
 from datetime import datetime
+
+import fsutil
+import signals
 
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
@@ -23,32 +27,29 @@ def classify_j(val):
 
 
 def signal_type(row):
-    d = row.get("日线J")
-    w = row.get("周线J")
-    m = row.get("月线J")
-    if pd.isna(d) or pd.isna(w) or pd.isna(m):
-        return "数据不足", "insufficient"
-    if d > 80 and w > 80 and m > 80:
-        return "三周期共振超买", "overbought_resonance"
-    if d < 20 and w < 20 and m < 20:
-        return "三周期共振超卖", "oversold_resonance"
-    if d < 0 and w < 0 and m < 0:
-        return "三周期共振新低", "newlow_resonance"
-    if d > 50 and w > 50 and m > 50:
-        return "三周期共振偏强", "resonance_strong"
-    if d < 50 and w < 50 and m < 50:
-        return "三周期共振偏弱", "resonance_weak"
-    if d > 50 and w < 50:
-        return "分化-日高周低", "divergence_dw"
-    if d < 50 and w > 50:
-        return "分化-日低周高", "divergence_wd"
-    return "部分分化", "partial"
+    """信号分类 —— 口径见 signals.py（唯一权威实现，勿在此重写判定逻辑）。"""
+    return signals.classify_row(row)
 
 
 def html_escape(val):
-    if pd.isna(val):
+    """转义后写进 HTML 的字符串。
+
+    这里**必须**真的转义：旧实现 `return str(val)` 是个恒等函数，比没有 helper
+    更危险 —— 审阅者看到 `html_escape(` 就以为已经覆盖了。已知可见症状：
+    策略名 `双均线空头(MA20<MA60)` 被浏览器当成未知标签，页面上只剩
+    `双均线空头(MA20`。股票/行业名称来自第三方接口，从不校验。
+    """
+    if val is None or pd.isna(val):
         return "-"
-    return str(val)
+    return html.escape(str(val), quote=True)
+
+
+def md_escape(val):
+    """Markdown 单元格转义：竖线会拆表，尖括号会被渲染成 HTML。"""
+    if val is None or pd.isna(val):
+        return "-"
+    return (str(val).replace("|", "\\|")
+            .replace("<", "&lt;").replace(">", "&gt;"))
 
 
 def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信号报告", extra_html=None, extra_md=None):
@@ -129,8 +130,8 @@ def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信�
 
         rows_html += f"""<tr data-signal="{sig_cls}">
             <td>{int(row['排名']) if pd.notna(row.get('排名')) else '-'}</td>
-            <td>{row['代码']}</td>
-            <td class="name">{row['名称']}</td>
+            <td>{html_escape(row['代码'])}</td>
+            <td class="name">{html_escape(row['名称'])}</td>
             <td>{d_cell}</td>
             <td>{w_cell}</td>
             <td>{m_cell}</td>
@@ -162,7 +163,7 @@ def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信�
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{title} - {today}</title>
+<title>{html_escape(title)} - {html_escape(today)}</title>
 <style>
     * {{ margin: 0; padding: 0; box-sizing: border-box; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f0f2f5; color: #333; padding: 20px; }}
@@ -239,8 +240,8 @@ def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信�
 </head>
 <body>
 <div class="container">
-    <h1>{title}</h1>
-    <div class="subtitle">数据日期：{today} ｜ 生成时间：{now_str} ｜ 样本数：{total}</div>
+    <h1>{html_escape(title)}</h1>
+    <div class="subtitle">数据日期：{html_escape(today)} ｜ 生成时间：{now_str} ｜ 样本数：{total}</div>
 
     {extra_html or ""}
 
@@ -379,16 +380,16 @@ def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信�
 
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"report_{today}.html")
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(html)
+    # 这个文件会被提交进 git / 发进邮件：裸 open().write 中断后留下的是半截 HTML
+    fsutil.atomic_write_text(out_path, html)
 
     md_path = os.path.join(out_dir, f"report_{today}.md")
-    with open(md_path, "w", encoding="utf-8") as f:
-        f.write(f"# {title}（{today}）\n\n")
-        if extra_md:
-            f.write(extra_md + "\n\n")
-        f.write(_markdown_table(df))
-        f.write("\n> 仅供参考，不构成投资建议\n")
+    md_text = f"# {md_escape(title)}（{md_escape(today)}）\n\n"
+    if extra_md:
+        md_text += extra_md + "\n\n"
+    md_text += _markdown_table(df)
+    md_text += "\n> 仅供参考，不构成投资建议\n"
+    fsutil.atomic_write_text(md_path, md_text)
 
     print(f"报告已生成: {out_path}")
     return out_path
@@ -399,15 +400,15 @@ def _markdown_table(df):
                         "最新价", "涨跌幅", "PE_TTM", "PE历史分位%",
                         "PB_MRQ", "PB历史分位%", "MA20", "MA60", "双均线多头",
                         "量比", "PE5年分位%", "PB5年分位%", "行业"] if c in df.columns]
-    def cell(c, v):
+    def cell(v):
         if pd.isna(v):
             return "-"
         if isinstance(v, float):
-            return f"{v:g}"
-        return str(v).replace("|", "\\|")
+            return md_escape(f"{v:g}")
+        return md_escape(v)
     lines = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
     for _, r in df[cols].iterrows():
-        lines.append("| " + " | ".join(cell(c, r[c]) for c in cols) + " |")
+        lines.append("| " + " | ".join(cell(r[c]) for c in cols) + " |")
     return "\n".join(lines)
 
 
