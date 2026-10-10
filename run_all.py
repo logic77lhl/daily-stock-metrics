@@ -32,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -48,21 +49,34 @@ class Step:
     argv: tuple
     deadline: int        # DSM_DEADLINE_SEC
     collect: bool        # 是否属于「采集」阶段（site-only 模式下跳过）
+    group: int = 0       # 同一组内的步骤**并行**执行；组按序号串行
 
 
 STEPS: tuple[Step, ...] = (
-    Step("A股", ("run_daily.py",), 2700, True),
-    Step("ETF", ("run_etf_daily.py",), 2700, True),
-    Step("港股", ("run_hk_daily.py",), 1500, True),
+    # ── 第 1 组：三个市场**并行** ──────────────────────────────────────
+    #
+    # 它们完全独立（各自的名单、指标、报告、DONE），而串行时 A股 28s + ETF 10s +
+    # 港股 11s = 49s，并行后只要 max(28,10,11) = 28s。
+    #
+    # 并行会把总并发从 16 提到 48 —— 这正是刻意的：探测的结论是「天花板 = 并发数 ÷
+    # 单次延迟」，**不是**数据源的速率限制（16 并发无节流实测 20.4 次/秒、零失败）。
+    # 48 并发 ÷ 2.4s 的实测延迟 ≈ 20 次/秒，也就是**并行后并没有比已经验证过的
+    # 那个速率更激进**，只是把等待时间重叠起来。
+    #
+    # 每个市场写各自的共享价格文件（output / output_etf / output_hk），互不冲突。
+    Step("A股", ("run_daily.py",), 2700, True, group=1),
+    Step("ETF", ("run_etf_daily.py",), 2700, True, group=1),
+    Step("港股", ("run_hk_daily.py",), 1500, True, group=1),
+    # ── 第 2 组：串行 ────────────────────────────────────────────────
     # 三个市场都写完之后再发信：合成一封，且只收录 DONE 有效（=质量门通过）的市场。
     # 放在回测/价值/建站之前，是为了让数据一到就发出去，不必等建站。
-    Step("合并摘要邮件", ("send_digest.py",), 300, True),
-    Step("回测", ("backtest.py",), 900, True),
-    Step("价值标的", ("build_value.py",), 600, True),
+    Step("合并摘要邮件", ("send_digest.py",), 300, True, group=2),
+    Step("回测", ("backtest.py",), 900, True, group=2),
+    Step("价值标的", ("build_value.py",), 600, True, group=2),
     # 裁剪必须在建站之前：站点按最终存在的目录生成归档页，
     # 否则 docs 里会有指向「已被裁掉的报告」的死链。
-    Step("裁剪产物", ("prune_outputs.py",), 300, False),
-    Step("构建站点", ("build_pages.py",), 300, False),
+    Step("裁剪产物", ("prune_outputs.py",), 300, False, group=2),
+    Step("构建站点", ("build_pages.py",), 300, False, group=2),
 )
 
 # 只有它失败会让整个入口返回非零（见模块 docstring）。
@@ -129,12 +143,37 @@ def main(argv=None) -> int:
     os.makedirs(price_dir, exist_ok=True)
     env_extra = {"DSM_PRICE_CACHE": price_dir}
     print(f"共享价格序列目录：{price_dir}")
+
+    # 按 group 分组：组内并行、组间串行（见 STEPS 的说明）。
+    groups: dict = {}
+    for step in steps:
+        groups.setdefault(step.group, []).append(step)
+
     try:
-        for step in steps:
-            code, elapsed = run_step(step, io_kwargs, env_extra)
-            results.append({"步骤": step.name, "返回码": code, "耗时秒": round(elapsed, 1)})
-            print(f"  {'✓' if code == 0 else '✗'} {step.name} 返回码={code} 耗时={elapsed:.0f}s",
-                  flush=True)
+        for gid in sorted(groups):
+            batch = groups[gid]
+            if len(batch) == 1:
+                step = batch[0]
+                code, elapsed = run_step(step, io_kwargs, env_extra)
+                results.append({"步骤": step.name, "返回码": code,
+                                "耗时秒": round(elapsed, 1)})
+                print(f"  {'✓' if code == 0 else '✗'} {step.name} 返回码={code} "
+                      f"耗时={elapsed:.0f}s", flush=True)
+                continue
+
+            print(f"\n{'#' * 62}\n  ▶ 并行执行 {len(batch)} 步："
+                  f"{'、'.join(s.name for s in batch)}\n{'#' * 62}", flush=True)
+            t0 = time.monotonic()
+            with ThreadPoolExecutor(max_workers=len(batch)) as ex:
+                futs = {ex.submit(run_step, s, io_kwargs, env_extra): s for s in batch}
+                for fut in as_completed(futs):
+                    step = futs[fut]
+                    code, elapsed = fut.result()
+                    results.append({"步骤": step.name, "返回码": code,
+                                    "耗时秒": round(elapsed, 1)})
+                    print(f"  {'✓' if code == 0 else '✗'} {step.name} 返回码={code} "
+                          f"耗时={elapsed:.0f}s", flush=True)
+            print(f"  ⏱ 并行组耗时 {time.monotonic() - t0:.0f}s", flush=True)
     finally:
         if io_fh is not None:
             io_fh.close()
@@ -148,12 +187,16 @@ def main(argv=None) -> int:
         print(f"[流水线] 汇总写入失败（不影响结果）：{exc}")
 
     print(f"\n{'=' * 62}\n  流水线汇总\n{'=' * 62}")
+    # 按 STEPS 的声明顺序输出（并行组的完成顺序是随机的，直接打印会让人
+    # 以为步骤被重排过）；「合计」是各步耗时之和，不是墙钟 ——
+    # 并行组内的时间是重叠的，墙钟看上面那行「并行组耗时」。
+    order = {s.name: i for i, s in enumerate(STEPS)}
     total = 0.0
-    for row in results:
+    for row in sorted(results, key=lambda r: order.get(r["步骤"], 99)):
         total += row["耗时秒"]
         flag = "✓" if row["返回码"] == 0 else "✗"
         print(f"  {flag} {row['步骤']:<10} 返回码={row['返回码']:<3} {row['耗时秒']:>7.1f}s")
-    print(f"  合计 {total:.0f}s")
+    print(f"  各步耗时之和 {total:.0f}s（并行组内是重叠的，墙钟更短）")
 
     failed = [r for r in results if r["返回码"] != 0]
     critical_failed = [r for r in failed if r["步骤"] == CRITICAL]
