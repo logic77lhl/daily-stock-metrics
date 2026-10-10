@@ -2,10 +2,12 @@ name: heartbeat
 
 on:
   schedule:
-    # 独立于 daily-metrics 的兜底心跳：检查远端 main 上今日 DONE 标记，
+    # 独立于 daily-metrics 的兜底心跳：检查远端 main 上目标交易日的 DONE 标记，
     # 缺失则通过 API 补触发一次 daily-metrics（DONE 防重保证不会重复跑）。
     - cron: "35 10 * * 1-5"   # 北京时间 18:35
     - cron: "0 12 * * 1-5"    # 北京时间 20:00
+    - cron: "0 16 * * 1-5"    # 北京时间次日 00:00（跨午夜补跑窗口）
+    - cron: "0 20 * * 0-4"    # 北京时间次日 04:00
   workflow_dispatch:
 
 permissions:
@@ -16,40 +18,44 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      # 需要 trading_calendar.py 判断「今天是否交易日」，所以必须 checkout
+      # 需要 trading_calendar.py 推导「目标交易日」，所以必须 checkout
       - uses: actions/checkout@v4
 
-      - name: Trigger daily-metrics if today not done
+      - name: Trigger daily-metrics if target day not done
         env:
           TOKEN: ${{ secrets.HEARTBEAT_TOKEN }}
           REPO: logic77lhl/daily-stock-metrics
         run: |
-          TODAY=$(TZ=Asia/Shanghai date +%F)
-
-          # 交易日才需要动作：节假日不该因此补触发，也不该判失败
-          set +e
-          python3 trading_calendar.py check --date "$TODAY" --min-hour 15
-          CAL=$?
-          set -e
-          if [ "$CAL" = "3" ]; then
-            echo "今日非交易日或未到收盘时间，心跳无需动作"
-            exit 0
-          fi
+          # 目标交易日由 trading_calendar 推导，**不再用「今天」**。
+          # 旧版是 `check --date "$TODAY" --min-hour 15` 然后
+          # `if [ "$CAL" = "3" ]; then exit 0` —— 跨午夜后 check 返回 3
+          # （「未到收盘」），心跳于是直接退出。而实测 cron 恰恰经常在次日
+          # 00:00~02:00 才落地，也就是说：心跳在最需要它的时段**完全失效**。
+          # 这正是 2026-09-21~09-30 丢数据却无人察觉的原因之一。
+          python3 trading_calendar.py plan > /tmp/plan.txt
+          cat /tmp/plan.txt
+          TARGET_A=$(sed -n 's/^expected_a=//p' /tmp/plan.txt)
+          TARGET_HK=$(sed -n 's/^expected_hk=//p' /tmp/plan.txt)
 
           MISSING=""
-          for d in output output_etf output_hk; do
+          for pair in "output:${TARGET_A}" "output_etf:${TARGET_A}" "output_hk:${TARGET_HK}"; do
+            d="${pair%%:*}"; day="${pair##*:}"
+            if [ -z "$day" ]; then
+              echo "::error::$d 无法确定目标交易日，心跳无法判断，失败退出"
+              exit 1
+            fi
             code=$(curl -sS -o /dev/null -w "%{http_code}" \
               -H "Authorization: Bearer $TOKEN" \
-              "https://api.github.com/repos/$REPO/contents/$d/$TODAY/DONE?ref=main")
+              "https://api.github.com/repos/$REPO/contents/$d/$day/DONE?ref=main")
             case "$code" in
               200) ;;
-              404) MISSING="$MISSING $d" ;;   # 只有 404 才等于「确实缺失」
-              *) echo "::error::探测 $d/$TODAY/DONE 返回 HTTP $code（令牌权限或网络问题），\
+              404) MISSING="$MISSING $d@$day" ;;   # 只有 404 才等于「确实缺失」
+              *) echo "::error::探测 $d/$day/DONE 返回 HTTP $code（令牌权限或网络问题），\
           心跳无法判断，失败退出"; exit 1 ;;
             esac
           done
           if [ -z "$MISSING" ]; then
-            echo "今日($TODAY)三个市场均已完成，心跳无需动作"
+            echo "目标交易日 A/ETF=${TARGET_A} HK=${TARGET_HK} 均已完成，心跳无需动作"
             exit 0
           fi
           echo "缺少 DONE 标记:$MISSING，补触发 daily-metrics"

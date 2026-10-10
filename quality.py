@@ -36,8 +36,15 @@ class QualityReport(NamedTuple):
     fill: float
 
 
-def assess(metrics_csv, expected_rows: int, fetch_stats: dict | None = None) -> QualityReport:
-    """对落盘的 metrics CSV 做体检。任何异常都判为不合格（宁可不发布）。"""
+def assess(metrics_csv, expected_rows: int, fetch_stats: dict | None = None,
+           expected_date: str | None = None) -> QualityReport:
+    """对落盘的 metrics CSV 做体检。任何异常都判为不合格（宁可不发布）。
+
+    expected_date 给定时，额外校验「这一行的指标实际取自哪一根 K 线」。
+    这是 2026-10-02 那次事故的补丁：国庆休市，但旧版 workflow 不知道，
+    把 09-30 的收盘价当成 10-02 发布了出去，还写了 DONE。
+    只校验行数/填充率是抓不住这种「数据本身完好、只是日期错了」的。
+    """
     import pandas as pd
 
     try:
@@ -59,7 +66,21 @@ def assess(metrics_csv, expected_rows: int, fetch_stats: dict | None = None) -> 
         "抓取成功率": ok_ratio >= 0.70,
         "关键列填充": fill >= 0.70,
     }
-    return QualityReport(all(checks.values()), checks, rows, ok_ratio, fill)
+
+    if expected_date:
+        bar = (fetch_stats or {}).get("bar_date")
+        if not bar and "数据日期" in df.columns:
+            values = df["数据日期"].dropna().astype(str)
+            bar = values.mode().iloc[0] if len(values) else None
+        checks["数据日期一致"] = (bar == expected_date)
+        # 明细用**非布尔**键存放，只用于展示；下面的聚合只认布尔项。
+        # （第一版把这条明细和布尔项混在一起聚合，导致「所有检查都 True
+        #   但整体判 False」—— 回填时 8 天全被误判为不合格才暴露出来。）
+        checks["数据日期详情"] = f"实际 {bar or '缺失'} / 期望 {expected_date}"
+
+    # 只聚合布尔项：明细字段不参与判定
+    ok = all(value for value in checks.values() if isinstance(value, bool))
+    return QualityReport(ok, checks, rows, ok_ratio, fill)
 
 
 def write_done(day_dir, market: str, today: str, report: QualityReport,

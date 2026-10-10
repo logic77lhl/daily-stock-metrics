@@ -11,7 +11,6 @@
     python run_hk_daily.py
 """
 
-import datetime
 import os
 import sys
 import time
@@ -40,19 +39,17 @@ def main():
     elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
         sys.stdout.reconfigure(encoding="utf-8")
 
-    today_date = trading_calendar.resolve()
-    today = today_date.strftime("%Y-%m-%d")
-
     # 港股通用 market="HK"：港股通要求内地与香港**同时**开市，
     # 所以它的休市日 = A股休市日 ∪ 香港额外假期。方向是「宁可不跑，
-    # 不拿隔夜数据冒充当日」。
-    if not trading_calendar.is_trading_day(today_date, market="HK"):
-        print(f"{today} 非交易日（{trading_calendar.reason(today_date, 'HK')}），"
-              f"收盘数据与上一交易日一致，跳过本次运行")
+    # 不拿隔夜数据冒充当日」。目标日同样是「已收盘且仍是最新一根 K 线」的那天
+    # （港股 16:00 收盘，比 A 股晚一小时），而不是「今天」。
+    target, mode, why = trading_calendar.collection_target(market="HK")
+    if target is None:
+        print(why)
         return 0
-    now_bj = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
-    if now_bj.hour < 15:
-        print(f"北京时间 {now_bj:%H:%M} 早于15:00，当日收盘数据尚未生成，跳过本次运行")
+    today = target.strftime("%Y-%m-%d")
+    if mode != "collect":
+        print(f"{why}；本轮不采集，完成门仍会校验 {today} 的 DONE")
         return 0
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -76,13 +73,21 @@ def main():
 
     wlog(f"===== 开始每日港股通指标任务 {today} =====")
 
+    universe = "eastmoney"
     try:
         if not already_done(hk_csv):
             wlog(f"步骤1: 获取港股通总市值前{DEFAULT_TOP}标的...")
-            fetch_hk.run(top=DEFAULT_TOP, out_path=hk_csv, log_file=log_file)
-            wlog(f"步骤1完成 -> {hk_csv}")
+            try:
+                fetch_hk.run(top=DEFAULT_TOP, out_path=hk_csv, log_file=log_file, note=wlog)
+            except Exception as exc:
+                wlog(f"步骤1失败({type(exc).__name__}: {exc})，降级为观察池历史名单")
+                stock_pool.list_from_pool(OUTPUT_DIR, hk_csv, today, prefix="hk_list")
+                universe = "pool-fallback"
+                print("::warning::港股通 名单接口不可用，已降级为观察池历史名单")
+            wlog(f"步骤1完成 -> {hk_csv}（名单来源: {universe}）")
         else:
             wlog(f"步骤1已存在，跳过 -> {hk_csv}")
+            universe = "reused"
 
         wlog("步骤2: 计算 KDJ-J(日/周/月)...")
         wlog("步骤2: 计算指标...")
@@ -105,16 +110,18 @@ def main():
             extra_md=summ["md"] if summ else None)
         wlog(f"步骤3完成 -> {html_path}")
 
+        # 质量门必须在发邮件之前（见 run_daily.py 的说明）
+        report = quality.assess(metrics_csv, mstats["expected"], mstats,
+                                expected_date=today)
+        if not report.ok:
+            wlog(f"数据质量门未通过：{report.checks}")
+            return quality.fail(day_dir, "港股通", report)
+
         wlog("步骤4: 发送邮件报告...")
         ok = send_email.send_report(html_path, subject=f"港股通 KDJ 多周期信号报告 - {today}")
         wlog(f"步骤4完成: {'邮件已发送' if ok else '邮件发送失败(请检查 email_config.py 配置)'}")
 
-        # 质量门是写 DONE 的唯一出口
-        report = quality.assess(metrics_csv, mstats["expected"], mstats)
-        if not report.ok:
-            wlog(f"数据质量门未通过：{report.checks}")
-            return quality.fail(day_dir, "港股通", report)
-        quality.succeed(day_dir, "港股通", today, report)
+        quality.succeed(day_dir, "港股通", today, report, extra={"universe": universe})
         wlog(f"===== 全部完成 {today} =====")
         return 0
     except Exception as e:

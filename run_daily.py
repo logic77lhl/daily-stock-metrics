@@ -1,7 +1,6 @@
 import os
 import sys
 import time
-import datetime
 
 import fetch_top100
 import fetch_metrics
@@ -30,19 +29,17 @@ def already_done(marker):
 
 
 def main():
-    today_date = trading_calendar.resolve()
-    today = today_date.strftime("%Y-%m-%d")
-
-    # 时间/交易日护栏必须在**建目录之前**：否则假日会留下一个空的 output/日期/
-    # 目录，而且下游的「缺 DONE」检查会把它当成一次失败的执行。
-    # 非交易日直接返回：不建目录、不生成报告、不写 DONE。
-    if not trading_calendar.is_trading_day(today_date, market="A"):
-        print(f"{today} 非交易日（{trading_calendar.reason(today_date, 'A')}），"
-              f"收盘数据与上一交易日一致，跳过本次运行")
+    # 目标日 = 最近一个「已收盘且收盘价仍是最新一根 K 线」的交易日，
+    # 而不是「今天」。GitHub schedule 实测延迟 4~8 小时，跨午夜后
+    # `date +%F` 会变成第二天，旧逻辑据此判「未到收盘」直接跳过 ——
+    # 跳过又被 gate 当绿灯，于是整天数据静默丢失（2026-09 那次丢了 8 天）。
+    target, mode, why = trading_calendar.collection_target(market="A")
+    if target is None:
+        print(why)
         return 0
-    now_bj = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
-    if now_bj.hour < 15:
-        print(f"北京时间 {now_bj:%H:%M} 早于15:00，当日收盘数据尚未生成，跳过本次运行")
+    today = target.strftime("%Y-%m-%d")
+    if mode != "collect":
+        print(f"{why}；本轮不采集，完成门仍会校验 {today} 的 DONE")
         return 0
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -66,13 +63,24 @@ def main():
 
     wlog(f"===== 开始每日指标任务 {today} =====")
 
+    universe = "eastmoney"
     try:
         if not already_done(top_csv):
             wlog("步骤1: 获取 A股市值前100…")
-            fetch_top100.run(out_path=top_csv)
-            wlog(f"步骤1完成 -> {top_csv}")
+            try:
+                fetch_top100.run(out_path=top_csv, note=wlog)
+            except Exception as exc:
+                # 东财对云厂商出口 IP 会整批 RST（实测 4 主机 × 12 次全失败）。
+                # 用观察池历史名单降级，远好于整天数据全丢。
+                wlog(f"步骤1失败({type(exc).__name__}: {exc})，降级为观察池历史名单")
+                stock_pool.list_from_pool(OUTPUT_DIR, top_csv, today)
+                universe = "pool-fallback"
+                print("::warning::A股 名单接口不可用，已降级为观察池历史名单"
+                      "（指标仍为当日实抓，仅 Top100 成分可能滞后）")
+            wlog(f"步骤1完成 -> {top_csv}（名单来源: {universe}）")
         else:
             wlog(f"步骤1已存在，跳过 -> {top_csv}")
+            universe = "reused"
 
         wlog("步骤2: 计算 KDJ-J(日/周/月) 及 PE/PB 历史分位…")
         tracked_csv, pool_size, added = stock_pool.build_tracked_csv(
@@ -166,18 +174,21 @@ def main():
         else:
             wlog(f"步骤4.5完成 -> 暂无历史推荐数据")
 
+        # 质量门必须在发邮件**之前**：原来是先发后判，一次未通过的质量门
+        # 会连发两封（workflow 重试再发一封）包含被拒绝数据的邮件。
+        report = quality.assess(metrics_csv, mstats["expected"], mstats,
+                                expected_date=today)
+        if not report.ok:
+            wlog(f"数据质量门未通过：{report.checks}")
+            return quality.fail(day_dir, "A股", report)
+
         wlog("步骤5: 发送邮件报告…")
         ok = send_email.send_report(html_path)
         wlog(f"步骤5完成: {'邮件已发送' if ok else '邮件发送失败(请检查 email_config.py 配置)'}")
 
-        # 质量门是写 DONE 的唯一出口：数据不达标就绝不写标记，
-        # 于是工作流判为「未完成」，可以靠重试步骤挽救，而不是盖个章说成功。
-        report = quality.assess(metrics_csv, mstats["expected"], mstats)
-        if not report.ok:
-            wlog(f"数据质量门未通过：{report.checks}")
-            return quality.fail(day_dir, "A股", report)
         quality.succeed(day_dir, "A股", today, report,
-                        extra={"stats_success_ratio": f"{mstats['success_ratio']:.4f}"})
+                        extra={"stats_success_ratio": f"{mstats['success_ratio']:.4f}",
+                               "universe": universe})
         wlog(f"===== 全部完成 {today} =====")
         return 0
     except Exception as e:

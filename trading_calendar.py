@@ -94,9 +94,28 @@ HK_EXTRA_CLOSED: dict[int, frozenset] = {
 
 BJ_TZ = datetime.timezone(datetime.timedelta(hours=8))
 
+# 各市场收盘（北京时间）。港股 16:00，A 股 15:00。
+CLOSE_HOUR = {"A": 15, "HK": 16}
+# 次日开盘。用于判断「上一交易日的收盘价还是不是最新一根 K 线」。
+OPEN_HOUR = 9
+OPEN_MINUTE = 30
+
 
 def now_beijing() -> datetime.datetime:
     return datetime.datetime.now(BJ_TZ)
+
+
+def resolve_now(now: datetime.datetime | None = None) -> datetime.datetime:
+    """当前北京时间。DSM_CALENDAR_NOW=YYYY-MM-DDTHH:MM 可覆盖（便于测试窗口分支）。"""
+    if now is not None:
+        return now
+    raw = os.environ.get("DSM_CALENDAR_NOW", "").strip()
+    if raw:
+        parsed = datetime.datetime.fromisoformat(raw)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=BJ_TZ)
+        return parsed
+    return now_beijing()
 
 
 def resolve(today: str | None = None) -> datetime.date:
@@ -150,6 +169,74 @@ def is_trading_day(day: datetime.date, market: str = "A") -> bool:
     return True
 
 
+# ── 「应该采集哪一天」的唯一判断入口 ──────────────────────────────
+# 为什么不再用「今天」：GitHub 的 schedule 实测会延迟 4~8 小时，北京的 16:30
+# 触发点常常在次日 00:00~02:00 才真正开跑。此时 `date +%F` 已经是**第二天**，
+# 而原来的 `hour < 15` 护栏看到 01 点就判「未到收盘」直接 return 0 ——
+# 工作流把这次跳过当成「非交易日」放行，于是**整天数据静默丢失且 Actions 全绿**。
+# 2026-09-21~09-30 的 8 个交易日就是这样丢的（A 股其实已在 runner 里算完，
+# 但旧版 CI 的完成检查先 exit 1，产物没被提交）。
+#
+# 正确的口径是「最近一个已经收盘、且其收盘价仍然是数据源最新一根 K 线的交易日」：
+#   - 23:00（当天）  → 目标=当天
+#   - 次日 01:00     → 目标仍是**昨天**（因为今天还没开盘，最新 bar 还是昨天的）
+#   - 次日 10:00     → 拒绝采集：今天已开盘，最新 bar 是今天的实时 bar，
+#                      此时按「昨天」写盘就会把今天的数据伪造成昨天（= 2026-10-02 的脏数据）
+# 这样跨午夜不再有歧义，晚到的触发点反而变成了「补跑窗口」。
+
+def latest_closed_trading_day(now: datetime.datetime | None = None, market: str = "A",
+                              lookback: int = 20) -> datetime.date | None:
+    """最近一个「已经收盘」的交易日（收盘时刻之后才算）。"""
+    moment = resolve_now(now)
+    close_hour = CLOSE_HOUR.get(market, 15)
+    day = moment.date()
+    if moment.hour < close_hour:
+        day -= datetime.timedelta(days=1)
+    for _ in range(lookback):
+        if is_trading_day(day, market):
+            return day
+        day -= datetime.timedelta(days=1)
+    return None
+
+
+def next_trading_day(day: datetime.date, market: str = "A",
+                     lookback: int = 20) -> datetime.date | None:
+    """day 之后的下一个交易日。"""
+    probe = day + datetime.timedelta(days=1)
+    for _ in range(lookback):
+        if is_trading_day(probe, market):
+            return probe
+        probe += datetime.timedelta(days=1)
+    return None
+
+
+def market_open(day: datetime.date) -> datetime.datetime:
+    return datetime.datetime.combine(
+        day, datetime.time(OPEN_HOUR, OPEN_MINUTE), tzinfo=BJ_TZ)
+
+
+def collection_target(now: datetime.datetime | None = None, market: str = "A"):
+    """返回 (target_date, mode, reason)。
+
+    mode:
+      collect  现在应当采集 target
+      intraday 已进入下一交易日盘中，采集会把「今天」写成 target，必须等
+      unknown  回看窗口内找不到交易日（日历表异常）
+    """
+    moment = resolve_now(now)
+    target = latest_closed_trading_day(moment, market)
+    if target is None:
+        return None, "unknown", "交易日历回看窗口内找不到交易日，请检查年度表"
+
+    nxt = next_trading_day(target, market)
+    if nxt is not None and moment >= market_open(nxt):
+        return target, "intraday", (
+            f"{target} 的收盘数据在 {nxt} 09:30 开盘后已不是最新一根 K 线，"
+            f"此刻采集会把 {nxt} 的盘中数据写成 {target}（拒绝）"
+        )
+    return target, "collect", f"应采集 {target}（已收盘且仍是最新一根 K 线）"
+
+
 # ── CLI：给 workflow 用的唯一判断入口 ───────────────────────────
 # 存在的意义是「只有一处判断交易日的逻辑」。workflow 的 shell 里再写一份
 # `date +%u` / `$HOUR -lt 15`，两处迟早会漂移（而且已验证会漂移：
@@ -179,20 +266,76 @@ def check(day: datetime.date, min_hour: int | None = None, market: str = "A",
     return EXIT_PROCEED, f"{day} 是交易日，可以执行"
 
 
+def plan_outputs(now: datetime.datetime | None = None) -> dict:
+    """给 workflow 用的一份完整计划：每个市场该采集哪一天、要不要采集。
+
+    同时给出 gate 需要的 `expected_*`：**该市场最近一个已收盘交易日**。
+    采集被拒（intraday）不等于「今天没事」——gate 仍然要求那一天的 DONE 存在，
+    于是「跳过」和「通过」在语义上彻底分开（旧版把两者都当绿灯，这是丢数据
+    却没人发现的直接原因）。
+    """
+    moment = resolve_now(now)
+    out: dict[str, str] = {"now": moment.strftime("%Y-%m-%d %H:%M")}
+    for market, key in (("A", "a"), ("HK", "hk")):
+        target, mode, why = collection_target(moment, market)
+        expected = latest_closed_trading_day(moment, market)
+        out[f"target_{key}"] = target.isoformat() if target else ""
+        out[f"expected_{key}"] = expected.isoformat() if expected else ""
+        out[f"collect_{key}"] = "true" if mode == "collect" else "false"
+        out[f"mode_{key}"] = mode
+        out[f"reason_{key}"] = why
+    # 兼容旧调用方：collect 取 A 股口径
+    out["collect"] = out["collect_a"]
+    out["target"] = out["target_a"]
+    out["reason"] = out["reason_a"]
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="交易日历检查（workflow 的唯一判断入口）")
     sub = parser.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("check", help="检查某天是否可以执行")
+
+    p = sub.add_parser("check", help="检查某天是否可以执行（旧接口，保留兼容）")
     p.add_argument("--date", default=None, help="YYYY-MM-DD，默认取 DSM_CALENDAR_DATE 或今天")
     p.add_argument("--min-hour", type=int, default=None, help="早于这个北京时间小时数则跳过（如 15）")
     p.add_argument("--market", default="A", choices=["A", "HK"], help="市场（HK = 港股通）")
     p.add_argument("--at-hour", type=int, default=None, help="覆盖当前小时（便于测试时段分支）")
+
+    p_plan = sub.add_parser("plan", help="输出各市场的采集计划（供 workflow 写入 GITHUB_OUTPUT）")
+    p_plan.add_argument("--now", default=None, help="覆盖当前时间 ISO8601（便于测试）")
+    p_plan.add_argument("--json", action="store_true", help="以 JSON 输出，便于人工查看")
+
+    p_t = sub.add_parser("target", help="只打印某市场应采集的日期")
+    p_t.add_argument("--market", default="A", choices=["A", "HK"])
+    p_t.add_argument("--now", default=None, help="覆盖当前时间 ISO8601")
+
     args = parser.parse_args(argv)
 
+    if args.command == "plan":
+        moment = datetime.datetime.fromisoformat(args.now) if args.now else None
+        data = plan_outputs(moment)
+        if args.json:
+            import json
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+        else:
+            # 直接追加到 GITHUB_OUTPUT 的键值格式
+            for key, value in data.items():
+                print(f"{key}={value}")
+        return 0
+
+    if args.command == "target":
+        moment = datetime.datetime.fromisoformat(args.now) if args.now else None
+        target, mode, why = collection_target(moment, args.market)
+        print(why)
+        if target is None:
+            return 1
+        print(f"target={target.isoformat()} mode={mode}")
+        return 0
+
+    # check：保持既有语义与退出码
     day = resolve(args.date)
     code, message = check(day, args.min_hour, args.market, args.at_hour)
     if code == EXIT_UNKNOWN_YEAR:
-        # 让 workflow 日志里显眼，但仍按交易日放行
         print(f"::warning::{message}")
     print(message)
     return code

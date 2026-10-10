@@ -94,6 +94,87 @@ def test_resolve_env_override() -> None:
     print("  [PASS] DSM_CALENDAR_DATE / 显式参数可覆盖「今天」")
 
 
+# ── 目标日推导：这是「8 个交易日静默丢失」的回归守卫 ──────────────────
+# GitHub schedule 实测延迟 4~8 小时，北京的 16:30 触发点常在次日 00:00~02:00
+# 才落地。旧逻辑用「今天 + hour<15」判断，跨午夜后就变成「未到收盘」直接跳过，
+# 而 gate 把跳过当绿灯 —— 于是整天数据丢失且 Actions 全绿。
+
+def _at(text: str) -> datetime.datetime:
+    """'2026-10-09 01:00' -> 带北京时区的 datetime。"""
+    day, clock = text.split(" ")
+    hour, minute = (int(x) for x in clock.split(":"))
+    y, m, d = (int(x) for x in day.split("-"))
+    return datetime.datetime(y, m, d, hour, minute, tzinfo=tc.BJ_TZ)
+
+
+def test_target_crosses_midnight() -> None:
+    """跨午夜后目标日必须仍是**昨天**，不能被判成「今天还没收盘」。"""
+    # 10-08 当天 23:46（国庆后首个交易日，收盘已过）
+    target, mode, _ = tc.collection_target(_at("2026-10-08 23:46"), "A")
+    assert target == datetime.date(2026, 10, 8), f"当天晚间应采集当天，得到 {target}"
+    assert mode == "collect"
+
+    # 跨到次日 01:00 —— 旧逻辑在这里 return 0 并让 gate 放行
+    for clock in ("2026-10-09 01:00", "2026-10-09 02:00", "2026-10-09 08:00"):
+        target, mode, why = tc.collection_target(_at(clock), "A")
+        assert target == datetime.date(2026, 10, 8), f"{clock} 应仍以 10-08 为目标，得到 {target}"
+        assert mode == "collect", f"{clock} 应可采集（最新 K 线仍是 10-08）：{why}"
+    print("  [PASS] 跨午夜后目标日仍是前一交易日（不再静默跳过）")
+
+
+def test_target_refuses_intraday() -> None:
+    """开盘后必须拒绝采集：最新一根 K 线已是当日实时 bar。
+
+    不拒绝就会出现 2026-10-02 那种脏数据 —— 把上一交易日的收盘价
+    当成「今天」发布出去。
+    """
+    target, mode, why = tc.collection_target(_at("2026-10-09 10:00"), "A")
+    assert target == datetime.date(2026, 10, 8), "盘中时目标日仍是上一交易日"
+    assert mode == "intraday", f"盘中应拒绝采集，得到 {mode}"
+    assert "拒绝" in why
+
+    # 但 gate 要校验的那一天仍然是 10-08 —— 「不采集」不等于「不需要有数据」
+    assert tc.latest_closed_trading_day(_at("2026-10-09 10:00"), "A") == datetime.date(2026, 10, 8)
+    print("  [PASS] 盘中拒绝采集，但完成门仍要求上一交易日的 DONE")
+
+
+def test_target_holiday_and_weekend() -> None:
+    """节假日/周末的目标日是节前最后一个交易日（gate 因此自动绿灯）。"""
+    # 2026-10-05（周一，国庆假期）12:00 -> 09-30（周三）
+    target, mode, _ = tc.collection_target(_at("2026-10-05 12:00"), "A")
+    assert target == datetime.date(2026, 9, 30), f"国庆期间目标应为 09-30，得到 {target}"
+    assert mode == "collect"
+
+    # 2026-10-10（周六）12:00 -> 10-09（周五）
+    target, mode, _ = tc.collection_target(_at("2026-10-10 12:00"), "A")
+    assert target == datetime.date(2026, 10, 9), f"周六目标应为周五，得到 {target}"
+    assert mode == "collect"
+    print("  [PASS] 节假日/周末的目标日 = 节前最后一个交易日")
+
+
+def test_target_hk_closes_later() -> None:
+    """港股 16:00 收盘：15:30 时 A 股当天已收盘，港股还没。"""
+    moment = _at("2026-10-09 15:30")
+    a_target, _, _ = tc.collection_target(moment, "A")
+    hk_target, _, _ = tc.collection_target(moment, "HK")
+    assert a_target == datetime.date(2026, 10, 9), f"A 股 15:30 应已收盘，得到 {a_target}"
+    assert hk_target == datetime.date(2026, 10, 8), f"港股 15:30 尚未收盘，得到 {hk_target}"
+    print("  [PASS] A 股/港股收盘时刻不同，目标日各自推导")
+
+
+def test_plan_outputs_shape() -> None:
+    """plan 的键必须齐 —— workflow 直接把这些键当 GITHUB_OUTPUT 用。"""
+    data = tc.plan_outputs(_at("2026-10-09 01:00"))
+    for key in ("target_a", "expected_a", "collect_a", "mode_a",
+                "target_hk", "expected_hk", "collect_hk", "mode_hk",
+                "target", "collect", "reason"):
+        assert key in data, f"plan 缺少键 {key}"
+    assert data["expected_a"] == "2026-10-08"
+    assert data["collect_a"] == "true"
+    assert data["target"] == data["target_a"]
+    print("  [PASS] plan 输出键齐全，可直接写入 GITHUB_OUTPUT")
+
+
 def main() -> int:
     print("交易日历结构自检")
     print("=" * 58)
@@ -103,6 +184,11 @@ def main() -> int:
     test_known_2026_days()
     test_check_exit_codes()
     test_resolve_env_override()
+    test_target_crosses_midnight()
+    test_target_refuses_intraday()
+    test_target_holiday_and_weekend()
+    test_target_hk_closes_later()
+    test_plan_outputs_shape()
     print("=" * 58)
     print("全部通过")
     return 0

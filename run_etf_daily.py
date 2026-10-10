@@ -10,7 +10,6 @@
     python run_etf_daily.py
 """
 
-import datetime
 import os
 import sys
 import time
@@ -39,17 +38,14 @@ def main():
     elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
         sys.stdout.reconfigure(encoding="utf-8")
 
-    today_date = trading_calendar.resolve()
-    today = today_date.strftime("%Y-%m-%d")
-
-    # 护栏必须在建目录之前：非交易日不建目录、不生成报告、不写 DONE
-    if not trading_calendar.is_trading_day(today_date, market="A"):
-        print(f"{today} 非交易日（{trading_calendar.reason(today_date, 'A')}），"
-              f"收盘数据与上一交易日一致，跳过本次运行")
+    # 目标日 = 最近一个「已收盘且收盘价仍是最新一根 K 线」的交易日（见 run_daily.py）
+    target, mode, why = trading_calendar.collection_target(market="A")
+    if target is None:
+        print(why)
         return 0
-    now_bj = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
-    if now_bj.hour < 15:
-        print(f"北京时间 {now_bj:%H:%M} 早于15:00，当日收盘数据尚未生成，跳过本次运行")
+    today = target.strftime("%Y-%m-%d")
+    if mode != "collect":
+        print(f"{why}；本轮不采集，完成门仍会校验 {today} 的 DONE")
         return 0
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -73,13 +69,21 @@ def main():
 
     wlog(f"===== 开始每日ETF指标任务 {today} =====")
 
+    universe = "eastmoney"
     try:
         if not already_done(etf_csv):
             wlog(f"步骤1: 获取场内规模前{DEFAULT_TOP}的ETF...")
-            fetch_etf.run(top=DEFAULT_TOP, out_path=etf_csv, log_file=log_file)
-            wlog(f"步骤1完成 -> {etf_csv}")
+            try:
+                fetch_etf.run(top=DEFAULT_TOP, out_path=etf_csv, log_file=log_file, note=wlog)
+            except Exception as exc:
+                wlog(f"步骤1失败({type(exc).__name__}: {exc})，降级为观察池历史名单")
+                stock_pool.list_from_pool(OUTPUT_DIR, etf_csv, today, prefix="etf_list")
+                universe = "pool-fallback"
+                print("::warning::ETF 名单接口不可用，已降级为观察池历史名单")
+            wlog(f"步骤1完成 -> {etf_csv}（名单来源: {universe}）")
         else:
             wlog(f"步骤1已存在，跳过 -> {etf_csv}")
+            universe = "reused"
 
         wlog("步骤2: 计算 KDJ-J(日/周/月)...")
         wlog("步骤2: 计算指标...")
@@ -101,16 +105,18 @@ def main():
             extra_md=summ["md"] if summ else None)
         wlog(f"步骤3完成 -> {html_path}")
 
+        # 质量门必须在发邮件之前（见 run_daily.py 的说明）
+        report = quality.assess(metrics_csv, mstats["expected"], mstats,
+                                expected_date=today)
+        if not report.ok:
+            wlog(f"数据质量门未通过：{report.checks}")
+            return quality.fail(day_dir, "ETF", report)
+
         wlog("步骤4: 发送邮件报告...")
         ok = send_email.send_report(html_path, subject=f"ETF KDJ 多周期信号报告 - {today}")
         wlog(f"步骤4完成: {'邮件已发送' if ok else '邮件发送失败(请检查 email_config.py 配置)'}")
 
-        # 质量门是写 DONE 的唯一出口
-        report = quality.assess(metrics_csv, mstats["expected"], mstats)
-        if not report.ok:
-            wlog(f"数据质量门未通过：{report.checks}")
-            return quality.fail(day_dir, "ETF", report)
-        quality.succeed(day_dir, "ETF", today, report)
+        quality.succeed(day_dir, "ETF", today, report, extra={"universe": universe})
         wlog(f"===== 全部完成 {today} =====")
         return 0
     except Exception as e:
