@@ -52,9 +52,57 @@ _PROXY = None
 
 # 全局 K 线请求节流。8 线程 × 每标的 3 个周期，不节流约 50 次/秒 ——
 # 实测会把腾讯打到限流，随后整批标的失败（见 fetch_kline 的说明）。
+# 注意：日更路径现在每标的只有 1 个周期（周/月已改为本地聚合），
+# 请求数 339 → 113，节流下限 102s → 34s。
 KLINE_LIMITER = http_util.RateLimiter(http_util.request_interval())
 
 FIVE_YEARS_BARS = 1210
+
+# ── 价格源「整批封锁」的快速失败 ──────────────────────────────────────
+#
+# 实测腾讯对云厂商出口 IP（以及被判定为爬虫的住宅 IP）会返回
+# **501 + JS 挑战页**（body 是 `var i=location.href;var v=window.btoa?...`），
+# 两个 host 同时如此。这是主机/IP 级封锁，不是瞬时限流 —— 对退避**完全免疫**。
+#
+# 代价是可量的：`fetch_kline` 每只标的有 3 次尝试 + 1s/2s 退避，8 线程下
+# 113 只实测要烧 **106.9 秒**，而成功 0 只、不写 DONE、整天数据仍要等下一个
+# 触发点。也就是说这 107 秒是纯浪费（三个市场加起来约 320 秒），
+# 而它挤占的正是「下一个触发点更早开始重试」的机会。
+#
+# 正确的反应与 HostPool 的结论一致：**快速放弃整轮**。
+# 只统计网络/HTTP 层异常（requests 异常 + 预算耗尽），**不统计**
+# 「响应中没有 K 线数据」这类个股自身的 ValueError —— 否则一串停牌股
+# 就能误触发整轮中止。
+PRICE_ABORT_AFTER = 8
+_price_lock = threading.Lock()
+_price_fail_streak = 0
+_price_aborted = False
+
+
+def _price_note(ok: bool) -> bool:
+    """记录一次价格源结果。返回「是否已触发整轮中止」。"""
+    global _price_fail_streak, _price_aborted
+    with _price_lock:
+        if ok:
+            _price_fail_streak = 0
+            return _price_aborted
+        _price_fail_streak += 1
+        if _price_fail_streak >= PRICE_ABORT_AFTER:
+            _price_aborted = True
+        return _price_aborted
+
+
+def _price_reset() -> None:
+    global _price_fail_streak, _price_aborted
+    with _price_lock:
+        _price_fail_streak = 0
+        _price_aborted = False
+
+
+def _is_source_failure(exc: BaseException) -> bool:
+    """是否属于「价格源本身不可用」（而不是这只标的没数据）。"""
+    import requests
+    return isinstance(exc, (requests.RequestException, http_util.DeadlineExceeded))
 
 
 def _detect_proxy():
@@ -427,6 +475,11 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock,
     rank_raw = row.get("排名")
     rank_tag = f"{int(rank_raw):>3}" if pd.notna(rank_raw) else " ---"
 
+    # 价格源已被判定为整批封锁（见 PRICE_ABORT_AFTER）：不再为剩下的标的白烧
+    # 3 次尝试 + 3 秒退避。它们会被计为失败，run() 随后抛出显式的封锁错误。
+    if _price_aborted:
+        return None
+
     try:
         # 只抓**日线**一趟，周线/月线在本地聚合（见 resample_period 的两条理由）。
         # 这里原来是 3 次请求 + 每次 0.15s sleep：113 只 ≈ 339 次请求，
@@ -491,12 +544,19 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock,
         log(f"[{rank_tag}] {code} {name}  完成  "
             f"日J={rec['日线J']} 周J={rec['周线J']} 月J={rec['月线J']}{ma_str}{close_str}  "
             f"PE={rec['PE_TTM']}({rec['PE历史分位%']}%) PB={rec['PB_MRQ']}({rec['PB历史分位%']}%)")
+        # 成功即清零连续失败计数（与 HostPool 的「成功一次就恢复主机」同一思路）
+        _price_note(True)
         # 返回实际数据日期（truthy）而不是 True：runner 需要它做完整性校验
         return rec["数据日期"] or True
     except Exception as e:
         # 失败**不写**占位行（原来会写一行全 None），只记到失败明细里。
         _note_failure(code, name, e, fail_log, fail_lock)
         log(f"[{rank_tag}] {code} {name}  失败: {e}", log_file)
+        # 只有「价格源本身不可用」才计入整批封锁判定；个股自身的问题（停牌 /
+        # 响应里没有 K 线）不计入，否则一串停牌股就能误触发整轮中止。
+        if _is_source_failure(e) and _price_note(False):
+            log(f"价格源连续 {PRICE_ABORT_AFTER} 只标的失败 → 判定为整批封锁，"
+                f"中止本轮剩余标的（不再白烧 3 次尝试 × 3 秒退避）", log_file)
         return None
 
 
@@ -525,6 +585,10 @@ def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FIL
     done = load_done_codes(out_csv, market)
     if done:
         log(f"检测到已完成 {len(done)} 条，跳过续跑", log_file)
+
+    # 每次 run() 都重置封锁判定：它是「本轮价格源是否可用」的进程内状态，
+    # 跨轮残留会让下一轮在第一个标的上就误判。
+    _price_reset()
 
     todo = [row for _, row in top.iterrows()
             if (str(row["代码"]) if market == "HK" else str(row["代码"]).zfill(6)) not in done]
@@ -577,6 +641,14 @@ def run(in_csv=DEFAULT_IN_CSV, out_csv=DEFAULT_OUT_CSV, log_file=DEFAULT_LOG_FIL
     # 于是「全灭」这条路径抛的是 NameError: name 'expected' is not defined ——
     # 恰恰在最需要真实原因的时候把它盖掉了。
     if n_ok == 0 and not done:
+        if _price_aborted:
+            raise RuntimeError(
+                f"价格源整批封锁：连续 {PRICE_ABORT_AFTER} 只标的都在网络/HTTP 层失败，"
+                f"已中止本轮剩余 {max(0, len(todo) - PRICE_ABORT_AFTER)} 只标的（不再白烧退避）。"
+                f"实测腾讯对云厂商出口 IP 会返回 501 + JS 挑战页，两个 host 同时如此 ——"
+                f"这是主机/IP 级封锁，退避对它无效，正确做法是等下**不同时刻**的触发点重试。"
+                f"失败明细：{fail_log}"
+            )
         raise RuntimeError(
             f"所有 {expected} 只标的的指标都抓取失败（成功 0）——"
             f"通常是数据源限流或网络封锁，请查看失败明细 {fail_log}"

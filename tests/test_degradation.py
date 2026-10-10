@@ -26,6 +26,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -567,6 +568,77 @@ def test_watchlist_rewrite_is_byte_stable() -> None:
         shutil.rmtree(root, ignore_errors=True)
 
 
+def test_price_source_block_fails_fast() -> None:
+    """价格源整批封锁时必须**快速放弃整轮**，而不是为每只标的白烧退避。
+
+    实测腾讯对云厂商出口 IP 返回 501 + JS 挑战页（两个 host 同时），
+    而 fetch_kline 每只标的有 3 次尝试 + 1s/2s 退避 —— 8 线程下 113 只实测
+    要烧 **106.9 秒**，成功 0 只、整天数据仍要等下一个触发点。这 107 秒纯属浪费，
+    而它挤占的正是「下一个触发点更早开始重试」的机会。
+
+    这条守卫同时钉住两件事：
+      1. 连续网络层失败 → 中止（不把 113 只跑完）；
+      2. **个股自身的问题**（响应里没有 K 线）不触发中止 —— 否则一串停牌股
+         就能让整轮提前放弃。
+    """
+    root = tempfile.mkdtemp(prefix="dsm-priceblock-")
+    try:
+        in_csv = os.path.join(root, "list.csv")
+        out_csv = os.path.join(root, "metrics.csv")
+        n = 60
+        pd.DataFrame({
+            "排名": list(range(1, n + 1)),
+            "代码": [f"{600000 + i:06d}" for i in range(n)],
+            "名称": [f"样本{i:03d}" for i in range(n)],
+        }).to_csv(in_csv, index=False, encoding="utf-8-sig")
+
+        calls = {"n": 0}
+
+        def blocked_kline(session, code, period, bars=800, market="A", attempts=3):
+            calls["n"] += 1
+            raise requests.HTTPError("501 Server Error: Not Implemented")
+
+        with mock.patch.object(fetch_metrics, "fetch_kline", blocked_kline):
+            t0 = time.monotonic()
+            try:
+                fetch_metrics.run(in_csv=in_csv, out_csv=out_csv, log_file=None,
+                                  market="A", workers=8)
+            except RuntimeError as exc:
+                message = str(exc)
+            else:
+                raise AssertionError("整批封锁时应当抛 RuntimeError（不写 DONE）")
+            elapsed = time.monotonic() - t0
+
+        assert "整批封锁" in message, f"错误信息应点明封锁：{message[:160]}"
+        # 只试到阈值附近（并发有竞态，给一倍余量），绝不跑满 60 只
+        assert calls["n"] <= fetch_metrics.PRICE_ABORT_AFTER * 2, (
+            f"应只尝试约 {fetch_metrics.PRICE_ABORT_AFTER} 只，实际 {calls['n']} 只")
+        assert calls["n"] < n, "没有真的提前中止"
+        assert elapsed < 5, f"中止应在一秒级完成，实际 {elapsed:.1f}s"
+
+        # 对照：个股自身的「响应中没有 K 线」不该触发整轮中止
+        calls2 = {"n": 0}
+
+        def nodata_kline(session, code, period, bars=800, market="A", attempts=3):
+            calls2["n"] += 1
+            raise ValueError(f"{code} {period} 响应中没有 K 线数据")
+
+        with mock.patch.object(fetch_metrics, "fetch_kline", nodata_kline):
+            try:
+                fetch_metrics.run(in_csv=in_csv, out_csv=os.path.join(root, "m2.csv"),
+                                  log_file=None, market="A", workers=8)
+            except RuntimeError as exc:
+                msg2 = str(exc)
+            else:
+                raise AssertionError("全无数据时仍应抛错")
+        assert "整批封锁" not in msg2, "个股没数据不该被误判成价格源封锁"
+        assert calls2["n"] == n, f"个股级失败应逐只试完，实际只试了 {calls2['n']}/{n}"
+        print(f"  [PASS] 价格源整批封锁 → {calls['n']} 次尝试即中止（{elapsed:.2f}s，"
+              f"对照：个股级失败仍逐只试满 {calls2['n']} 只）")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def main() -> int:
     print("降级链路端到端自检")
     print("=" * 58)
@@ -581,6 +653,7 @@ def main() -> int:
     test_digest_only_includes_markets_that_passed_the_gate()
     test_homepage_backtest_card_shows_excess_not_bare_win_rate()
     test_watchlist_rewrite_is_byte_stable()
+    test_price_source_block_fails_fast()
     print("=" * 58)
     print("全部通过")
     return 0
