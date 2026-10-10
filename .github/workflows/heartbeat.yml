@@ -37,28 +37,19 @@ jobs:
           TARGET_A=$(sed -n 's/^expected_a=//p' /tmp/plan.txt)
           TARGET_HK=$(sed -n 's/^expected_hk=//p' /tmp/plan.txt)
 
-          MISSING=""
-          for pair in "output:${TARGET_A}" "output_etf:${TARGET_A}" "output_hk:${TARGET_HK}"; do
-            d="${pair%%:*}"; day="${pair##*:}"
-            if [ -z "$day" ]; then
-              echo "::error::$d 无法确定目标交易日，心跳无法判断，失败退出"
-              exit 1
-            fi
-            code=$(curl -sS -o /dev/null -w "%{http_code}" \
-              -H "Authorization: Bearer $TOKEN" \
-              "https://api.github.com/repos/$REPO/contents/$d/$day/DONE?ref=main")
-            case "$code" in
-              200) ;;
-              404) MISSING="$MISSING $d@$day" ;;   # 只有 404 才等于「确实缺失」
-              *) echo "::error::探测 $d/$day/DONE 返回 HTTP $code（令牌权限或网络问题），\
-          心跳无法判断，失败退出"; exit 1 ;;
-            esac
-          done
-          if [ -z "$MISSING" ]; then
+          # 与 daily.yml 用**同一个**完成门实现（gate.py），不再在 shell 里抄一份
+          # 「哪些市场缺数据」的循环 —— 那份循环此前在仓库里有三处拷贝。
+          # checkout 已经把 main 的内容取到本地，所以本地判断与远端一致；
+          # lookback=0 是刻意的：心跳只回答「目标日缺不缺」，补空洞是 daily.yml 的事。
+          # gate.py 在 lookback=0 时不需要 pandas，因此心跳不必安装依赖。
+          if python3 gate.py --expected-a "$TARGET_A" --expected-hk "$TARGET_HK" \
+                             --lookback 0 --json > /tmp/gate.json; then
+            cat /tmp/gate.json
             echo "目标交易日 A/ETF=${TARGET_A} HK=${TARGET_HK} 均已完成，心跳无需动作"
             exit 0
           fi
-          echo "缺少 DONE 标记:$MISSING，补触发 daily-metrics"
+          cat /tmp/gate.json
+          echo "::warning::目标交易日缺数据，补触发 daily-metrics"
 
           # 必须校验返回码：原来不检查，403（令牌 scope 不足）也会打印「已发送」，
           # 于是兜底机制静默失效而无人察觉。

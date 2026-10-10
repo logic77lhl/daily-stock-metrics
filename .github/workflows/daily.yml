@@ -81,6 +81,7 @@ jobs:
           python tests/test_buy_list.py
           python tests/test_backtest.py
           python tests/test_degradation.py
+          python tests/test_gate.py
 
       # 目标日的**唯一**判断入口。输出 target_a/target_hk（应采集的交易日）、
       # expected_a/expected_hk（gate 要求必须存在 DONE 的交易日）与 collect_* 开关。
@@ -175,50 +176,10 @@ jobs:
           TARGET_HK: ${{ steps.target.outputs.expected_hk }}
         run: python build_pages.py
 
-      # 完成检查只产出结论，不在这里退出：真正的红/绿由最后的 gate 决定，
-      # 这样「已成功市场的产出先提交」与「整体判红」不再互斥。
-      #
-      # 关键：**没有「非交易日 → 放行」这条分支了**。expected_* 永远是真实的
-      # 交易日，节假日时它等于节前最后一个交易日 —— 那天的 DONE 早就存在，
-      # 所以节假日自动绿灯；而「因为跨午夜/接口故障而没跑」会实打实地判红。
-      - name: Check daily completion
-        id: completion
-        if: always()
-        env:
-          TARGET_A: ${{ steps.target.outputs.expected_a }}
-          TARGET_HK: ${{ steps.target.outputs.expected_hk }}
-        run: |
-          MISSING=""
-          for pair in "output:${TARGET_A}" "output_etf:${TARGET_A}" "output_hk:${TARGET_HK}"; do
-            d="${pair%%:*}"; day="${pair##*:}"
-            if [ -z "$day" ]; then
-              echo "::error::$d 无法确定目标交易日"
-              MISSING="$MISSING $d@?"
-              continue
-            fi
-            if ! python quality.py check "$d/$day/DONE"; then
-              MISSING="$MISSING $d@$day"
-            fi
-          done
-          if [ -n "$MISSING" ]; then
-            if [ "$MODE" = "site-only" ]; then
-              # site-only 是**显式**的「只重建站点」，本轮根本没尝试采集，
-              # 所以缺数据不算失败（站点首页的红色横幅仍然会如实列出）。
-              # 注意这与旧版「把跳过当绿灯」的区别：那是**意外**跳过、
-              # 且没有任何人知道；这里是用户主动选择、且页面上可见。
-              echo "::warning::site-only 模式：以下市场缺目标交易日数据（未尝试采集）:$MISSING"
-              echo "complete=n/a" >> "$GITHUB_OUTPUT"
-              echo "missing=$MISSING" >> "$GITHUB_OUTPUT"
-            else
-              echo "::error::以下市场在目标交易日缺有效 DONE:$MISSING"
-              echo "complete=false" >> "$GITHUB_OUTPUT"
-              echo "missing=$MISSING" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "全部市场在目标交易日均已完成"
-            echo "complete=true" >> "$GITHUB_OUTPUT"
-            echo "missing=" >> "$GITHUB_OUTPUT"
-          fi
+      # 完成检查与红/绿裁决已合并到最后的 `Completion gate`（gate.py）：
+      # 原来这里先算出一个 complete 结论、最后再据此决定退出码，两段都在 bash 里，
+      # 而「哪些市场缺数据」的循环还有第三份拷贝。判据写三遍必然漂移，且最关键
+      # 的安全逻辑只能靠 CI 验证。现在只剩一处、且可单测。
 
       # 无论是否完整都提交已成功的产出：旧版 Check 步骤先 exit 1，
       # 于是「一个市场失败」被放大成「当天全部产物丢失」，远端永远缺这一天
@@ -290,18 +251,26 @@ jobs:
         if: always() && steps.build.outcome == 'success'
         uses: actions/deploy-pages@v4
 
-      # 唯一的红/绿裁决点。瞬时抖动 → Retry 补跑成功 → DONE 有效 → 绿；
-      # 真正的缺陷（或跨午夜静默跳过）→ 目标交易日始终没有 DONE → 红。
-      - name: Enforce completion gate
+      # 唯一的红/绿裁决点。原来这里是**两段** bash：一段算出 complete、另一段
+      # 据此决定退出码，而「哪些市场缺数据」的循环在别处还抄了第三份。现在收敛
+      # 到 gate.py —— 它可以在本地直接跑，也能单测（见 tests/test_gate.py）。
+      #
+      # 它同时管两件事：
+      #   1. 目标交易日必须有有效 DONE（瞬时抖动 → 下一个 cron 补跑成功 → 绿；
+      #      真正的缺陷 → 始终没有 DONE → 红）；
+      #   2. **回看窗口内不能有空洞**。旧版只校验「最近一个交易日」，于是某天一旦
+      #      永久丢失，它只在当天被判红，之后目标日往前滚动，那天再也不会被检查
+      #      —— 缺口永远留在站点上而 CI 全绿。这正是 2026-09 静默停摆三周的同一
+      #      类缺陷，只是窗口从三周缩到了一天。
+      #
+      # 空洞的判据锚在 metrics CSV 上而不是 DONE 的格式：DONE 在 2026-09-21 变过
+      # 一次格式（旧版只有一个时间戳、19 字节），用 DONE 判空洞会把 08-21~09-18
+      # 这 21 个旧格式日全部误判成缺失。
+      - name: Completion gate
         if: always()
-        run: |
-          if [ "${{ steps.completion.outputs.complete }}" = "true" ]; then
-            echo "全部市场完成，通过"
-            exit 0
-          fi
-          if [ "${{ steps.completion.outputs.complete }}" = "n/a" ]; then
-            echo "site-only 模式：未尝试采集，跳过完成门（缺数据已在站点横幅上标出）"
-            exit 0
-          fi
-          echo "::error::目标交易日 A/ETF=${{ steps.target.outputs.expected_a }} HK=${{ steps.target.outputs.expected_hk }} 仍有市场未完成：${{ steps.completion.outputs.missing }}"
-          exit 1
+        env:
+          TARGET_A: ${{ steps.target.outputs.expected_a }}
+          TARGET_HK: ${{ steps.target.outputs.expected_hk }}
+          MODE: ${{ env.MODE }}
+          DSM_GATE_LOOKBACK: "5"
+        run: python gate.py
