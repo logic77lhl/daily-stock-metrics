@@ -90,8 +90,10 @@ jobs:
         id: target
         run: |
           python trading_calendar.py plan >> "$GITHUB_OUTPUT"
-          echo "目标(采集): A/ETF=${{ steps.target.outputs.target_a }} HK=${{ steps.target.outputs.target_hk }}"
-          echo "目标(校验): A/ETF=${{ steps.target.outputs.expected_a }} HK=${{ steps.target.outputs.expected_hk }}"
+          # 同一步骤里 `${{ steps.target.outputs.* }}` 仍然是空的 —— 模板表达式在
+          # 步骤开始前就求值了，那时 outputs 还没写。所以这里直接回显 plan 的结果
+          # （而不是引用自己的 outputs，那会打印出「A/ETF= HK=」这种误导性空值）。
+          python trading_calendar.py plan --json
 
       - name: Run A股 daily
         if: env.MODE != 'site-only' && steps.target.outputs.collect_a == 'true'
