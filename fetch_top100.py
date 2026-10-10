@@ -38,10 +38,14 @@ def get_session():
 
 # 主机级封锁（整批 RemoteDisconnected）对退避重试免疫，所以这里用带退役机制的池：
 # 快速失败，把重试机会留给 workflow 的重试步骤和下一个 cron（不同时刻才有意义）。
-POOL = http_util.HostPool(HOSTS, label="fetch_top100", retire_after=2)
+#
+# rounds=1 + retire_after=1：每个主机只试一次。原来的 rounds=2 意味着
+# 「同一批主机在同一分钟内再打一遍」—— 而代码自己的结论就是这种重试价值≈0
+# （见 HostPool 的说明）。实测 A 股名单步骤因此要花 259~348s。
+POOL = http_util.HostPool(HOSTS, label="fetch_top100", retire_after=1)
 
 
-def fetch_top100(rounds=2, note=None):
+def fetch_top100(rounds=1, note=None, deadline=None):
     params = {
         "pn": 1,
         "pz": 100,
@@ -55,12 +59,15 @@ def fetch_top100(rounds=2, note=None):
     }
     # diff_list 统一了 null / dict-map / list 三种形状；形状不可用会触发重试，
     # 而不是把坏数据交给 DataFrame 组装阶段去崩。
+    # deadline：名单只是成分，超预算就立刻降级到观察池，不再干等（见 list_deadline）。
     return POOL.fetch(get_session(), params=params, accept=http_util.diff_list,
-                      rounds=rounds, note=note)
+                      rounds=rounds, note=note,
+                      deadline=deadline or http_util.list_deadline(),
+                      timeout=http_util.LIST_TIMEOUT)
 
 
-def build_dataframe(top=100, note=None):
-    data = fetch_top100(note=note)
+def build_dataframe(top=100, note=None, deadline=None):
+    data = fetch_top100(note=note, deadline=deadline)
     rows = []
     for item in data:
         rows.append({
@@ -83,13 +90,14 @@ def build_dataframe(top=100, note=None):
     return df
 
 
-def run(top=100, out_path=None, log_file=None, note=None):
+def run(top=100, out_path=None, log_file=None, note=None, deadline=None):
     """与 fetch_etf.run / fetch_hk.run 保持同一签名，供统一 runner 调用。
 
     log_file 在这里未被使用（A 股名单只有一次请求、没有翻页进度可记）；
     保留参数是为了三个市场能走同一段编排代码，而不是为差异再开一个分支。
+    deadline 由 runner 传入（整个「取名单」步骤的共享预算）。
     """
-    df = build_dataframe(top=top, note=note)
+    df = build_dataframe(top=top, note=note, deadline=deadline)
     if out_path is None:
         out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "top100.csv")
     df.to_csv(out_path, index=False, encoding="utf-8-sig")

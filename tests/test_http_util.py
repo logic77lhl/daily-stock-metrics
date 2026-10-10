@@ -167,12 +167,85 @@ def test_accept_callbacks_validate_shape() -> None:
     print("  [PASS] diff 形状归一化与 accept 校验正确（null/dict-map/list）")
 
 
+class _Budget:
+    """可耗尽预算：每次 remaining() 递减，模拟「请求本身很慢」。"""
+
+    def __init__(self, budget):
+        self._left = budget
+        self.slept = []
+
+    def remaining(self):
+        return self._left
+
+    def spend(self, seconds):
+        self._left -= seconds
+
+    def sleep(self, seconds, why=""):
+        self.slept.append(seconds)
+
+
+def test_host_pool_stops_when_budget_exhausted() -> None:
+    """预算耗尽后必须停止尝试剩余主机 —— 这是「取名单 259~348s」那条账的防线。
+
+    实测：2026-10-09 三次 A 股运行里「取名单」花了 348s / 348s / 259s，而整个
+    「抓 113 只标的指标」只要 52s。名单失败有观察池降级路径，所以正确的反应是
+    快速失败并降级，而不是把 4 台主机（×2 轮）挨个等一遍。
+
+    为什么必须由测试钉死：这条预算失效时的表现只是「变慢」，不会报错；
+    而它恰好是整轮运行里最大的一块时间。
+    """
+    session = _FakeSession(failing_hosts=HOSTS)
+    pool = http_util.HostPool(HOSTS, label="test", retire_after=1)
+    budget = _Budget(0.0)          # 一上来就没预算
+
+    try:
+        pool.fetch(session, params={}, rounds=1, deadline=budget)
+    except http_util.DeadlineExceeded:
+        pass
+    else:
+        raise AssertionError("预算耗尽时必须抛 DeadlineExceeded（runner 靠它降级）")
+
+    assert session.calls == [], f"预算为 0 时不该发起任何请求，实际 {session.calls}"
+
+    # 对照：有预算时会把 4 台主机都试一遍（而不是只试第一台就放弃）
+    session2 = _FakeSession(failing_hosts=HOSTS)
+    pool2 = http_util.HostPool(HOSTS, label="test", retire_after=1)
+    rich = _Budget(1000.0)
+    try:
+        pool2.fetch(session2, params={}, rounds=1, deadline=rich)
+    except http_util.requests.ConnectionError:
+        pass
+    assert len(session2.calls) == 4, (
+        f"有预算时应试满 4 台主机，实际 {len(session2.calls)} 台")
+    print("  [PASS] 名单预算耗尽即停止（0 次请求），有预算时仍试满 4 台主机")
+
+
+def test_list_deadline_default_and_env() -> None:
+    """取名单的预算必须可配置，且默认值是 45s。"""
+    import os
+    from unittest import mock
+    with mock.patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("DSM_LIST_DEADLINE_SEC", None)
+        assert http_util.list_deadline().budget == http_util.DEFAULT_LIST_DEADLINE
+    with mock.patch.dict(os.environ, {"DSM_LIST_DEADLINE_SEC": "12.5"}):
+        assert http_util.list_deadline().budget == 12.5
+    with mock.patch.dict(os.environ, {"DSM_LIST_DEADLINE_SEC": "abc"}):
+        # 非法值必须回退到默认，而不是变成 0（那会让名单步骤永远直接降级）
+        assert http_util.list_deadline().budget == http_util.DEFAULT_LIST_DEADLINE
+    assert http_util.LIST_TIMEOUT[1] < http_util.DEFAULT_TIMEOUT[1], (
+        "名单请求的读超时必须比默认更紧，否则滴流响应会把预算撑破")
+    print(f"  [PASS] 名单预算默认 {http_util.DEFAULT_LIST_DEADLINE:.0f}s、"
+          f"可用 DSM_LIST_DEADLINE_SEC 覆盖、非法值回退默认")
+
+
 def main() -> int:
     print("HTTP 层离线自检")
     print("=" * 58)
     test_get_json_rejects_module()
     test_host_pool_retires_and_fails_fast()
     test_host_pool_survives_one_bad_host()
+    test_host_pool_stops_when_budget_exhausted()
+    test_list_deadline_default_and_env()
     test_rate_limiter_enforces_min_interval()
     test_host_pool_recovers_after_success()
     test_make_session_carries_browser_headers()

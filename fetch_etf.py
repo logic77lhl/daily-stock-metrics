@@ -166,10 +166,10 @@ def classify_theme(name, track_index):
     return "其他"
 
 
-POOL = http_util.HostPool(HOSTS, label="fetch_etf", retire_after=2)
+POOL = http_util.HostPool(HOSTS, label="fetch_etf", retire_after=1)
 
 
-def fetch_etf_list(top, rounds=2, note=None):
+def fetch_etf_list(top, rounds=1, note=None, deadline=None):
     params = {
         "pn": 1,
         "pz": 100,
@@ -181,17 +181,30 @@ def fetch_etf_list(top, rounds=2, note=None):
         "fs": "b:MK0021",
         "fields": "f12,f14,f2,f3,f6,f20,f21",
     }
+    # rounds=1 + deadline：名单失败有观察池降级路径，没有理由为它干等
+    # （A 股那边实测 259~348s，见 http_util.list_deadline）。
     data = POOL.fetch(get_session(), params=params, accept=http_util.diff_list,
-                      rounds=rounds, note=note)
+                      rounds=rounds, note=note,
+                      deadline=deadline or http_util.list_deadline(),
+                      timeout=http_util.LIST_TIMEOUT)
     # 用 _num：停牌行返回 "-"，原来的 `or 0` 会把字符串留在 key 里导致 TypeError
     data.sort(key=lambda x: _num(x.get("f20")), reverse=True)
     return data[:top]
 
 
-def fetch_fund_basic(session, code, retries=2):
-    """抓 F10 基金概况页。timeout 收紧为 (连接, 读取)，避免滴流响应拖死单步。"""
+def fetch_fund_basic(session, code, retries=2, deadline=None):
+    """抓 F10 基金概况页。timeout 收紧为 (连接, 读取)，避免滴流响应拖死单步。
+
+    deadline：这一步是**按标的**串行/并发发起的（最多 200 只 × 2 次尝试），
+    是「取名单」步骤里唯一可能真正吃满时间的部分，所以整个步骤的预算在这里生效：
+    预算耗尽就不再发起新的请求，让 build_dataframe 拿不到跟踪标的降级，
+    而不是让 runner 卡在名单步骤上（A 股那边实测卡了 259~348s）。
+    """
+    deadline = deadline or http_util.list_deadline()
     last_err = None
     for i in range(retries):
+        if deadline.remaining() <= 0:
+            return None, None, None
         try:
             r = session.get(F10_TEMPLATE.format(code=code), headers=F10_HEADERS,
                             timeout=(5, 10))
@@ -214,13 +227,14 @@ def _thread_session():
     return session
 
 
-def build_dataframe(top=100, log_file=None, note=None):
+def build_dataframe(top=100, log_file=None, note=None, deadline=None):
     # 为了按跟踪指数去重，要多取一些。原来取 3 倍（至少 300）——每多取一只就要多抓
     # 一次 F10 页面，串行时最坏约 4 小时，单这一步就能吃光 job 的 180 分钟上限。
     # 2 倍（至少 160）在去重后仍能取满 top，请求量少一半。
     raw_top = max(top * 2, 160)
+    deadline = deadline or http_util.list_deadline()
     print(f"获取ETF列表(先取规模前{raw_top}只, 按跟踪指数去重后取前{top}只)...")
-    etf_list = fetch_etf_list(raw_top, note=note)
+    etf_list = fetch_etf_list(raw_top, note=note, deadline=deadline)
 
     def wlog(msg):
         print(msg)
@@ -232,7 +246,8 @@ def build_dataframe(top=100, log_file=None, note=None):
     # 因此并发是安全的；结果按输入顺序回填，后续排序逻辑不受影响。
     with ThreadPoolExecutor(max_workers=6) as pool:
         basics = list(pool.map(
-            lambda item: fetch_fund_basic(_thread_session(), str(item["f12"])),
+            lambda item: fetch_fund_basic(_thread_session(), str(item["f12"]),
+                                          deadline=deadline),
             etf_list,
         ))
 
@@ -278,10 +293,10 @@ def build_dataframe(top=100, log_file=None, note=None):
     return df
 
 
-def run(top=100, out_path=None, log_file=None, note=None):
+def run(top=100, out_path=None, log_file=None, note=None, deadline=None):
     if out_path is None:
         out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "etf_top100.csv")
-    df = build_dataframe(top=top, log_file=log_file, note=note)
+    df = build_dataframe(top=top, log_file=log_file, note=note, deadline=deadline)
     df.to_csv(out_path, index=False, encoding="utf-8-sig")
     print(f"已导出 {len(df)} 条ETF数据到 {out_path}")
     return out_path

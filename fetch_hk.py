@@ -46,26 +46,31 @@ def get_session():
     return http_util.make_session(HEADERS)
 
 
-POOL = http_util.HostPool(HOSTS, label="fetch_hk", retire_after=2)
+POOL = http_util.HostPool(HOSTS, label="fetch_hk", retire_after=1)
 
 
-def fetch_hk_list(session, rounds=2, note=None):
+def fetch_hk_list(session, rounds=1, note=None, deadline=None):
     """港股通标的列表。
 
     原来是「12 轮 × 4 主机」（最坏约 48 次尝试）或「4 轮 × 4 主机 + 14s sleep」，
     与 A股/ETF 那套 12 次 + 289s sleep 的参数相差 9 倍 —— 同一故障、同一分钟，
     放弃时间却完全不同，说明参数是拍出来的而不是按故障形态设计的。
     现在统一走 HostPool：主机级封锁下快速失败，把重试交给 workflow 与下一个 cron。
+
+    rounds=1 + deadline：名单失败有观察池降级路径，没有理由为它干等
+    （A 股那边实测 259~348s，见 http_util.list_deadline）。
     """
     return POOL.fetch(
         session,
         params={"pn": 1, "pz": 1000, "po": 1, "np": 1, "fltt": 2, "invt": 2,
                 "fid": "f20", "fs": FS, "fields": FIELDS},
         accept=http_util.diff_list, rounds=rounds, note=note,
+        deadline=deadline or http_util.list_deadline(),
+        timeout=http_util.LIST_TIMEOUT,
     )
 
 
-def build_dataframe(top=100, log_file=None, note=None):
+def build_dataframe(top=100, log_file=None, note=None, deadline=None):
     def wlog(msg):
         print(msg)
         if log_file:
@@ -74,7 +79,7 @@ def build_dataframe(top=100, log_file=None, note=None):
 
     session = get_session()
     wlog(f"获取港股通标的列表(共取市值前 {top} 只)...")
-    raw = fetch_hk_list(session, note=note)
+    raw = fetch_hk_list(session, note=note, deadline=deadline)
     wlog(f"接口返回 {len(raw)} 只港股通标的")
 
     rows = []
@@ -110,10 +115,10 @@ def build_dataframe(top=100, log_file=None, note=None):
     return df
 
 
-def run(top=100, out_path=None, log_file=None, note=None):
+def run(top=100, out_path=None, log_file=None, note=None, deadline=None):
     if out_path is None:
         out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hk_top100.csv")
-    df = build_dataframe(top=top, log_file=log_file, note=note)
+    df = build_dataframe(top=top, log_file=log_file, note=note, deadline=deadline)
     df.to_csv(out_path, index=False, encoding="utf-8-sig")
     print(f"已导出 {len(df)} 条港股通数据到 {out_path}")
     return out_path

@@ -91,6 +91,11 @@ class Deadline:
         self._budget = float(seconds) if seconds else None
         self._start = time.monotonic()
 
+    @property
+    def budget(self) -> float | None:
+        """预算总秒数（None = 不限制）。只用于日志里写清「预算是多少」。"""
+        return self._budget
+
     def remaining(self) -> float:
         if self._budget is None:
             return float("inf")
@@ -149,6 +154,36 @@ def request_interval(default: float = 0.30) -> float:
 
 # 进程级预算，由 workflow 的 DSM_DEADLINE_SEC 注入。0/未设置 = 不限制。
 DEFAULT_DEADLINE = Deadline(float(os.environ.get("DSM_DEADLINE_SEC", "0") or 0))
+
+# 「取名单」这一步的**独立硬预算**（秒）。它存在的理由是一条实测出来的账：
+#
+#   2026-10-09 的三次 A 股运行里，步骤1（取市值前100名单）分别花了
+#   348s / 348s / 259s，而整个步骤2（113 只标的的指标）只花了 52s。
+#   也就是说**一轮运行 73% 的时间在等一个「成分名单」**，而名单失败本来就有
+#   现成的降级路径（stock_pool.list_from_pool：用观察池历史名单，指标照旧实抓，
+#   只是「今天谁算 Top100」可能滞后一天）。
+#
+# 名单失败的形态是东财对云厂商出口 IP 的整批 RST / 滴流读 —— 指数退避对它
+# 价值≈0（代码里已有这条结论），而 4 主机 × 2 轮 = 8 次尝试只是把同一堵墙
+# 撞 8 遍。所以：给这一步一个小预算，超了就立刻降级，把重试留给下一个触发点。
+DEFAULT_LIST_DEADLINE = 45.0
+# 名单请求用更紧的读超时：滴流响应是这里的主要拖时形态。
+LIST_TIMEOUT = (4, 8)
+
+
+def list_deadline(default: float = DEFAULT_LIST_DEADLINE) -> Deadline:
+    """构造「取名单」步骤的等待预算（可用 DSM_LIST_DEADLINE_SEC 覆盖）。
+
+    诚实的限制与 Deadline 相同：它无法中断**已经阻塞在 socket read 里**的那一次
+    请求，只能阻止后续尝试。所以最坏耗时 ≈ 预算 + 单次请求的读超时
+    （45 + 8 = 53s），而不是严格 45s。对照原来的 259~348s，这仍是 5~6 倍。
+    """
+    raw = os.environ.get("DSM_LIST_DEADLINE_SEC", "").strip()
+    try:
+        seconds = float(raw) if raw else float(default)
+    except ValueError:
+        seconds = float(default)
+    return Deadline(seconds)
 
 
 def _host(url: str) -> str:
@@ -298,6 +333,15 @@ class HostPool:
             if not live:
                 break
             for host in live:
+                # 预算检查必须放在**每个主机之前**，否则 rounds=1 时
+                # deadline 完全不参与决策（get_json 在 retries=1 下不会 sleep），
+                # 于是「给名单步骤一个硬预算」只是一句空话。
+                # 注意：它仍然无法中断已经阻塞在 socket read 里的那一次请求，
+                # 所以最坏耗时 = 预算 + 单次请求的读超时。
+                if deadline.remaining() <= 0:
+                    raise DeadlineExceeded(
+                        f"[{self.label}] 预算已耗尽，放弃剩余 {len(live) - live.index(host)} 个主机"
+                        f"（已尝试 {rnd + 1} 轮）")
                 try:
                     out = get_json(session, host, params=params, headers=headers,
                                    retries=1, timeout=timeout, deadline=deadline,

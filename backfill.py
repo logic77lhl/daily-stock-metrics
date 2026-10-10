@@ -45,9 +45,10 @@ Actions 全绿（跳过被当成非交易日放行），站点于是停在 2026-
 
 拿**当日实抓**的 `output/2026-09-18/` 当基准，用历史序列按「截至 09-18」重算，
 逐字段比对。日线/周线/月线 J、昨日 J、涨跌幅、量比、PE/PB 及分位全部完全一致
-（见 git 历史里的复核输出）。这也是 `_resample` 存在的原因：腾讯把「进行中」的
-周期 bar **就地更新**，今天再抓 9 月月线拿到的是整个 9 月，直接用它重算 09-18
-会让 5 只样本股**全部**偏离（工商银行 107.9 vs 真实 98.22），属于系统性错误。
+（见 git 历史里的复核输出）。这也是周期 J 必须**由日线本地聚合**的原因：
+腾讯把「进行中」的周期 bar **就地更新**，今天再抓 9 月月线拿到的是整个 9 月，
+直接用它重算 09-18 会让 5 只样本股**全部**偏离（工商银行 107.9 vs 真实 98.22），
+属于系统性错误。聚合实现见 `fetch_metrics.resample_period`。
 
 用法:
     python backfill.py --market A --from 2026-09-21 --to 2026-10-08 --dry-run
@@ -218,34 +219,11 @@ def _slice_le(df, column: str, day: str):
     return cut if not cut.empty else None
 
 
-def _resample(daily, freq: str):
-    """从**截断到当日**的日线重建周线/月线。
-
-    为什么必须自己重建，而不能直接用腾讯的周线/月线接口：
-    腾讯把「进行中」的那根周期 bar **就地更新** —— 今天再抓 9 月月线，
-    拿到的是**整个 9 月**（截至 09-30）的 bar，而不是 09-18 当天看到的
-    「9 月至今」。所以按 bar 的日期切片无法还原历史时点的周期 bar。
-
-    实测证据：用腾讯月线对 09-18 做重算，5 只样本股**全部**与当日实抓的
-    归档值不符（工商银行 107.9 vs 真实 98.22）—— 系统性偏差，必须修。
-
-    正确做法：先把日线截断到 D，再聚合。这样最后一根周期 bar 就是
-    「D 所在周期、截至 D」的口径，与原始日更完全一致。
-    """
-    if daily is None or daily.empty:
-        return None
-    frame = daily.copy()
-    frame["_dt"] = pd.to_datetime(frame["date"])
-    key = frame["_dt"].dt.to_period(freq)
-    grouped = frame.groupby(key, sort=True)
-    out = pd.DataFrame({
-        "date": grouped["_dt"].max().dt.strftime("%Y-%m-%d").values,
-        "close": grouped["close"].last().values,
-        "high": grouped["high"].max().values,
-        "low": grouped["low"].min().values,
-        "volume": grouped["volume"].sum().values,
-    })
-    return out if not out.empty else None
+# 这里原本有一个 `_resample(daily, freq)`，做「把日线截断到当日再聚合成周/月线」。
+# 它已经**删除**：实现收敛到了 `fetch_metrics.resample_period`，日更路径与回填路径
+# 现在调用同一个函数（见 fetch_metrics.period_j_columns），留一个薄壳只会让人以为
+# 有两份实现。那条历史证据（用腾讯月线重算 09-18，5 只样本股全部与归档值不符，
+# 工商银行 107.9 vs 真实 98.22）已随实现搬到 resample_period 的 docstring 里。
 
 
 def _one_symbol(code: str, name: str, market: str, days: list[str],
@@ -269,24 +247,18 @@ def _one_symbol(code: str, name: str, market: str, days: list[str],
         d = _slice_le(daily, "date", day)
         if d is None or len(d) < 5:
             continue
-        # 周线/月线由**截断到当日的日线**重建：腾讯的进行中周期 bar 会被就地更新，
-        # 直接用它会把「9 月整月」当成「9 月至今」（见 _resample 的说明）。
-        w = _resample(d, "W")
-        m = _resample(d, "M")
-        time.sleep(0.15)   # 礼貌间隔：回填是补历史，没有抢时间的理由
+        # 周线/月线由**截断到当日的日线**重建（见 fetch_metrics.resample_period）。
+        # 这里原本还插了一个 `time.sleep(0.15)`：它位于「按天切片 + 纯本地聚合」
+        # 的循环里，不发任何请求，只是让回填变慢（一天 0.15 秒 × 标的数 × 天数）。
 
         rec = {key: None for key in fetch_metrics.FIELDS}
         rec["代码"] = code
         rec["名称"] = name
         rec["行业"] = industry
         rec["数据日期"] = str(d["date"].iloc[-1])[:10]
-
-        for frame, column in ((d, "日线J"), (w, "周线J"), (m, "月线J")):
-            if frame is not None and len(frame) >= 5:
-                rec[column] = fetch_metrics.kdj_j(frame)
-                prev = {"日线J": "昨日日线J", "周线J": "昨日周线J", "月线J": "昨日月线J"}[column]
-                if len(frame) >= 6:
-                    rec[prev] = fetch_metrics.kdj_j(frame.iloc[:-1])
+        # 与日更路径共用同一段实现（fetch_metrics.period_j_columns），
+        # 否则「回填出来的周线J」和「日更算出来的周线J」迟早会漂移。
+        rec.update(fetch_metrics.period_j_columns(d))
 
         rec["最新价"] = round(float(d["close"].iloc[-1]), 2)
         if len(d) >= 2:

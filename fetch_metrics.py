@@ -44,6 +44,9 @@ TX_HOSTS = [
 ]
 VALUE_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 
+# 腾讯 K 线周期名。**日更路径只用 "daily"** —— 周线/月线一律由日线本地聚合
+# （见 resample_period）。保留 weekly/monthly 只是为了能抓接口值做保真度对照
+# （tests/test_kline_agg.py 与一次性的离线核验），任何生产路径都不应调用它们。
 TX_PERIOD = {"daily": "day", "weekly": "week", "monthly": "month"}
 _PROXY = None
 
@@ -193,6 +196,63 @@ def kdj_j(df, n=9, m1=3, m2=3):
     d = k.ewm(alpha=1 / m2, adjust=False).mean()
     j = 3 * k - 2 * d
     return round(float(j.iloc[-1]), 2)
+
+
+def resample_period(daily, freq: str):
+    """从日线重建周线（freq="W"）/月线（freq="M"）的 OHLCV。
+
+    **为什么周期 J 必须由日线重建，而不是抓腾讯的周线/月线接口**（两个独立的理由）：
+
+    1. **进行中的那根 bar 会被就地更新**。腾讯对「本周/本月至今」这根 bar 是
+       持续改写的 —— 今天抓 9 月月线拿到的是**整个 9 月**（截至 09-30）的 bar，
+       而不是 09-18 当天看到的「9 月至今」。所以按 bar 日期切片无法还原历史时点，
+       回填必须先把日线截断到 D 再聚合（实测证据：用腾讯月线重算 09-18，
+       5 只样本股**全部**与当日归档值不符，工商银行 107.9 vs 真实 98.22）。
+    2. **代价是 3 倍的请求数**。日更路径原来为每只标的抓 3 个周期
+       （113 只 ≈ 339 次请求，全局限流下仅节流下限就是 102 秒），而实测
+       「日线 800 根 → 本地聚合 → 周/月 J」与接口值**逐只精确相同**
+       （12 只样本、周线与月线最大绝对差都是 0.00；因为 K/D 是 alpha=1/3 的
+       EMA，38 根月 bar 之后种子权重已衰减到 2e-7 量级）。所以接口那一趟
+       纯属浪费：请求数 339 → 113，节流下限 102s → 34s。
+
+    `to_period("W")` 是「周一~周日」为一组，与腾讯的周 bar 边界一致；
+    月线用 `to_period("M")` 即自然月。两者都实测与接口值一致。
+    """
+    if daily is None or daily.empty:
+        return None
+    frame = daily.copy()
+    frame["_dt"] = pd.to_datetime(frame["date"])
+    key = frame["_dt"].dt.to_period(freq)
+    grouped = frame.groupby(key, sort=True)
+    out = pd.DataFrame({
+        "date": grouped["_dt"].max().dt.strftime("%Y-%m-%d").values,
+        "close": grouped["close"].last().values,
+        "high": grouped["high"].max().values,
+        "low": grouped["low"].min().values,
+        "volume": grouped["volume"].sum().values,
+    })
+    return out if not out.empty else None
+
+
+def period_j_columns(daily):
+    """由一份日线算出 (日线J, 昨日日线J, 周线J, 昨日周线J, 月线J, 昨日月线J)。
+
+    唯一的「周期 J 怎么算」实现 —— 日更路径（_process_one）与回填路径
+    （backfill._one_symbol）都调用它，避免两条路径对同一个指标给出不同答案。
+    「昨日」= 去掉最后一根 bar 后重算（不是把 J 往前挪一格：J 依赖 EMA，
+    必须整段重算）。
+    """
+    out = {k: None for k in ("日线J", "昨日日线J", "周线J", "昨日周线J",
+                             "月线J", "昨日月线J")}
+    for frame, col, prev in ((daily, "日线J", "昨日日线J"),
+                             (resample_period(daily, "W"), "周线J", "昨日周线J"),
+                             (resample_period(daily, "M"), "月线J", "昨日月线J")):
+        if frame is None or len(frame) < 5:
+            continue
+        out[col] = kdj_j(frame)
+        if len(frame) >= 6:
+            out[prev] = kdj_j(frame.iloc[:-1])
+    return out
 
 
 def ma_values(df):
@@ -368,23 +428,23 @@ def _process_one(row, market, col_names, out_csv, log_file, write_lock,
     rank_tag = f"{int(rank_raw):>3}" if pd.notna(rank_raw) else " ---"
 
     try:
-        daily_df = None
-        for period, col in [("daily", "日线J"), ("weekly", "周线J"), ("monthly", "月线J")]:
-            prev_col = {"日线J": "昨日日线J", "周线J": "昨日周线J", "月线J": "昨日月线J"}[col]
-            df = fetch_kline(session, code, period, market=market)
-            if df is not None and len(df) >= 5:
-                rec[col] = kdj_j(df)
-                if len(df) >= 6:
-                    rec[prev_col] = kdj_j(df.iloc[:-1])
-                if period == "daily":
-                    daily_df = df
-                    rec["最新价"] = round(float(df["close"].iloc[-1]), 2)
-                    # 记录实际取到的最后一根 K 线日期（腾讯返回 ISO 日期串）
-                    rec["数据日期"] = str(df["date"].iloc[-1])[:10]
-                    if len(df) >= 2:
-                        pct = (df["close"].iloc[-1] - df["close"].iloc[-2]) / df["close"].iloc[-2] * 100
-                        rec["涨跌幅"] = round(float(pct), 2)
-            time.sleep(0.15)
+        # 只抓**日线**一趟，周线/月线在本地聚合（见 resample_period 的两条理由）。
+        # 这里原来是 3 次请求 + 每次 0.15s sleep：113 只 ≈ 339 次请求，
+        # 仅全局限流的下限就是 102 秒，而实测本地聚合与接口值逐只精确相同。
+        daily_df = fetch_kline(session, code, "daily", market=market)
+        if daily_df is not None and len(daily_df) >= 5:
+            for col, val in period_j_columns(daily_df).items():
+                rec[col] = val
+            rec["最新价"] = round(float(daily_df["close"].iloc[-1]), 2)
+            # 记录实际取到的最后一根 K 线日期（腾讯返回 ISO 日期串）
+            rec["数据日期"] = str(daily_df["date"].iloc[-1])[:10]
+            if len(daily_df) >= 2:
+                prev_close = float(daily_df["close"].iloc[-2])
+                if prev_close:
+                    pct = (float(daily_df["close"].iloc[-1]) - prev_close) / prev_close * 100
+                    rec["涨跌幅"] = round(float(pct), 2)
+        else:
+            daily_df = None
 
         if daily_df is not None and len(daily_df) >= 2:
             rec["MA20"], rec["MA60"], rec["双均线多头"], rec["价距MA20%"] = ma_values(daily_df)
