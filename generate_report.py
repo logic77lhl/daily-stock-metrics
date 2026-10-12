@@ -87,7 +87,13 @@ def generate_report(csv_path, out_dir, title="A股核心资产 KDJ 多周期信�
     signal_counts = {}
 
     rows_html = ""
-    for _, row in df.iterrows():
+    # to_dict("records") 而不是 iterrows()：这一处是**建站**的主要热点。
+    # 90 份报告 × 每份约 100 行 × 每行约 15 次 `row.get(...)`/`row[...]`，
+    # 而 iterrows 每行构造一个 Series、每次标量访问都要走
+    # `Series.__getitem__ → _get_value → Index.get_loc`。profile 显示
+    # 建站期间这三个函数各被调用约 40 万次，占了绝大部分时间。
+    # 换成普通 dict 之后这些访问都是 O(1) 的字典查找。
+    for row in df.to_dict("records"):
         d_j, d_cls = classify_j(row.get("日线J"))
         w_j, w_cls = classify_j(row.get("周线J"))
         m_j, m_cls = classify_j(row.get("月线J"))
@@ -358,7 +364,9 @@ def _markdown_table(df):
             return md_escape(f"{v:g}")
         return md_escape(v)
     lines = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
-    for _, r in df[cols].iterrows():
+    # 同 generate_report 的逐行循环：iterrows 在这里也是 90 份 × 100 行 × 19 列的
+    # 标量访问，换成 dict 是同样的理由。
+    for r in df[cols].to_dict("records"):
         lines.append("| " + " | ".join(cell(r[c]) for c in cols) + " |")
     return "\n".join(lines)
 

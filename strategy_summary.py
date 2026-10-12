@@ -114,7 +114,43 @@ def _baseline_win_rate(next_ret, window):
     return float((vals > 0).mean())
 
 
-def _ranked_strategies(panel):
+# 策略掩码缓存：{market_dir: {策略名: numpy 布尔数组}}，数组覆盖**全量面板**。
+#
+# 为什么值得缓存：掩码只依赖面板的列值，**不依赖 as_of** —— 而站点构建要为每个
+# 市场物化 30 份报告，每份报告的 as_of 不同，于是同一批 14 个策略表达式被反复
+# 求值。实测建站 17 秒里绝大部分是它（90 份 × 2 次调用 × ~100ms）。
+# 缓存之后每个市场只算一次，报告之间只是按 as_of 切一段数组。
+_MASK_CACHE: dict = {}
+
+
+def _strategy_masks(cache_key):
+    """在**全量面板**上算出每个策略的布尔掩码（按 market_dir 缓存一次）。
+
+    返回 ``(masks, failed)``；masks 的值是 numpy 数组，下标 = 全量面板的行号。
+    面板本身的缓存见 `_load_all`，而 `_load_history` 返回的是它的**布尔切片**，
+    所以切片的 `.index` 仍然是全量面板里的行号 —— 这就是下面能直接拿它当
+    花式索引用的原因。
+    """
+    if cache_key in _MASK_CACHE:
+        return _MASK_CACHE[cache_key]
+    panel = _load_all(cache_key)
+    masks: dict = {}
+    failed: list = []
+    if panel is not None and not panel.empty:
+        for name, expr in backtest.STRATEGIES:
+            if expr is None:
+                continue
+            try:
+                masks[name] = backtest.eval_expr(panel, expr).fillna(False).to_numpy(
+                    dtype=bool)
+            except Exception as exc:
+                _warn(f"策略「{name}」评估失败：{type(exc).__name__}: {exc}")
+                failed.append(name)
+    _MASK_CACHE[cache_key] = (masks, failed)
+    return masks, failed
+
+
+def _ranked_strategies(panel, cache_key=None):
     """按最近 ROLLING_DAYS 个信号日的次日表现给策略排序。
 
     返回 ``(ranked, note, baseline)``：
@@ -122,6 +158,9 @@ def _ranked_strategies(panel):
     * ``ranked`` = ``[(名称, 表达式, 胜率, 样本数)]``，最多 TOP_K 条；
     * ``ranked`` 为空时 ``note`` 说明原因（历史不足 / 策略全部评估失败）；
     * ``baseline`` = 同期全样本次日上涨比例（无数据时为 None）。
+
+    cache_key：给出时复用 `_strategy_masks` 的掩码缓存（站点构建传市场目录）；
+    不给则就地计算（测试直接调它时走这条）。
     """
     if panel is None or panel.empty:
         return [], "无历史数据", None
@@ -157,18 +196,30 @@ def _ranked_strategies(panel):
     # 再按日期批量取次日收益：280 次 → 14 次。
     stats = {}
     failed = []
+    # 掩码优先从缓存取（覆盖全量面板），再用当前面板的 index 切出这一份 as_of 的
+    # 行。`_load_history` 返回的是全量面板的布尔切片，所以它的 index 就是行号。
+    cached_masks, cached_failed = (({}, []) if cache_key is None
+                                   else _strategy_masks(cache_key))
+    rows = panel.index.to_numpy()
     for name, expr in backtest.STRATEGIES:
         if expr is None:
             continue
-        try:
-            mask = backtest.eval_expr(panel, expr)
-        except Exception as exc:
-            # 旧代码在这里 break：窗口被静默截断，剩下的累计值照样当成
-            # 「20 日胜率」发布。现在改为让该策略整体退出统计 ——
-            # 不发布一个用残缺窗口算出来的数字。
-            _warn(f"策略「{name}」评估失败：{type(exc).__name__}: {exc}")
+        if name in cached_masks:
+            mask = pd.Series(cached_masks[name][rows], index=panel.index)
+        elif name in cached_failed:
             failed.append(name)
             continue
+        else:
+            try:
+                mask = backtest.eval_expr(panel, expr)
+            except Exception as exc:
+                # 旧代码在这里 break：窗口被静默截断，剩下的累计值照样当成
+                # 「20 日胜率」发布。现在改为让该策略整体退出统计 ——
+                # 不发布一个用残缺窗口算出来的数字。
+                _warn(f"策略「{name}」评估失败：{type(exc).__name__}: {exc}")
+                failed.append(name)
+                continue
+            mask = mask.fillna(False)
         hits = panel.loc[mask.fillna(False), ["日期", "代码"]]
         if hits.empty:
             continue
@@ -260,7 +311,7 @@ def build_summary(metrics_csv, market_dir, market_label, as_of=None):
     html_parts = [f"<li>📊 <b>{market_label}</b>：{_overview(today_df)}</li>"]
     md_parts = [f"- **{market_label}**：{_overview(today_df)}"]
 
-    ranked, note, baseline = _ranked_strategies(panel)
+    ranked, note, baseline = _ranked_strategies(panel, cache_key=market_dir)
     if ranked:
         for name, expr, wr, n in ranked:
             hits = _today_hits(today_df, expr)

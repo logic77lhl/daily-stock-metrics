@@ -60,13 +60,19 @@ def _breadth_card(day_dir: str, iso: str) -> str:
         return ""
 
 
-def summary_block(metrics_csv: str, day_dir: str, iso: str, key: str):
+def summary_block(metrics_csv: str, day_dir: str, iso: str, key: str, cached=None):
     """「📌 今日速览」块（含基线对照）。返回 (html, md)；失败返回 ("", "")。
 
     单独抽出来是因为它有**两个**消费者：报告本身（assemble_extras）和
     合并摘要邮件（_write_digest）。让它们各算一份就会漂移 ——
     而这个块正是「胜率必须并排给出基线」那条约束的落点。
+
+    cached：已经算好的 (html, md)。**调用方必须传** —— 它是建站的主要成本：
+    这个块要对 14 个策略各求一次全表掩码，而 `write()` 里报告与摘要片段
+    各要一次，90 份报告就是 180 次（实测建站 17 秒里绝大部分是它）。
     """
+    if cached is not None:
+        return cached
     import strategy_summary
 
     spec = MARKET_SPECS[key]
@@ -83,7 +89,7 @@ def summary_block(metrics_csv: str, day_dir: str, iso: str, key: str):
     return summary.get("html") or "", summary.get("md") or ""
 
 
-def assemble_extras(metrics_csv: str, day_dir: str, iso: str, key: str):
+def assemble_extras(metrics_csv: str, day_dir: str, iso: str, key: str, cached=None):
     """返回 (extra_html, extra_md)。
 
     rich 市场（A 股）顶部：温度卡 → 大盘宽度 → 板块温度 → 策略速览；
@@ -94,7 +100,7 @@ def assemble_extras(metrics_csv: str, day_dir: str, iso: str, key: str):
     recommend_history.json 就是买入参考写的历史。
     """
     spec = MARKET_SPECS[key]
-    summ_html, summ_md = summary_block(metrics_csv, day_dir, iso, key)
+    summ_html, summ_md = summary_block(metrics_csv, day_dir, iso, key, cached=cached)
 
     if not spec["rich"]:
         return (summ_html or None), (summ_md or None)
@@ -135,7 +141,7 @@ def digest_path(day_dir: str, iso: str) -> str:
     return os.path.join(day_dir, f"digest_{iso}.html")
 
 
-def _write_digest(metrics_csv: str, day_dir: str, iso: str, key: str) -> None:
+def _write_digest(metrics_csv: str, day_dir: str, iso: str, key: str, cached=None) -> None:
     """写一份「合并摘要邮件」用的紧凑片段。
 
     为什么不让 runner 各自发一封邮件：三个市场 × 每天一封 = 每天 3 封邮件，
@@ -144,8 +150,9 @@ def _write_digest(metrics_csv: str, day_dir: str, iso: str, key: str) -> None:
     完整报告作为附件（附件不会被截断）。
 
     片段只包含「这个市场今天怎么样」的摘要，不含明细表 ——
-    明细表在附件与站点里。它自己算 summary_block，因此不依赖报告是否已存在，
-    `reports.ensure()` 在「报告已在磁盘上」的路径上也能补齐它。
+    明细表在附件与站点里。`cached` 由调用方传入算好的速览块；没有它时
+    自己算（`ensure()` 的「报告已在磁盘上」路径会走这条），
+    因此它不依赖报告是否已存在。
     """
     import pandas as pd
 
@@ -170,7 +177,7 @@ def _write_digest(metrics_csv: str, day_dir: str, iso: str, key: str) -> None:
         bits.append(f"平均 {avg:+.2f}%")
     stat = "，".join(bits)
 
-    summ_html, _ = summary_block(metrics_csv, day_dir, iso, key)
+    summ_html, _ = summary_block(metrics_csv, day_dir, iso, key, cached=cached)
 
     html = (
         f'<div style="background:#fff;border-radius:10px;padding:14px 16px;margin-bottom:14px;'
@@ -193,7 +200,10 @@ def write(metrics_csv: str, day_dir: str, iso: str, key: str) -> str | None:
     if not os.path.exists(metrics_csv):
         print(f"[报告] {iso} 缺 metrics CSV，跳过：{metrics_csv}")
         return None
-    extra_html, extra_md = assemble_extras(metrics_csv, day_dir, iso, key)
+    # 速览块**只算一次**，报告与摘要片段共用。这是建站的主要成本（14 个策略的
+    # 全表掩码 × 2 次 × 90 份报告），见 summary_block 的说明。
+    cached = summary_block(metrics_csv, day_dir, iso, key)
+    extra_html, extra_md = assemble_extras(metrics_csv, day_dir, iso, key, cached=cached)
     try:
         html_path = generate_report.generate_report(
             metrics_csv, day_dir, title=MARKET_SPECS[key]["title"],
@@ -201,14 +211,14 @@ def write(metrics_csv: str, day_dir: str, iso: str, key: str) -> str | None:
     except Exception as exc:
         print(f"[报告] {iso} 生成失败: {type(exc).__name__}: {exc}")
         return None
-    _safe_digest(metrics_csv, day_dir, iso, key)
+    _safe_digest(metrics_csv, day_dir, iso, key, cached=cached)
     return html_path
 
 
-def _safe_digest(metrics_csv: str, day_dir: str, iso: str, key: str) -> None:
+def _safe_digest(metrics_csv: str, day_dir: str, iso: str, key: str, cached=None) -> None:
     """摘要片段失败只影响邮件正文；报告与站点照旧，所以不抛。"""
     try:
-        _write_digest(metrics_csv, day_dir, iso, key)
+        _write_digest(metrics_csv, day_dir, iso, key, cached=cached)
     except Exception as exc:
         print(f"[报告] {iso} 摘要片段生成失败（不影响报告）: {type(exc).__name__}: {exc}")
 
