@@ -22,10 +22,11 @@ on:
         description: "要跑哪个探测脚本"
         type: choice
         options:
+          - tools/probe_concurrency.py
           - tools/probe_kline.py
           - tools/probe_rate.py
           - tools/probe_batch.py
-        default: tools/probe_kline.py
+        default: tools/probe_concurrency.py
 
 permissions:
   contents: read
@@ -45,4 +46,4 @@ jobs:
         run: pip install requests
 
       - name: Probe data sources
-        run: python "${{ inputs.script || 'tools/probe_kline.py' }}"
+        run: python "${{ inputs.script || 'tools/probe_concurrency.py' }}"
