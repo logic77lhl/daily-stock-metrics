@@ -1,0 +1,18 @@
+2026-10-13 02:05:55  ===== 开始每日A股指标任务 2026-10-12 =====
+2026-10-13 02:05:55  步骤1: 获取 A股市值前100…
+2026-10-13 02:05:58  步骤1完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-12/top100_2026-10-12.csv（名单来源: eastmoney，耗时 3s）
+2026-10-13 02:05:58  步骤2: 计算 KDJ-J(日/周/月) 及估值…
+2026-10-13 02:05:58  观察池: 共113只(含历史追踪13只) -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-12/tracked_2026-10-12.csv
+2026-10-13 02:05:58  待处理 113 条，并发数 16
+2026-10-13 02:06:12  共享价格序列：113 只写入 /tmp/dsm-prices-g0w5yj3v/output.csv（回测将直接读它，省掉 113 次重复请求）
+2026-10-13 02:06:12  全部完成：成功 113/113，失败 0，数据日期 2026-10-12，结果已写入 /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-12/metrics_2026-10-12.csv
+2026-10-13 02:06:12  步骤2完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-12/metrics_2026-10-12.csv（成功 113/113，失败 0）
+2026-10-13 02:06:12  步骤2.5: 获取全市场大盘温度（活跃市值指标）…
+2026-10-13 02:06:17  步骤2.5失败(不影响主流程): ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-10-13 02:06:17  步骤2.6: 本地聚合 → 行业板块温度 / 大盘宽度仪表盘 / 机会榜
+2026-10-13 02:06:17    - 板块温度: 11 个行业
+2026-10-13 02:06:17    - 机会榜: 超跌 27 / 超买 28
+2026-10-13 02:06:17  步骤2.6完成
+2026-10-13 02:06:17  步骤3: 生成 HTML 总结报告…
+2026-10-13 02:06:17  步骤3完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-12/report_2026-10-12.html
+2026-10-13 02:06:17  ===== 全部完成 2026-10-12（邮件由流水线末尾统一发送）=====
