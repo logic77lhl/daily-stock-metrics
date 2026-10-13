@@ -1,0 +1,23 @@
+2026-10-13 16:35:27  ===== 开始每日A股指标任务 2026-10-13 =====
+2026-10-13 16:35:27  步骤1: 获取 A股市值前100…
+2026-10-13 16:35:32  [fetch_top100] push2.eastmoney.com 第 1 轮失败: ReadTimeout: HTTPSConnectionPool(host='push2delay.eastmoney.com', port=443): Read timed out. (read timeout=4)
+2026-10-13 16:35:37  [fetch_top100] push2delay.eastmoney.com 第 1 轮失败: ReadTimeout: HTTPSConnectionPool(host='push2delay.eastmoney.com', port=443): Read timed out. (read timeout=4)
+2026-10-13 16:35:42  [fetch_top100] 82.push2.eastmoney.com 第 1 轮失败: ReadTimeout: HTTPSConnectionPool(host='82.push2delay.eastmoney.com', port=443): Read timed out. (read timeout=4)
+2026-10-13 16:35:48  [fetch_top100] 1.push2.eastmoney.com 第 1 轮失败: ReadTimeout: HTTPSConnectionPool(host='1.push2delay.eastmoney.com', port=443): Read timed out. (read timeout=4)
+2026-10-13 16:35:48  步骤1失败(耗时 21s，预算 45.0s，ReadTimeout: HTTPSConnectionPool(host='1.push2delay.eastmoney.com', port=443): Read timed out. (read timeout=4))，降级为观察池历史名单
+2026-10-13 16:35:48  步骤1完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-13/top100_2026-10-13.csv（名单来源: pool-fallback，耗时 21s）
+2026-10-13 16:35:48  步骤2: 计算 KDJ-J(日/周/月) 及估值…
+2026-10-13 16:35:48  观察池: 共113只(含历史追踪0只) -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-13/tracked_2026-10-13.csv
+2026-10-13 16:35:48  待处理 113 条，并发数 16
+2026-10-13 16:36:00  共享价格序列：113 只写入 /tmp/dsm-prices-sxq87tx3/output.csv（回测将直接读它，省掉 113 次重复请求）
+2026-10-13 16:36:00  全部完成：成功 113/113，失败 0，数据日期 2026-10-13，结果已写入 /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-13/metrics_2026-10-13.csv
+2026-10-13 16:36:00  步骤2完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-13/metrics_2026-10-13.csv（成功 113/113，失败 0）
+2026-10-13 16:36:00  步骤2.5: 获取全市场大盘温度（活跃市值指标）…
+2026-10-13 16:36:22  步骤2.5完成
+2026-10-13 16:36:22  步骤2.6: 本地聚合 → 行业板块温度 / 大盘宽度仪表盘 / 机会榜
+2026-10-13 16:36:22    - 板块温度: 1 个行业
+2026-10-13 16:36:22    - 机会榜: 超跌 25 / 超买 23
+2026-10-13 16:36:22  步骤2.6完成
+2026-10-13 16:36:22  步骤3: 生成 HTML 总结报告…
+2026-10-13 16:36:22  步骤3完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-13/report_2026-10-13.html
+2026-10-13 16:36:22  ===== 全部完成 2026-10-13（邮件由流水线末尾统一发送）=====
