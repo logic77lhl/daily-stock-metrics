@@ -1,0 +1,20 @@
+2026-10-16 16:35:23  ===== 开始每日A股指标任务 2026-10-16 =====
+2026-10-16 16:35:23  步骤1: 获取 A股市值前100…
+2026-10-16 16:35:28  [fetch_top100] push2.eastmoney.com 第 1 轮失败: ReadTimeout: HTTPSConnectionPool(host='push2delay.eastmoney.com', port=443): Read timed out. (read timeout=4)
+2026-10-16 16:35:33  [fetch_top100] push2delay.eastmoney.com 第 1 轮失败: ReadTimeout: HTTPSConnectionPool(host='push2delay.eastmoney.com', port=443): Read timed out. (read timeout=4)
+2026-10-16 16:35:35  步骤1完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-16/top100_2026-10-16.csv（名单来源: eastmoney，耗时 11s）
+2026-10-16 16:35:35  步骤2: 计算 KDJ-J(日/周/月) 及估值…
+2026-10-16 16:35:35  观察池: 共114只(含历史追踪14只) -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-16/tracked_2026-10-16.csv
+2026-10-16 16:35:35  待处理 114 条，并发数 16
+2026-10-16 16:35:47  共享价格序列：114 只写入 /tmp/dsm-prices-asbl4uci/output.csv（回测将直接读它，省掉 114 次重复请求）
+2026-10-16 16:35:47  全部完成：成功 114/114，失败 0，数据日期 2026-10-16，结果已写入 /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-16/metrics_2026-10-16.csv
+2026-10-16 16:35:47  步骤2完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-16/metrics_2026-10-16.csv（成功 114/114，失败 0）
+2026-10-16 16:35:47  步骤2.5: 获取全市场大盘温度（活跃市值指标）…
+2026-10-16 16:36:17  步骤2.5完成
+2026-10-16 16:36:17  步骤2.6: 本地聚合 → 行业板块温度 / 大盘宽度仪表盘 / 机会榜
+2026-10-16 16:36:17    - 板块温度: 11 个行业
+2026-10-16 16:36:17    - 机会榜: 超跌 30 / 超买 22
+2026-10-16 16:36:17  步骤2.6完成
+2026-10-16 16:36:17  步骤3: 生成 HTML 总结报告…
+2026-10-16 16:36:17  步骤3完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-16/report_2026-10-16.html
+2026-10-16 16:36:17  ===== 全部完成 2026-10-16（邮件由流水线末尾统一发送）=====
