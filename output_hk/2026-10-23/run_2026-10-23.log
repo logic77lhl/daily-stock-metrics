@@ -1,0 +1,14 @@
+2026-10-23 16:35:24  ===== 开始每日港股通指标任务 2026-10-23 =====
+2026-10-23 16:35:24  步骤1: 获取港股通总市值前100标的…
+获取港股通标的列表(共取市值前 100 只)...
+接口返回 100 只港股通标的
+2026-10-23 16:35:26  步骤1完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-23/hk_list_2026-10-23.csv（名单来源: eastmoney，耗时 2s）
+2026-10-23 16:35:26  步骤2: 计算 KDJ-J(日/周/月) 及估值…
+2026-10-23 16:35:26  观察池: 共107只(含历史追踪7只) -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-23/tracked_2026-10-23.csv
+2026-10-23 16:35:26  待处理 107 条，并发数 16
+2026-10-23 16:35:32  共享价格序列：107 只写入 /tmp/dsm-prices-x9rrrs6r/output_hk.csv（回测将直接读它，省掉 107 次重复请求）
+2026-10-23 16:35:32  全部完成：成功 107/107，失败 0，数据日期 2026-10-23，结果已写入 /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-23/metrics_2026-10-23.csv
+2026-10-23 16:35:32  步骤2完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-23/metrics_2026-10-23.csv（成功 107/107，失败 0）
+2026-10-23 16:35:32  步骤3: 生成 HTML 总结报告…
+2026-10-23 16:35:32  步骤3完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-23/report_2026-10-23.html
+2026-10-23 16:35:32  ===== 全部完成 2026-10-23（邮件由流水线末尾统一发送）=====
