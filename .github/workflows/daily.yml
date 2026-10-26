@@ -92,7 +92,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
+          # 2026-10-23 的红灯根因：uv 装依赖根本不写 pip cache 目录，
+          # setup-python 的 cache: pip 在收尾时找不到 /home/runner/.cache/pip
+          # 就会把本该全绿的 run 判红。删掉它 —— 真正的缓存在下面 setup-uv 里。
 
       # uv 而不是 pip：同一条 requirements.txt 实测 11s → 3s。
       # 依赖只有 requests/pandas/numpy，但 pandas+numpy 的 wheel 有 27MB，
