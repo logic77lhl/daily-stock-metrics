@@ -458,10 +458,19 @@ def main(argv=None):
         else:
             q["qRoe"] = q["roe"] - prev["roe"]
 
-    # 价格序列（表 2 的「当年股息率」要用年末收盘价）
+    # 价格序列 + **当年日均价**
+    # 股息率为什么用均价而不是年末价：一年之内股价有高有低，年末那一天的收盘价
+    # 只是个抽样点。用全年日均价，代表「那一年买入的典型成本」。
     _px = d.get("prices") or {}
     dates_all = [x for x in (_px.get("dates") or [])]
     closes_all = [x for x in (_px.get("close") or [])]
+    _yr = {}
+    for _d, _c in zip(dates_all, closes_all):
+        if _d and _c:
+            _yr.setdefault(_d[:4], []).append(_c)
+    yr_avg = {y: sum(v) / len(v) for y, v in _yr.items()}
+    yr_lo = {y: min(v) for y, v in _yr.items()}
+    yr_hi = {y: max(v) for y, v in _yr.items()}
 
     # 分红
     div_by_year = yearly_dividends(d["dividends"])
@@ -600,7 +609,15 @@ def main(argv=None):
             h.append(f'<span class="chg {"up" if c > 0 else "down"}">{c:+.2f}%</span>')
         except ValueError:
             pass
-    h.append(f'<span class="meta">PE 分位 {pe_pct} ｜ PB 分位 {pb_pct} ｜ '
+    _fy_y, _fy_a = full_year_dividend(div_by_year)
+    # 用**完整年度**分红 ÷ 现价，不用滚动 12 个月：一年两次分红的过渡期里，
+    # 滚动窗口会挤进三次派息（0.1414+0.1689+0.1511=0.4614 → 5.43%，高估）。
+    yld_now = (_fy_a / float(last_px) * 100) if (_fy_a and last_px) else None
+    h.append(f'<span class="meta">'
+             + (f'股息率 <b style="color:#101828">{yld_now:.2f}%</b>'
+                f'<span style="color:#98a2b3">（{_fy_y} 年度 ÷ 现价）</span> ｜ '
+                if yld_now else '')
+             + f'PE 分位 {pe_pct} ｜ PB 分位 {pb_pct} ｜ '
              f'最新数据 {latest["statDate"] if latest else "—"}'
              f'（公告 {latest["pubDate"] if latest else "—"}）</span>')
     h.append('</div></header>')
@@ -758,21 +775,29 @@ def main(argv=None):
                and (qof(y, 4) or {}).get("netProfit")) else None, "{:.0f}%")
 
     def _yield(x, k, y):
+        """当年股息率 = 该年度每股分红 ÷ 当年**日均价**。
+
+        不用年末价：一年之内有高有低，年末那天只是抽样点。以工行 2025 年为例，
+        年内价格 6.5~8.2，股息率实际在 3.8%~4.8% 之间；用年均价 7.37 得 4.21%，
+        用年末价 7.94 得 3.91% —— 后者偏低。均价更能代表「那一年买入的典型水平」。
+        """
         dps = div_by_year.get(str(y))
         if not dps or k != "annual":
             return None
-        import bisect
-        i = bisect.bisect_right(dates_all, f"{y}-12-31") - 1
-        if i < 0 or not closes_all[i]:
-            return None
-        return dps / closes_all[i] * 100
+        px = yr_avg.get(str(y))
+        return dps / px * 100 if px else None
 
     metric("股息率", _yield, "{:.2f}%")
     h.append('</tbody></table></div>')
     h.append('<div class="fn">年报为全年累计；<b>TTM = 最近 12 个月</b>'
              '（最新累计 + 上年全年 − 上年同期累计），因此与年报天然可比 —— '
              '这也是主表不放「中报」列的原因：半年 vs 全年并排，营收和 ROE 会看起来像断崖。'
-             '净利率 = <b>归母净利 ÷ 营业收入</b>。股息率 = 该年度每股分红 ÷ 当年末收盘价（含税）。</div>')
+             '净利率 = <b>归母净利 ÷ 营业收入</b>。<br>'
+             '<b>股息率有三种算法，本表用第二种</b>：① 按年末价（年末那天只是个抽样点，'
+             '偏高或偏低）；② <b>按当年日均价</b>（本表，代表那年的典型买入成本）；'
+             '③ 按当前价（表头那个数，代表「现在买能拿多少」）。'
+             '一年之内股价有高低，实际股息率会在区间内浮动 —— 所以这是一个代表值，不是唯一值。'
+             '分红均为税前，未扣红利税。</div>')
 
     # ── 同业对比：孤立的数字没有参照，横着比才有意义 ──
     peers = d.get("peers") or []
