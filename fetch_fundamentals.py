@@ -47,6 +47,7 @@ import pandas as pd  # noqa: E402
 import http_util  # noqa: E402
 
 URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+ANN_URL = "https://np-anotice-stock.eastmoney.com/api/security/ann"
 
 FIELDS = ["code", "year", "quarter", "statDate", "pubDate", "reportName",
           "revenue", "netProfit", "roe", "npMargin", "gpMargin",
@@ -56,6 +57,7 @@ FIELDS = ["code", "year", "quarter", "statDate", "pubDate", "reportName",
 DIV_FIELDS = ["code", "reportDate", "cashPs", "exDate", "yieldAtEx", "d30", "progress"]
 YEAR_FIELDS = ["code", "year", "avgClose", "minClose", "maxClose"]
 VALU_FIELDS = ["code", "peLo", "peHi", "pbLo", "pbHi"]
+BUYBACK_FIELDS = ["code", "date", "title", "kind"]
 
 
 def _num(v):
@@ -162,6 +164,36 @@ def fetch_one(session, code: str) -> tuple:
     return rows, divs, preds, info
 
 
+def fetch_buybacks(session, code, pages=1):
+    """回购公告（标题含「回购」）。1 页 100 条 ≈ 近 1~2 年，够判断「有没有在回购」。
+
+    kind: 注销 = 「回购注销…减资」（真减少股本）；进展 = 其它回购公告。
+    """
+    out = []
+    for i in range(1, pages + 1):
+        p = {"sr": "-1", "page_size": "100", "page_index": str(i), "ann_type": "A",
+             "client_source": "web", "stock_list": str(code).zfill(6),
+             "f_node": "0", "s_node": "0"}
+        try:
+            r = session.get(ANN_URL, params=p, timeout=(5, 20),
+                            headers={"User-Agent": http_util.EM_HEADERS.get(
+                                "User-Agent", "Mozilla/5.0"),
+                                "Referer": "https://data.eastmoney.com/"})
+            lst = ((r.json().get("data") or {}).get("list")) or []
+        except Exception:
+            break
+        for a in lst:
+            title = a.get("title") or ""
+            if "回购" not in title:
+                continue
+            out.append(dict(code=str(code).zfill(6),
+                            date=(a.get("notice_date") or "")[:10], title=title[:120],
+                            kind="注销" if ("注销" in title or "减资" in title) else "进展"))
+        if len(lst) < 100:
+            break
+    return out
+
+
 def fetch_valuation_agg(session, code):
     """估值序列 → (年度均价行, 区间)。
 
@@ -233,6 +265,8 @@ def load_cache():
          if os.path.exists(_path("prices_year.csv")) else pd.DataFrame(columns=YEAR_FIELDS))
     v = (pd.read_csv(_path("valu.csv"), dtype={"code": str})
          if os.path.exists(_path("valu.csv")) else pd.DataFrame(columns=VALU_FIELDS))
+    b = (pd.read_csv(_path("buybacks.csv"), dtype={"code": str})
+         if os.path.exists(_path("buybacks.csv")) else pd.DataFrame(columns=BUYBACK_FIELDS))
     idx = {}
     if os.path.exists(_path("_index.json")):
         try:
@@ -240,10 +274,10 @@ def load_cache():
                 idx = json.load(fh)
         except Exception:
             idx = {}
-    return q, d, p, y, v, idx
+    return q, d, p, y, v, b, idx
 
 
-def save_cache(q, d, p, y, v, idx):
+def save_cache(q, d, p, y, v, b, idx):
     os.makedirs(CACHE_DIR, exist_ok=True)
     q.to_csv(_path("fundamentals.csv"), index=False, encoding="utf-8-sig")
     d.to_csv(_path("dividends.csv"), index=False, encoding="utf-8-sig")
@@ -251,6 +285,7 @@ def save_cache(q, d, p, y, v, idx):
         p.to_csv(_path("predicts.csv"), index=False, encoding="utf-8-sig")
     y.to_csv(_path("prices_year.csv"), index=False, encoding="utf-8-sig")
     v.to_csv(_path("valu.csv"), index=False, encoding="utf-8-sig")
+    b.to_csv(_path("buybacks.csv"), index=False, encoding="utf-8-sig")
     with open(_path("_index.json"), "w", encoding="utf-8") as fh:
         json.dump(idx, fh, ensure_ascii=False, indent=1, sort_keys=True)
 
@@ -288,6 +323,18 @@ def pool_codes() -> list:
                    and not str(c).startswith(ETF_PREFIX)})
 
 
+def codes_with_report(session, report_date):
+    """该报告期**已披露**的股票代码集合（1 个请求，全市场）。
+
+    这是增量判断的关键：不能拿「全市场最新报告期」和每只股票比 —— 绝大多数股票
+    本来就还没披露这一期，那样比会导致**每天全量重抓**。
+    """
+    rows = _fetch(session, "RPT_F10_FINANCE_MAINFINADATA",
+                  f"(REPORT_DATE='{report_date}')", size=5000,
+                  sort="SECURITY_CODE", asc=True)
+    return {str(r.get("SECURITY_CODE") or "").zfill(6) for r in rows}
+
+
 def latest_report_date(session) -> str:
     """全市场最新报告期（1 个请求）。"""
     params = {"reportName": "RPT_F10_FINANCE_MAINFINADATA", "columns": "REPORT_DATE",
@@ -306,12 +353,15 @@ def main(argv=None) -> int:
     ap.add_argument("--init", action="store_true", help="首次：池子里每只各抓一次")
     ap.add_argument("--refresh", action="store_true", help="日常：只抓落后的那几只")
     ap.add_argument("--valu", action="store_true", help="只补估值聚合（年度均价 / PE-PB 区间）")
+    ap.add_argument("--buyback-days", type=int, default=7,
+                    help="回购公告的 TTL（天），默认 7")
+    ap.add_argument("--buyback-now", action="store_true", help="强制刷新回购公告")
     ap.add_argument("--limit", type=int, default=0, help="调试：最多抓几只")
     args = ap.parse_args(argv)
 
     import fetch_metrics
     session = fetch_metrics.get_session()
-    q, d, p, y, v, idx = load_cache()
+    q, d, p, y, v, b, idx = load_cache()
 
     if args.code:                                  # 单只调试
         rows, divs, preds, info = fetch_one(session, args.code)
@@ -321,7 +371,7 @@ def main(argv=None) -> int:
             c0 = _read_codes()
             c0[str(args.code).zfill(6)] = info
             _write_codes(c0)
-        save_cache(q, d, p, y, v, idx)
+        save_cache(q, d, p, y, v, b, idx)
         print(f"{args.code}: {len(rows)} 季 / {len(divs)} 条分红 → 缓存已更新")
         return 0
 
@@ -345,7 +395,7 @@ def main(argv=None) -> int:
                     v = pd.concat([v, pd.DataFrame([rng])], ignore_index=True)
                     v = v.drop_duplicates(subset=["code"], keep="last")
             print(f"  [{i}/{len(codes)}] {code} {len(yrows)} 个年度", flush=True)
-        save_cache(q, d, p, y, v, idx)
+        save_cache(q, d, p, y, v, b, idx)
         print(f"完成：年度均价 {len(y)} 行、估值区间 {len(v)} 行")
         return 0
 
@@ -354,12 +404,14 @@ def main(argv=None) -> int:
         print(f"--init：池子 {len(codes)} 只，全量抓取")
     else:
         latest = latest_report_date(session)
-        todo = [c for c in codes if idx.get(c, "") < latest]
-        print(f"--refresh：全市场最新报告期 {latest}；池子 {len(codes)} 只，"
-              f"落后 {len(todo)} 只")
+        have = codes_with_report(session, latest)
+        # 三种情况需要抓：① 从没抓过；② 已有新报告；③ 缓存里的报告期落后
+        todo = [c for c in codes
+                if not idx.get(c) or (c in have and idx[c] < latest)]
+        print(f"--refresh：全市场最新报告期 {latest}（已披露 {len(have)} 只）；"
+              f"池子 {len(codes)} 只，需更新 {len(todo)} 只")
         if not todo:
-            print("全部已是最新，0 个额外请求。")
-            return 0
+            print("季频数据全部已是最新（回购公告仍会刷新）。")
 
     if args.limit:
         todo = todo[:args.limit]
@@ -390,7 +442,49 @@ def main(argv=None) -> int:
             print(f"  [{i}/{len(todo)}] {code} 失败 {type(exc).__name__}: {exc}")
 
     _write_codes(codes_info)
-    save_cache(q, d, p, y, v, idx)
+
+    # 回购公告：每天全量抓（116 只实测 21 秒）。它是周级变化的信号，
+    # 跟着季报走就失去意义了。放在这里而不是 todo 循环里，正是因为 todo 通常为空。
+    # 回购公告是周级信号（新方案/进展/注销），7 天一次足够。
+    # 每天全量抓要 19 秒，而日常季频更新只要 2 个请求 —— 没必要为了它拉长流水线。
+    from datetime import date as _date
+    _ts_path = _path("_buyback_ts.json")
+    _last = ""
+    if os.path.exists(_ts_path):
+        try:
+            _last = json.load(open(_ts_path, encoding="utf-8")).get("last", "")
+        except Exception:
+            _last = ""
+    _age = 999
+    if _last:
+        try:
+            _age = (_date.today() - _date.fromisoformat(_last)).days
+        except Exception:
+            _age = 999
+    if _age < args.buyback_days and not args.buyback_now:
+        print(f"回购公告：{_age} 天前刚抓过（TTL {args.buyback_days} 天），跳过")
+        save_cache(q, d, p, y, v, b, idx)
+        return 0
+
+    print(f"回购公告：抓取 {len(codes)} 只…", flush=True)
+    bk_rows, t0 = [], __import__("time").time()
+    for i, code in enumerate(codes, 1):
+        try:
+            bk_rows.extend(fetch_buybacks(session, code))
+        except Exception:
+            pass
+        if i % 40 == 0:
+            print(f"  [{i}/{len(codes)}]", flush=True)
+    if bk_rows:
+        b = pd.concat([b, pd.DataFrame(bk_rows)], ignore_index=True)
+        b = b.drop_duplicates(subset=["code", "date", "title"], keep="last")
+    print(f"  命中 {len(bk_rows)} 条，耗时 {__import__('time').time() - t0:.0f}s")
+    try:
+        json.dump({"last": _date.today().isoformat()}, open(_ts_path, "w", encoding="utf-8"))
+    except Exception:
+        pass
+
+    save_cache(q, d, p, y, v, b, idx)
     print(f"完成：成功 {ok}、失败 {fail}；缓存 {len(q)} 行季频 / {len(d)} 行分红 → {CACHE_DIR}")
     return 0 if fail == 0 else 1
 

@@ -962,6 +962,13 @@ def main(argv=None, payload=None):
     kv = []
     if last_payout:
         kv.append(f"分红率 {last_payout:.0f}%")
+    _bk = d.get("buybacks") or []
+    if _bk:
+        _n_cancel = sum(1 for x in _bk if x.get("kind") == "注销")
+        kv.append(f"回购 {len(_bk)} 条公告"
+                  + (f"（注销式 {_n_cancel} 条）" if _n_cancel else "（激励式，股本不变）"))
+    elif d.get("code"):
+        kv.append("回购：无")
     if latest and latest.get("nim") is not None:
         kv.append(f"净息差 {latest['nim']:.2f}%")
     if latest and latest.get("provision") is not None:
@@ -1075,6 +1082,12 @@ def load_cache_payloads(cache_dir):
         if pl is not None:
             pl["pe_range"] = (_num(r.get("peLo")), _num(r.get("peHi")))
             pl["pb_range"] = (_num(r.get("pbLo")), _num(r.get("pbHi")))
+    for r in _read_csv(os.path.join(cache_dir, "buybacks.csv")):
+        pl = payloads.get(str(r["code"]).zfill(6))
+        if pl is not None:
+            pl.setdefault("buybacks", []).append(dict(
+                date=r.get("date") or "", title=r.get("title") or "",
+                kind=r.get("kind") or ""))
     for pl in payloads.values():
         pl["quarters"].sort(key=lambda x: (x["year"], x["quarter"]))
     return payloads
