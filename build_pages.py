@@ -1143,6 +1143,18 @@ def main():
     print(f"站点已生成: {len(dates)} 天 / {n_reports} 份报告 + {len(extras)} 个附加页 "
           f"+ assets/report.css({css_bytes} 字节) -> {DOCS_DIR}")
 
+    # 个股基本面页面（docs/基本面/）。
+    # 放在这里而不是 run_all 的第 6 组：上面刚 rmtree 过 DOCS_DIR，任何写在
+    # build_pages **之前**的产物都会被删掉；而「最后一组只能是构建站点」是
+    # run_all 的不变量（见 tests/test_degradation.py）。所以走「洞察页」那个模式：
+    # 在内部生成 + 兜底，失败只警告、不阻塞建站。
+    # 数据由 run_all 的「基本面数据」步骤（group2）抓好，这里只渲染，约 1~2 秒。
+    try:
+        import build_fundamentals
+        build_fundamentals.build_all_simple()
+    except Exception as e:
+        print(f"[warn] 基本面页面构建失败: {type(e).__name__}: {e}")
+
     # 返回值分级：最新一天三个市场的报告全缺 → 真的没东西可发布，判失败；
     # 只缺子板块 → 通过（已在页面上用 banner 说明）。
     if not dates:

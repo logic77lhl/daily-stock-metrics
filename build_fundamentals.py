@@ -1165,6 +1165,12 @@ def _write_index(out_dir, rows, metrics):
         fh.write("\n".join(h))
 
 
+def build_all_simple(metrics=None, out_dir=None) -> int:
+    """给 build_pages 调用的入口：不用构造 argv。"""
+    ns = argparse.Namespace(json=None, out=out_dir, metrics=metrics, all=True, quiet=True)
+    return build_all(ns)
+
+
 def build_all(args) -> int:
     """池子里每只一页 + 索引页。"""
     cache_dir = os.path.join(BASE_DIR, "_fin_cache")
