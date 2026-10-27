@@ -408,20 +408,29 @@ def consecutive_years(by_year):
     return n, years[-n], years[-1]
 
 
-def main(argv=None):
+def main(argv=None, payload=None):
     ap = argparse.ArgumentParser(description="生成个股基本面档案页")
-    ap.add_argument("--json", required=True, help="季频财务 JSON（_fin_fetch.py 的产物）")
-    ap.add_argument("--out", required=True, help="输出 HTML 路径")
-    ap.add_argument("--metrics", default=None, help="仓库的 metrics CSV（取名称/行业/估值分位）")
+    ap.add_argument("--json", default=None, help="季频财务 JSON（单只调试用）")
+    ap.add_argument("--out", default=None, help="输出 HTML 路径（--all 时是目录）")
+    ap.add_argument("--metrics", default=None, help="仓库的 metrics CSV")
+    ap.add_argument("--all", action="store_true", help="批量：池子每只一页 + 索引页")
+    ap.add_argument("--quiet", action="store_true", help="批量时不逐只打印")
     args = ap.parse_args(argv)
 
-    with open(args.json, encoding="utf-8") as fh:
-        d = json.load(fh)
+    if args.all:
+        return build_all(args)
+    if payload is not None:
+        d = payload
+    else:
+        if not args.json:
+            ap.error("需要 --json 或 --all")
+        with open(args.json, encoding="utf-8") as fh:
+            d = json.load(fh)
 
     code = d["code"]
     qs = d["quarters"]
-    meta = {}
-    if args.metrics and os.path.exists(args.metrics):
+    meta = d.get("_meta") or {}
+    if not meta and args.metrics and os.path.exists(args.metrics):
         import csv
         with open(args.metrics, encoding="utf-8-sig") as fh:
             for row in csv.DictReader(fh):
@@ -494,9 +503,12 @@ def main(argv=None):
     # 最后一个分红年度如果还没有年报（Q4），说明这一年没走完 —— 柱子只有半年、
     # 矮一半，读者会误以为分红下降。直接不进图，在注释里说明。
     _years = list(div_by_year)
-    _partial = not any(str(x["year"]) == _years[-1] and x["quarter"] == 4 for x in qs)
-    if _partial:
-        _years = _years[:-1]
+    _partial = False
+    if _years:                      # 次新股可能一次都没分过红，_years 为空
+        _partial = not any(str(x["year"]) == _years[-1] and x["quarter"] == 4
+                           for x in qs)
+        if _partial:
+            _years = _years[:-1]
     div_years = _years[-12:]
     div_ps = [div_by_year[y] for y in div_years]
     share = latest.get("totalShare") if latest else None
@@ -507,17 +519,6 @@ def main(argv=None):
             payout.append(div_by_year[y] * share / np_year * 100)
         else:
             payout.append(None)
-
-    # 估值序列（降采样到 ~120 点）
-    px = d["prices"]
-    pe = [v for v in px["pe"]]
-    idx = list(range(len(pe)))[::max(1, len(pe) // 120)]
-    pe_vals = [pe[i] for i in idx if pe[i] is not None]
-    pe_labels = [px["dates"][i][2:7] for i in idx]
-    pe_series = [pe[i] for i in idx]
-    cur_pe = pe_vals[-1] if pe_vals else None
-    p_lo = sorted(pe_vals)[int(len(pe_vals) * 0.2)] if pe_vals else None
-    p_hi = sorted(pe_vals)[int(len(pe_vals) * 0.8)] if pe_vals else None
 
     # ── 财务排雷 ──
     flags = []
@@ -1001,13 +1002,223 @@ def main(argv=None):
              f'生成于 {datetime.now():%Y-%m-%d %H:%M}　·　仅供参考，不构成投资建议</div>')
     h.append('</div></body></html>')
 
-    out = args.out
+    out = d.get("_out") or args.out
+    if not out:
+        raise SystemExit("缺少输出路径（--out）")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:
         fh.write("\n".join(h))
-    print(f"已生成 {out}  ({len(''.join(h)) / 1024:.0f}KB)")
+    if not getattr(args, "quiet", False):
+        print(f"已生成 {out}  ({len(''.join(h)) / 1024:.0f}KB)")
     return 0
+
+
+
+
+# ─────────────────────────── 批量模式 ───────────────────────────
+def _read_csv(path):
+    import csv
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8-sig") as fh:
+        return list(csv.DictReader(fh))
+
+
+def _num(v):
+    try:
+        return float(v) if v not in (None, "", "nan", "None") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def load_cache_payloads(cache_dir):
+    """把 _fin_cache 的 CSV 还原成「每只一个 payload」。"""
+    payloads = {}
+    for r in _read_csv(os.path.join(cache_dir, "fundamentals.csv")):
+        code = str(r["code"]).zfill(6)
+        pl = payloads.setdefault(code, dict(code=code, quarters=[], dividends=[],
+                                            predicts=[], yr_avg={}))
+        pl["quarters"].append(dict(
+            year=int(r["year"]), quarter=int(r["quarter"]),
+            statDate=r.get("statDate") or "", pubDate=r.get("pubDate") or "",
+            reportName=r.get("reportName") or "",
+            revenue=_num(r.get("revenue")), netProfit=_num(r.get("netProfit")),
+            roe=_num(r.get("roe")), npMargin=_num(r.get("npMargin")),
+            gpMargin=_num(r.get("gpMargin")),
+            liabilityToAsset=_num(r.get("liabilityToAsset")),
+            cfoToNp=_num(r.get("cfoToNp")), totalShare=_num(r.get("totalShare")),
+            yoyRev=_num(r.get("yoyRev")), yoyNi=_num(r.get("yoyNi")),
+            qRevYoy=_num(r.get("qRevYoy")), qNpYoy=_num(r.get("qNpYoy")),
+            nim=_num(r.get("nim")), npl=_num(r.get("npl")),
+            provision=_num(r.get("provision")),
+        ))
+    for r in _read_csv(os.path.join(cache_dir, "dividends.csv")):
+        pl = payloads.get(str(r["code"]).zfill(6))
+        if pl is not None:
+            pl["dividends"].append(dict(reportDate=r.get("reportDate") or "",
+                                        cashPs=_num(r.get("cashPs")) or 0.0,
+                                        exDate=r.get("exDate") or "",
+                                        yieldAtEx=_num(r.get("yieldAtEx"))))
+    for r in _read_csv(os.path.join(cache_dir, "predicts.csv")):
+        pl = payloads.get(str(r["code"]).zfill(6))
+        if pl is not None:
+            pl["predicts"].append(dict(reportDate=r.get("reportDate") or "",
+                                       notice=r.get("notice") or "",
+                                       type=r.get("type") or "",
+                                       content=r.get("content") or ""))
+    for r in _read_csv(os.path.join(cache_dir, "prices_year.csv")):
+        pl = payloads.get(str(r["code"]).zfill(6))
+        if pl is not None:
+            pl["yr_avg"][str(r["year"])] = _num(r.get("avgClose"))
+    for r in _read_csv(os.path.join(cache_dir, "valu.csv")):
+        pl = payloads.get(str(r["code"]).zfill(6))
+        if pl is not None:
+            pl["pe_range"] = (_num(r.get("peLo")), _num(r.get("peHi")))
+            pl["pb_range"] = (_num(r.get("pbLo")), _num(r.get("pbHi")))
+    for pl in payloads.values():
+        pl["quarters"].sort(key=lambda x: (x["year"], x["quarter"]))
+    return payloads
+
+
+def latest_metrics_path(out_dir="output"):
+    """最新的 metrics CSV。注意它在 output/{日期}/ 子目录里，不是 output/ 根下。"""
+    d = os.path.join(BASE_DIR, out_dir)
+    if not os.path.isdir(d):
+        return None
+    for name in sorted(os.listdir(d), reverse=True):
+        sub = os.path.join(d, name)
+        if not os.path.isdir(sub):
+            continue
+        cands = sorted(x for x in os.listdir(sub)
+                       if x.startswith("metrics_") and x.endswith(".csv"))
+        if cands:
+            return os.path.join(sub, cands[-1])
+    return None
+
+
+def _summary_row(pl, meta):
+    """索引页一行：最新季 + 三个红灯。"""
+    qs = pl["quarters"]
+    latest = qs[-1] if qs else {}
+    div_by_year = yearly_dividends(pl["dividends"])
+    fy_year, fy_amt = full_year_dividend(div_by_year)
+    px = _num(meta.get("最新价"))
+    yld = (fy_amt / px * 100) if (fy_amt and px) else None
+    roe_pts = [(q["year"], q["roe"]) for q in qs if q["quarter"] == 4 and q.get("roe")][-4:]
+    roe_delta = (roe_pts[-1][1] - roe_pts[0][1]) * 100 if len(roe_pts) >= 2 else None
+    pe_pct, jw = _num(meta.get("PE历史分位%")), _num(meta.get("周线J"))
+    red = 0
+    if pe_pct is not None and pe_pct > 70:
+        red += 1
+    if roe_delta is not None and roe_delta < -1:
+        red += 1
+    if jw is not None and jw > 80:
+        red += 1
+    return dict(code=pl["code"], name=meta.get("名称") or pl["code"],
+                ind=meta.get("行业") or "—", px=px, pe_pct=pe_pct,
+                pb_pct=_num(meta.get("PB历史分位%")), yld=yld,
+                roe=(latest.get("roe") or 0) * 100 if latest.get("roe") else None,
+                roe_delta=roe_delta, jw=jw, np_yoy=latest.get("qNpYoy"), red=red,
+                statDate=latest.get("statDate") or "")
+
+
+def _write_index(out_dir, rows, metrics):
+    rows = sorted(rows, key=lambda r: (-r["red"], -(r["yld"] or 0)))
+    date = os.path.basename(metrics).replace("metrics_", "").replace(".csv", "")
+    h = ['<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">',
+         '<meta name="viewport" content="width=device-width,initial-scale=1">',
+         f'<title>基本面榜单 {date}</title><style>{CSS}</style></head><body>',
+         '<div class="page">',
+         f'<header><div class="title">基本面榜单<span class="code">{len(rows)} 只</span></div>'
+         f'<div class="prow"><span class="meta">财务 _fin_cache ｜ 技术面与估值分位 {date}'
+         f' ｜ 点名字进个股页</span></div></header>',
+         '<h2>按红灯数排序<span class="unit">红 = 估值偏高 / ROE 走弱 / 周J 超买</span></h2>',
+         '<div class="scroll"><table><thead><tr><th class="k">标的</th><th>行业</th>'
+         '<th>最新价</th><th>PE分位</th><th>PB分位</th><th>股息率</th><th>ROE</th>'
+         '<th>ROE 4年</th><th>净利同比</th><th>周J</th><th>灯</th></tr></thead><tbody>']
+    for r in rows:
+        dots = ("<span style='color:#d92d20'>●</span>" * r["red"]
+                + "<span style='color:#d0d5dd'>○</span>" * (3 - r["red"]))
+        pe_txt = f'{r["pe_pct"]:.0f}%' if r["pe_pct"] is not None else "—"
+        pb_txt = f'{r["pb_pct"]:.0f}%' if r["pb_pct"] is not None else "—"
+        yld_txt = f'{r["yld"]:.2f}%' if r["yld"] else "—"
+        roe_txt = f'{r["roe"]:.2f}%' if r["roe"] else "—"
+        d_txt = f'{r["roe_delta"]:+.2f}pp' if r["roe_delta"] is not None else "—"
+        d_cls = "down" if (r["roe_delta"] or 0) < 0 else "up"
+        n_txt = f'{r["np_yoy"]:+.1f}%' if r["np_yoy"] is not None else "—"
+        j_txt = f'{r["jw"]:.0f}' if r["jw"] is not None else "—"
+        h.append(
+            f'<tr><td class="k"><a href="{r["code"]}.html" style="color:#175cd3;'
+            f'text-decoration:none">{html.escape(str(r["name"]))}'
+            f'<span style="color:#98a2b3;font-size:11px"> {r["code"]}</span></a></td>'
+            f'<td style="text-align:left;color:#667085;font-size:12px">'
+            f'{html.escape(str(r["ind"]))}</td>'
+            f'<td>{r["px"] if r["px"] else "—"}</td><td>{pe_txt}</td><td>{pb_txt}</td>'
+            f'<td>{yld_txt}</td><td>{roe_txt}</td><td class="{d_cls}">{d_txt}</td>'
+            f'<td>{n_txt}</td><td>{j_txt}</td><td>{dots}</td></tr>')
+    h.append('</tbody></table></div>')
+    h.append('<div class="fn">红灯数只是位置描述，不是买卖建议。'
+             '排序 = 红灯数降序、同灯数按股息率降序。</div>')
+    h.append(f'<div class="ft">生成于 {datetime.now():%Y-%m-%d %H:%M}　·　'
+             f'仅供参考，不构成投资建议</div></div></body></html>')
+    with open(os.path.join(out_dir, "index.html"), "w", encoding="utf-8") as fh:
+        fh.write("\n".join(h))
+
+
+def build_all(args) -> int:
+    """池子里每只一页 + 索引页。"""
+    cache_dir = os.path.join(BASE_DIR, "_fin_cache")
+    payloads = load_cache_payloads(cache_dir)
+    if not payloads:
+        print("_fin_cache 为空，先跑 fetch_fundamentals.py --init")
+        return 0
+
+    metrics = args.metrics or latest_metrics_path()
+    if not metrics or not os.path.exists(metrics):
+        print("找不到 metrics CSV，跳过基本面页面")
+        return 0
+
+    import csv
+    meta_by_code = {}
+    with open(metrics, encoding="utf-8-sig") as fh:
+        for row in csv.DictReader(fh):
+            meta_by_code[str(row.get("代码", "")).zfill(6)] = row
+
+    # 名称/行业以 _fin_cache/codes.csv 为准：metrics CSV 的行业列在 top100 抓取
+    # 降级（只剩代码+名称的历史名单）时会是空的，页面不该跟着一起空。
+    for r in _read_csv(os.path.join(cache_dir, "codes.csv")):
+        code = str(r.get("code", "")).zfill(6)
+        if code in meta_by_code:
+            if (r.get("name") or "").strip():
+                meta_by_code[code]["名称"] = r["name"].strip()
+            if (r.get("industry") or "").strip():
+                meta_by_code[code]["行业"] = r["industry"].strip()
+
+    out_dir = args.out or os.path.join(BASE_DIR, "docs", "基本面")
+    os.makedirs(out_dir, exist_ok=True)
+
+    codes = sorted(c for c in meta_by_code if c in payloads)
+    summary, ok, fail = [], 0, 0
+    for code in codes:
+        pl = payloads[code]
+        pl["_meta"] = meta_by_code[code]
+        pl["_out"] = os.path.join(out_dir, f"{code}.html")
+        try:
+            main(["--quiet"], payload=pl)
+            ok += 1
+            summary.append(_summary_row(pl, meta_by_code[code]))
+        except Exception as exc:
+            fail += 1
+            print(f"  {code} 渲染失败 {type(exc).__name__}: {exc}")
+        finally:
+            pl.pop("_meta", None)
+            pl.pop("_out", None)
+
+    _write_index(out_dir, summary, metrics)
+    print(f"基本面页面：{ok} 只成功、{fail} 只失败 → {out_dir}")
+    return 0 if fail == 0 else 1
 
 
 if __name__ == "__main__":
     sys.exit(main())
+

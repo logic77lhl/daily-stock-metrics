@@ -890,6 +890,9 @@ def build_index(dates, extras, ctx):
         nav += '<a class="pill ins" href="insights.html">📡 市场洞察</a>'
     if "value.html" in extras:
         nav += '<a class="pill val" href="value.html">💎 价值标的</a>'
+    # 基本面页面由 run_all 的第 5 组（build_fundamentals.py --all）生成，必定存在。
+    # 它跑在建站之后，所以这里不看 extras —— 否则永远加不上。
+    nav += '<a class="pill" href="基本面/index.html">📊 基本面</a>'
     for src_key, dst_key in BT_SOURCES:
         label = {"a": "A股", "etf": "ETF", "hk": "港股"}[dst_key]
         if f"backtest-{dst_key}.html" in extras:

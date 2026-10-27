@@ -167,6 +167,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # 容错 add：任一 pathspec 无匹配时不能让整个提交步骤失败
           git add -A -- output output_etf output_hk 2>/dev/null || true
+          # 基本面缓存：季报季才变，入库后 --refresh 才能只抓落后的那几只。
+          # 不提交的话每次 CI 都是空缓存，等于每天全量重抓 348 个请求。
+          if [ -d _fin_cache ]; then git add -A -- _fin_cache; fi
           # 用 if 而不是 `[ -e ] && git add`：后者在文件不存在时整条 AND-OR
           # 列表返回非零，配合 set -e 会让步骤直接中断。
           for f in 摘要-*.md; do
