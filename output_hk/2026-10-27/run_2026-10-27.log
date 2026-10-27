@@ -1,0 +1,15 @@
+2026-10-27 16:35:26  ===== 开始每日港股通指标任务 2026-10-27 =====
+2026-10-27 16:35:26  步骤1: 获取港股通总市值前100标的…
+获取港股通标的列表(共取市值前 100 只)...
+2026-10-27 16:35:29  [fetch_hk] push2.eastmoney.com 第 1 轮失败: HTTPError: 502 Server Error: Bad Gateway for url: https://push2delay.eastmoney.com/api/qt/clist/get?pn=1&pz=1000&po=1&np=
+接口返回 100 只港股通标的
+2026-10-27 16:35:29  步骤1完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-27/hk_list_2026-10-27.csv（名单来源: eastmoney，耗时 2s）
+2026-10-27 16:35:29  步骤2: 计算 KDJ-J(日/周/月) 及估值…
+2026-10-27 16:35:29  观察池: 共109只(含历史追踪9只) -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-27/tracked_2026-10-27.csv
+2026-10-27 16:35:29  待处理 109 条，并发数 16
+2026-10-27 16:35:36  共享价格序列：109 只写入 /tmp/dsm-prices-f1dqz1b3/output_hk.csv（回测将直接读它，省掉 109 次重复请求）
+2026-10-27 16:35:36  全部完成：成功 109/109，失败 0，数据日期 2026-10-27，结果已写入 /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-27/metrics_2026-10-27.csv
+2026-10-27 16:35:36  步骤2完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-27/metrics_2026-10-27.csv（成功 109/109，失败 0）
+2026-10-27 16:35:36  步骤3: 生成 HTML 总结报告…
+2026-10-27 16:35:36  步骤3完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-27/report_2026-10-27.html
+2026-10-27 16:35:36  ===== 全部完成 2026-10-27（邮件由流水线末尾统一发送）=====
