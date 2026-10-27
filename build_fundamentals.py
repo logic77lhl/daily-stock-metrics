@@ -116,6 +116,23 @@ tbody tr.gap td{border-bottom:1px solid #eaecf0}
 .nowbox .cap{font-size:11px;color:#98a2b3;margin:2px 0 6px}
 .link{display:inline-block;margin-top:10px;font-size:12.5px;color:#175cd3;
   text-decoration:none;border-bottom:1px solid #d1e0ff}
+/* 公式提示 */
+td.k abbr{text-decoration:none;border-bottom:1px dotted #d0d5dd;cursor:help}
+td.k abbr i.q{font-style:normal;font-size:9px;color:#b0b8c7;margin-left:3px;
+  vertical-align:super}
+/* 决策速览 */
+.dec{border:1px solid #eaecf0;border-radius:10px;overflow:hidden;margin-bottom:4px}
+.dec .row{display:flex;align-items:flex-start;gap:10px;padding:9px 13px;
+  border-bottom:1px solid #f7f8fa;font-size:13px}
+.dec .row:last-child{border-bottom:0}
+.dec .row .n{width:58px;color:#667085;font-size:12px;flex-shrink:0;white-space:nowrap}
+.dec .row .dot{width:7px;height:7px;border-radius:50%;margin-top:6px;flex-shrink:0}
+.dec .row .dot.ok{background:#12b76a}.dec .row .dot.warn{background:#f79009}
+.dec .row .dot.bad{background:#d92d20}
+.dec .row .txt{flex:1;line-height:1.6}
+.dec .row .txt b{font-weight:600;margin-right:8px}
+.dec .row .txt em{font-style:normal;color:#98a2b3;font-size:11.5px;margin-left:4px}
+.dec .sum{background:#f7f9fc;padding:11px 13px;font-size:13px;font-weight:600}
 /* 同业表 */
 table.peer th.me,table.peer td.me{background:#f7f9fc;font-weight:700}
 table.peer th,table.peer td{text-align:right;font-size:13px}
@@ -557,6 +574,21 @@ def main(argv=None):
     # StockAnalysis 也是这么做的：TTM | FY2025 | FY2024 …，没有"半年"列。
     periods = [("annual", y, 4) for y in reversed(complete[-8:])]
 
+    annual_chrono = list(reversed([y for k, y, q in periods if k == "annual"]))
+
+    def _yield(x, k, y):
+        """当年股息率 = 该年度每股分红 ÷ 当年**日均价**。
+
+        不用年末价：一年之内有高有低，年末那天只是抽样点。以工行 2025 年为例，
+        年内价格 6.5~8.2，股息率实际在 3.8%~4.8% 之间；用年均价 7.37 得 4.21%，
+        用年末价 7.94 得 3.91% —— 后者偏低。均价更能代表「那一年买入的典型水平」。
+        """
+        dps = div_by_year.get(str(y))
+        if not dps or k != "annual":
+            return None
+        px = yr_avg.get(str(y))
+        return dps / px * 100 if px else None
+
     def qof(y, q):
         return next((x for x in qs if x["year"] == y and x["quarter"] == q), None)
 
@@ -565,6 +597,15 @@ def main(argv=None):
             return float(str(s).replace("%", ""))
         except (TypeError, ValueError):
             return None
+
+    def _f(key):
+        v = meta.get(key)
+        try:
+            return float(str(v).replace("%", ""))
+        except (TypeError, ValueError):
+            return None
+
+    jd, jw, jm = _f("日线J"), _f("周线J"), _f("月线J")
 
     # TTM（滚动 12 个月）= 最新累计 + 上年全年 − 上年同期累计。
     # 为什么需要它：中报是半年累计，和右边年报放一起，净利率会显示 37.9% vs 44.2%，
@@ -622,15 +663,61 @@ def main(argv=None):
              f'（公告 {latest["pubDate"] if latest else "—"}）</span>')
     h.append('</div></header>')
 
+    # ── 决策速览：四个信号灯，把「贵不贵 / 好不好 / 给不给钱 / 什么位置」合成一句 ──
+    _pp, _pbp = _pct(pe_pct), _pct(pb_pct)
+    _roe = [(y, (qof(y, 4) or {}).get("roe") * 100) for y in annual_chrono[-5:]
+            if (qof(y, 4) or {}).get("roe") is not None]
+    _ylds = [v for v in (_yield(None, "annual", y) for y in annual_chrono) if v is not None]
+    _yld_med = sorted(_ylds)[len(_ylds) // 2] if _ylds else None
+    _js = [v for v in (jd, jw, jm) if v is not None]
+
+    sig = []
+    if _pp is not None:
+        st = "bad" if _pp > 70 else ("ok" if _pp < 30 else "warn")
+        sig.append(("估值", st,
+                    f'PE 分位 {_pp:.0f}%' + (f'　PB 分位 {_pbp:.0f}%' if _pbp is not None else ''),
+                    "相对自身历史偏贵" if _pp > 70 else ("相对自身历史便宜" if _pp < 30 else "中性")))
+    if len(_roe) >= 2:
+        _droe = _roe[-1][1] - _roe[0][1]
+        st = "bad" if _droe < -1 else ("ok" if _droe > 1 else "warn")
+        sig.append(("盈利", st,
+                    f'ROE {_roe[0][1]:.2f}%（{_roe[0][0]}）→ {_roe[-1][1]:.2f}%（{_roe[-1][0]}）',
+                    f'{_droe:+.2f}pp，'
+                    f'{"持续下滑" if _droe < -1 else ("在改善" if _droe > 1 else "基本持平")}'))
+    if _yld_med and yld_now:
+        st = "ok" if yld_now >= _yld_med else "warn"
+        sig.append(("现金回报", st,
+                    f'股息率 {yld_now:.2f}%　历史中位 {_yld_med:.2f}%',
+                    "高于自身历史中位" if st == "ok" else "低于自身历史中位"))
+    if _js:
+        m = sum(_js) / len(_js)
+        st = "bad" if m > 80 else ("ok" if m < 20 else "warn")
+        sig.append(("技术位置", st,
+                    f'日 J {jd:.0f}　周 J {jw:.0f}　月 J {jm:.0f}' if all(
+                        v is not None for v in (jd, jw, jm)) else f'三周期 J 均值 {m:.0f}',
+                    "三周期都在超买区" if m > 80 else ("三周期都在超卖区" if m < 20 else "在中性区")))
+
+    if sig:
+        nbad = sum(1 for s in sig if s[1] == "bad")
+        nok = sum(1 for s in sig if s[1] == "ok")
+        if nbad >= 2:
+            concl = "多项偏高位 / 走弱 —— 不是好的买入位置"
+        elif nok >= 2 and nbad == 0:
+            concl = "多项偏低位 / 改善 —— 值得进一步看"
+        else:
+            concl = "信号混合 —— 没有明显方向"
+        h.append('<div class="dec">')
+        for name, st, val, note in sig:
+            h.append(f'<div class="row"><span class="n">{name}</span>'
+                     f'<span class="dot {st}"></span>'
+                     f'<span class="txt"><b>{val}</b><em>{note}</em></span></div>')
+        h.append(f'<div class="sum">{concl}</div>')
+        h.append('</div>')
+        h.append('<div class="fn">这四项都是<b>位置描述</b>，不是预测。'
+                 '独立回测显示这类技术信号对未来收益无预测力，请只当作"现在处在什么位置"来看。</div>')
+
     # ── 当前位置：把技术面（日J/周J/月J/均线/量比）和估值放在一起 ──
     # 数据全部来自仓库的 metrics CSV，不需要额外抓取 —— 这就是「和现有系统联动」。
-    def _f(key):
-        v = meta.get(key)
-        try:
-            return float(str(v).replace("%", ""))
-        except (TypeError, ValueError):
-            return None
-
     J_MIN, J_MAX = -20.0, 120.0     # J 没有上下界（工行周 J 曾到 -16.8、月 J 到 113）
 
     def jbar(label, j):
@@ -648,7 +735,6 @@ def main(argv=None):
                 f'<span class="jt"><i style="left:{pos:.1f}%"></i></span>'
                 f'<span class="js">{state}</span></div>')
 
-    jd, jw, jm = _f("日线J"), _f("周线J"), _f("月线J")
     if any(v is not None for v in (jd, jw, jm)):
         h.append('<h2>当前位置<span class="unit">技术面数据来自仓库每日 metrics CSV</span></h2>')
         h.append('<div class="jrow" style="padding-bottom:2px"><span class="jl"></span>'
@@ -722,10 +808,11 @@ def main(argv=None):
     h.append('<th></th></tr></thead><tbody>')
 
     # 趋势线的数据点：只用完整年度，按时间正序（左旧右新）
-    annual_chrono = list(reversed([y for k, y, q in periods if k == "annual"]))
 
-    def metric(label, getter, fmt="{:.0f}", gap=False, ttm=None):
-        h.append(f'<tr class="{"main gap" if gap else "main"}"><td class="k">{label}</td>')
+    def metric(label, getter, fmt="{:.0f}", gap=False, ttm=None, tip=None):
+        lab = (f'<abbr title="{html.escape(tip)}">{label}<i class="q">?</i></abbr>'
+               if tip else label)
+        h.append(f'<tr class="{"main gap" if gap else "main"}"><td class="k">{lab}</td>')
         h.append(f'<td class="ttm">{fmt.format(ttm)}</td>' if ttm is not None
                  else '<td class="na">—</td>')
         for kind, y, q in periods:
@@ -749,15 +836,18 @@ def main(argv=None):
         return v / 1e8 if v else None
 
     metric("营业收入", lambda x, k, y: yi(x, "revenue"), "{:,.0f}",
-           ttm=(ttm_rev / 1e8 if ttm_rev else None))
+           ttm=(ttm_rev / 1e8 if ttm_rev else None),
+           tip="利润表「营业收入」，年内累计。数据源：东财 RPT_F10_FINANCE_MAINFINADATA / TOTALOPERATEREVE")
     yoy_row("yoyRev")
     metric("归母净利", lambda x, k, y: yi(x, "netProfit"), "{:,.0f}",
-           ttm=(ttm_np / 1e8 if ttm_np else None))
+           ttm=(ttm_np / 1e8 if ttm_np else None),
+           tip="归属于母公司股东的净利润，年内累计。字段 PARENTNETPROFIT（不含少数股东损益）")
     yoy_row("yoyNi")
     metric("ROE（加权）",
            lambda x, k, y: ((x or {}).get("roe") or 0) * 100
            if (x or {}).get("roe") is not None else None, "{:.2f}%", gap=True,
-           ttm=ttm_roe)
+           ttm=ttm_roe,
+           tip="归母净利 ÷ 加权平均净资产（官方披露口径 ROEJQ）。TTM 列为年化值")
     # 净利率统一用**归母净利 ÷ 营收**。数据源的 XSJLL 是「全部净利 ÷ 营收」
     # （含少数股东损益），与上面的「归母净利」行不同口径 —— 工行 2026 中报
     # 1737/4659 = 37.3%，而 XSJLL 给 37.9%，读者一除就会发现对不上。
@@ -765,29 +855,21 @@ def main(argv=None):
         rv, npf = (x or {}).get("revenue"), (x or {}).get("netProfit")
         return npf / rv * 100 if (rv and npf) else None
 
-    metric("净利率", _margin, "{:.1f}%", ttm=ttm_margin)
+    metric("净利率", _margin, "{:.1f}%", ttm=ttm_margin,
+           tip="归母净利 ÷ 营业收入。注意：数据源自带的 XSJLL 是「全部净利 ÷ 营收」（含少数股东），本表不用它")
     metric("每股分红", lambda x, k, y: div_by_year.get(str(y)) if k == "annual" else None,
-           "{:.4f}", gap=True)
+           "{:.4f}", gap=True,
+           tip="该财务年度的每股现金分红合计（税前）。一年两次分红的年份会把中报+年报两笔相加")
     metric("分红率",
            lambda x, k, y: (div_by_year.get(str(y)) * share
                             / (qof(y, 4) or {}).get("netProfit") * 100)
            if (k == "annual" and div_by_year.get(str(y)) and share
-               and (qof(y, 4) or {}).get("netProfit")) else None, "{:.0f}%")
+               and (qof(y, 4) or {}).get("netProfit")) else None, "{:.0f}%",
+           tip="每股分红 × 总股本 ÷ 归母净利。>100% 说明分红超过当年利润，不可持续")
 
-    def _yield(x, k, y):
-        """当年股息率 = 该年度每股分红 ÷ 当年**日均价**。
 
-        不用年末价：一年之内有高有低，年末那天只是抽样点。以工行 2025 年为例，
-        年内价格 6.5~8.2，股息率实际在 3.8%~4.8% 之间；用年均价 7.37 得 4.21%，
-        用年末价 7.94 得 3.91% —— 后者偏低。均价更能代表「那一年买入的典型水平」。
-        """
-        dps = div_by_year.get(str(y))
-        if not dps or k != "annual":
-            return None
-        px = yr_avg.get(str(y))
-        return dps / px * 100 if px else None
-
-    metric("股息率", _yield, "{:.2f}%")
+    metric("股息率", _yield, "{:.2f}%",
+           tip="每股分红 ÷ 当年**日均价**（不是年末价）。一年内股价有高低，所以这是个代表值，实际在区间内浮动")
     h.append('</tbody></table></div>')
     h.append('<div class="fn">年报为全年累计；<b>TTM = 最近 12 个月</b>'
              '（最新累计 + 上年全年 − 上年同期累计），因此与年报天然可比 —— '
@@ -888,6 +970,32 @@ def main(argv=None):
     if kv:
         h.append(f'<div class="kv">{"　·　".join(kv)}</div>')
     h.append('</div>')
+
+    # ── 公式说明：每个数字怎么来的，可逐条核对 ──
+    FORMULAS = [
+        ("营业收入", "利润表「营业收入」，年内累计（字段 TOTALOPERATEREVE）"),
+        ("归母净利", "归属于母公司股东的净利润，年内累计（PARENTNETPROFIT，不含少数股东损益）"),
+        ("ROE（加权）", "归母净利 ÷ 加权平均净资产（ROEJQ，官方披露口径）"),
+        ("净利率", "归母净利 ÷ 营业收入（本表自算；数据源自带的 XSJLL 含少数股东，不用）"),
+        ("每股分红", "该财务年度的每股现金分红合计（税前）。一年两次分红的年份把中报 + 年报两笔相加"),
+        ("分红率", "每股分红 × 总股本 ÷ 归母净利"),
+        ("股息率（年度）", "每股分红 ÷ <b>当年日均价</b>。不用年末价：年末那天只是抽样点"),
+        ("股息率（表头）", "最近一个<b>完整年度</b>的每股分红 ÷ 当前价。不用滚动 12 个月："
+                     "一年两次分红的过渡期里会挤进三次派息，高估"),
+        ("TTM", "最新累计 + 上年全年 − 上年同期累计。这样才与年报可比"),
+        ("PE / PB 分位", "当前 PE_TTM / PB_MRQ 在有数据以来的分位（来自仓库每日 metrics CSV）"),
+        ("日/周/月 J", "KDJ 的 J 值（N=9, M1=3, M2=3），周/月由日线聚合后计算。"
+                  "J 无上下界，可小于 0 或大于 100"),
+        ("数据来源", "东财 datacenter：RPT_F10_FINANCE_MAINFINADATA（季频指标）、"
+                 "RPT_SHAREBONUS_DET（分红）、RPT_VALUEANALYSIS_DET（估值序列）"),
+    ]
+    h.append('<details><summary>各项指标怎么算的（口径与数据来源）</summary>')
+    h.append('<table><thead><tr><th class="k">指标</th>'
+             '<th style="text-align:left">公式 / 口径</th></tr></thead><tbody>')
+    for nm, fm in FORMULAS:
+        h.append(f'<tr><td class="k">{nm}</td>'
+                 f'<td style="text-align:left;white-space:normal;color:#475467">{fm}</td></tr>')
+    h.append('</tbody></table></details>')
 
     h.append(f'<div class="ft">数据：东财 datacenter（季频指标 / 分红）· 本地估值序列<br>'
              f'生成于 {datetime.now():%Y-%m-%d %H:%M}　·　仅供参考，不构成投资建议</div>')
