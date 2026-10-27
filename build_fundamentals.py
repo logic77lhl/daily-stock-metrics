@@ -30,32 +30,39 @@ elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 CSS = """
 *{box-sizing:border-box}
-body{margin:0;background:#f0f2f5;font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;color:#1a1a2e}
-.wrap{max-width:860px;margin:0 auto;padding:14px}
-.card{background:#fff;border-radius:12px;padding:16px 18px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.hd{background:linear-gradient(135deg,#141e30,#2d4a6e);color:#fff}
-.hd h1{margin:0;font-size:21px}
-.hd .sub{color:#aab4cf;font-size:12.5px;margin-top:6px;line-height:1.7}
-h2{font-size:15px;margin:0 0 4px}
-.note{font-size:11.5px;color:#8a93a5;line-height:1.7;margin:2px 0 10px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:12px}
-.tile{background:#f7f9fc;border-radius:9px;padding:10px 12px}
-.tile .k{font-size:11.5px;color:#7a8397}
-.tile .v{font-size:19px;font-weight:700;margin-top:3px}
-.tile .s{font-size:11px;color:#9aa3b5;margin-top:2px}
-table{width:100%;border-collapse:collapse;font-size:12.5px}
-th,td{padding:6px 8px;border-bottom:1px solid #eef1f6;text-align:right;white-space:nowrap}
-th:first-child,td:first-child{text-align:left}
-th{color:#7a8397;font-weight:600;background:#fafbfd}
-tr:hover td{background:#f7f9fc}
-.flag{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #eef1f6;font-size:13px;align-items:flex-start}
-.flag:last-child{border:0}
-.flag .ic{font-size:15px;line-height:1.3}
-.flag .t{flex:1}
-.flag .t b{display:block;font-size:13px;margin-bottom:2px}
-.flag .t span{color:#7a8397;font-size:12px;line-height:1.6}
-.ok{color:#2f9e44}.warn{color:#e8590c}.bad{color:#c92a2a}.na{color:#adb5bd}
-.ft{color:#98a1b3;font-size:11.5px;text-align:center;padding:6px 0 22px;line-height:1.8}
+body{margin:0;background:#f2f4f8;font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;color:#1a1a2e}
+.wrap{max-width:760px;margin:0 auto;padding:12px 12px 28px}
+.hd{background:linear-gradient(135deg,#141e30,#2d4a6e);color:#fff;border-radius:12px;padding:15px 17px;margin-bottom:12px}
+.hd h1{margin:0;font-size:20px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hd h1 .code{font-size:13px;color:#aab4cf;font-weight:400}
+.hd h1 .tag{font-size:11.5px;background:rgba(255,255,255,.15);padding:2px 7px;border-radius:5px;font-weight:400}
+.hd .sub{color:#aab4cf;font-size:12px;margin-top:7px;line-height:1.6}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);background:#fff;border-radius:12px;
+  box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden;margin-bottom:4px}
+.kpis>div{padding:12px 6px;text-align:center;border-right:1px solid #eef1f6}
+.kpis>div:last-child{border-right:0}
+.kpis b{display:block;font-size:19px;font-variant-numeric:tabular-nums;line-height:1.25}
+.kpis span{font-size:11px;color:#8a93a5}
+h2{font-size:14px;margin:18px 0 8px;padding-left:9px;border-left:3px solid #2d4a6e;color:#1a1a2e}
+table{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums;
+  background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+th,td{padding:9px 10px;text-align:right;border-bottom:1px solid #f2f5f9}
+th:first-child,td:first-child{text-align:left;font-weight:600}
+th{background:#f7f9fc;color:#6b7488;font-size:11.5px;font-weight:600;white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:#fafcff}
+.sum{background:#f7f9fc;font-weight:700}
+.na{color:#c8ceda}
+.up{color:#c92a2a}
+.down{color:#2f9e44}
+.fn{font-size:11px;color:#98a1b3;line-height:1.7;margin:7px 2px 0}
+.verdict{background:#fff;border-radius:10px;padding:12px 15px;font-size:13px;
+  box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:16px;line-height:1.7}
+.verdict.ok{color:#2f9e44}
+.verdict.warn{color:#e8590c}
+.verdict b{font-size:13.5px}
+.verdict .kv{color:#6b7488;font-size:12.5px;margin-top:5px}
+.ft{color:#a4adbd;font-size:11px;text-align:center;padding:16px 0 4px;line-height:1.8}
 """
 
 
@@ -345,6 +352,11 @@ def main(argv=None):
         else:
             q["qRoe"] = q["roe"] - prev["roe"]
 
+    # 价格序列（表 2 的「当年股息率」要用年末收盘价）
+    _px = d.get("prices") or {}
+    dates_all = [x for x in (_px.get("dates") or [])]
+    closes_all = [x for x in (_px.get("close") or [])]
+
     # 分红
     div_by_year = yearly_dividends(d["dividends"])
     # 最后一个分红年度如果还没有年报（Q4），说明这一年没走完 —— 柱子只有半年、
@@ -409,176 +421,139 @@ def main(argv=None):
     # CFO/净利：银行不适用
     flags.append(("na", "经营现金流 ÷ 净利润", "对银行不适用（存贷款业务现金流口径不同），已跳过"))
 
-    # ── 渲染 ──
+    # ── 渲染（表格优先：按年 / 按季度，数字对齐、颜色编码）──
     h = []
     h.append('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">')
     h.append('<meta name="viewport" content="width=device-width,initial-scale=1">')
-    h.append(f'<title>{html.escape(name)} 基本面档案</title><style>{CSS}</style></head><body>')
-    h.append('<div class="wrap">')
+    h.append(f'<title>{name} 基本面</title><style>{CSS}</style></head><body><div class="wrap">')
 
-    # 抬头
-    h.append('<div class="card hd">')
-    h.append(f'<h1>{html.escape(name)} <span style="font-size:14px;color:#aab4cf">{code}</span></h1>')
-    h.append(f'<div class="sub">{html.escape(str(ind))} ｜ 最新价 {last_px} ｜ '
-             f'PE 分位 {pe_pct} ｜ PB 分位 {pb_pct}<br>'
-             f'数据截止 {latest["statDate"] if latest else "—"}（公告于 '
-             f'{latest["pubDate"] if latest else "—"}）</div>')
-    h.append('</div>')
+    # 抬头：一行
+    h.append(f'<div class="hd"><h1>{html.escape(name)}<span class="code">{code}</span>'
+             f'<span class="tag">{html.escape(str(ind))}</span></h1>')
+    h.append(f'<div class="sub">最新价 {last_px} ｜ PE 分位 {pe_pct} ｜ PB 分位 {pb_pct} ｜ '
+             f'数据截止 {latest["statDate"] if latest else "—"}'
+             f'（公告 {latest["pubDate"] if latest else "—"}）</div></div>')
 
-    # 三个结论数字
-    h.append('<div class="card"><div class="tiles">')
-    dy = div_ps[-1] if div_ps else None
+    # KPI：4 个数字，一屏内先给结论
     fy_year, fy_amt = full_year_dividend(div_by_year)
     ttm = ttm_dividend(d["dividends"])
     yld = (fy_amt / float(last_px) * 100) if fy_amt and last_px else None
-    n_year, y_from, y_to = consecutive_years(div_by_year)
-    h.append(f'<div class="tile"><div class="k">{fy_year} 年度每股分红</div>'
-             f'<div class="v">{fy_amt if fy_amt else "—"}</div>'
-             f'<div class="s">股息率约 {yld:.2f}%</div></div>' if yld else
-             f'<div class="tile"><div class="k">最近完整年度分红</div>'
-             f'<div class="v">{fy_amt if fy_amt else "—"}</div><div class="s">—</div></div>')
-    h.append(f'<div class="tile"><div class="k">连续分红（数据窗口内）</div>'
-             f'<div class="v">{n_year} 年</div>'
-             f'<div class="s">{y_from} ~ {y_to}</div></div>')
-    h.append(f'<div class="tile"><div class="k">最新单季净利</div>'
-             f'<div class="v">{(latest.get("qNetProfit") or 0) / 1e8:,.0f}亿</div>'
-             f'<div class="s">同比 {latest.get("npYoy") or 0:+.1f}%</div></div>')
-    h.append(f'<div class="tile"><div class="k">最新 ROE（累计）</div>'
-             f'<div class="v">{(latest.get("roe") or 0) * 100:.2f}%</div>'
-             f'<div class="s">净利率 {(latest.get("npMargin") or 0) * 100:.1f}%</div></div>')
-    h.append('</div></div>')
+    last_payout = next((v for v in reversed(payout) if v is not None), None)
+    h.append('<div class="kpis">')
+    h.append(f'<div><b>{yld:.2f}%</b><span>股息率（{fy_year} 年度）</span></div>' if yld else
+             '<div><b>—</b><span>股息率</span></div>')
+    np_yoy = latest.get("npYoy") if latest else None
+    h.append(f'<div><b class="{"up" if (np_yoy or 0) > 0 else "down"}">'
+             f'{np_yoy:+.1f}%</b><span>净利同比（单季）</span></div>' if np_yoy is not None else
+             '<div><b>—</b><span>净利同比</span></div>')
+    h.append(f'<div><b>{(latest.get("roe") or 0) * 100:.2f}%</b>'
+             f'<span>ROE（{latest["year"]} 累计）</span></div>' if latest else
+             '<div><b>—</b><span>ROE</span></div>')
+    h.append(f'<div><b>{last_payout:.0f}%</b><span>分红率</span></div>' if last_payout else
+             '<div><b>—</b><span>分红率</span></div>')
+    h.append('</div>')
 
-    # 银行专属指标（东财独有字段，baostock 拿不到）
-    if latest and (latest.get("nim") is not None or latest.get("provision") is not None):
-        h.append('<div class="card"><h2>银行专属指标</h2>')
-        h.append('<div class="note">只有银行口径才有这几项 —— 这也是为什么「换数据源」'
-                 '不只是省请求，而是能多出判断维度。</div><div class="tiles">')
-        if latest.get("nim") is not None:
-            h.append(f'<div class="tile"><div class="k">净息差 NIM</div>'
-                     f'<div class="v">{latest["nim"]:.2f}%</div>'
-                     f'<div class="s">利息净收入 ÷ 生息资产</div></div>')
-        if latest.get("npl") is not None:
-            h.append(f'<div class="tile"><div class="k">不良贷款余额</div>'
-                     f'<div class="v">{latest["npl"] / 1e8:,.0f}亿</div>'
-                     f'<div class="s">余额（不是比率）</div></div>')
-        if latest.get("provision") is not None:
-            h.append(f'<div class="tile"><div class="k">拨贷比</div>'
-                     f'<div class="v">{latest["provision"]:.2f}%</div>'
-                     f'<div class="s">贷款损失准备 ÷ 贷款总额</div></div>')
-        h.append('</div></div>')
+    # ── 表 1：季度净利（行=年，列=Q1~Q4）──
+    years = sorted({q["year"] for q in qs})[-5:]
+    h.append('<h2>季度净利（亿元）</h2>')
+    h.append('<table><thead><tr><th>年度</th><th>Q1</th><th>Q2</th><th>Q3</th>'
+             '<th>Q4</th><th class="sum">全年</th><th>同比</th></tr></thead><tbody>')
+    for y in reversed(years):
+        row = [q for q in qs if q["year"] == y]
+        cells = []
+        for k in (1, 2, 3, 4):
+            q = next((x for x in row if x["quarter"] == k), None)
+            v = q.get("qNetProfit") if q else None
+            cells.append(f'<td>{v / 1e8:,.0f}</td>' if v else '<td class="na">—</td>')
+        # 全年 = 最新可得季度的**累计**净利；未走完的年份就是半年累计
+        last_q = max(x["quarter"] for x in row) if row else None
+        full = next((x["netProfit"] for x in row if x["quarter"] == last_q), None)
+        partial = last_q != 4
+        # 同比必须**同期累计**比（半年比半年、全年比全年）。曾经拿半年比全年，
+        # 2026 算出 −52.9% 这种荒谬值 —— 表格最怕这种"看起来精确的错"。
+        prev = next((x["netProfit"] for x in qs if x["year"] == y - 1
+                     and x["quarter"] == last_q), None)
+        yoy = (full / prev - 1) * 100 if (full and prev) else None
+        cls = "up" if (yoy or 0) > 0 else "down"
+        yoy_txt = f'<td class="{cls}">{yoy:+.1f}%</td>' if yoy is not None else '<td class="na">—</td>'
+        full_txt = f'<td class="sum">{full / 1e8:,.0f}{"*" if partial else ""}</td>'
+        h.append(f'<tr><td>{y}</td>' + "".join(cells) + full_txt + yoy_txt + '</tr>')
+    h.append('</tbody></table>')
+    h.append('<div class="fn">单位亿元。* 该年度尚未走完，为已披露的累计值。'
+             '单季值由累计数差分；同比为**同期累计**口径（半年比半年、全年比全年）。</div>')
 
-    # ① 业绩趋势
-    # 东财一次给 85 季，但图上画 85 根柱子没法看 → 只画近 20 季（5 年）。
+    # ── 表 2：年度指标（营收 / 净利 / 盈利能力 / 现金回报）──
+    h.append('<h2>年度指标</h2>')
+    h.append('<table><thead><tr><th>年度</th><th>营收</th><th>净利</th><th>ROE</th>'
+             '<th>净利率</th><th>每股分红</th><th>分红率</th><th>股息率</th>'
+             '</tr></thead><tbody>')
+    for y in reversed(years):
+        row = [q for q in qs if q["year"] == y]
+        q4 = next((x for x in row if x["quarter"] == 4), None)
+        base = q4 or (max(row, key=lambda x: x["quarter"]) if row else None)
+        if base is None:
+            continue
+        rev, npr = base.get("revenue"), base.get("netProfit")
+        dps = div_by_year.get(str(y))
+        # 分红率：每股分红 × 总股本 ÷ 当年净利
+        pay = (dps * share / npr * 100) if (dps and share and npr) else None
+        # 当年股息率：每股分红 ÷ 当年末收盘价
+        yend = None
+        if dps:
+            try:
+                import bisect
+                i = bisect.bisect_right(dates_all, f"{y}-12-31") - 1
+                if i >= 0:
+                    px_close = closes_all[i]
+                    yend = dps / px_close * 100 if px_close else None
+            except Exception:
+                yend = None
+        partial = q4 is None
+        h.append(
+            f'<tr><td>{y}{"*" if partial else ""}</td>'
+            f'<td>{rev / 1e8:,.0f}</td>' if rev else '<tr><td>' + str(y) + '</td><td class="na">—</td>')
+        h.append(f'<td>{npr / 1e8:,.0f}</td>' if npr else '<td class="na">—</td>')
+        h.append(f'<td>{(base.get("roe") or 0) * 100:.2f}%</td>')
+        h.append(f'<td>{(base.get("npMargin") or 0) * 100:.1f}%</td>')
+        h.append(f'<td>{dps:.4f}</td>' if dps else '<td class="na">—</td>')
+        # 未走完的年度：分红率/股息率是「半年分红 ÷ 半年净利」，与全年不可比，
+        # 摆出来会被误读成「分红腰斩」→ 直接留空
+        h.append(f'<td>{pay:.0f}%</td>' if (pay and not partial) else '<td class="na">—</td>')
+        h.append(f'<td>{yend:.2f}%</td>' if (yend and not partial) else '<td class="na">—</td>')
+        h.append('</tr>')
+    h.append('</tbody></table>')
+    h.append('<div class="fn">单位亿元 / 元。ROE 为加权（累计），Q4 即全年。'
+             '股息率 = 该年度每股分红 ÷ 当年末收盘价（含税，未扣红利税）。</div>')
+
+    # 东财一次给 85 季，但图上画 85 根柱子没法看 → 只画近 20 季（5 年）
     cq = qs[-20:]
     labels = [quarter_label(q) for q in cq]
-    implied = any(q.get("revenueImplied") for q in qs)
-    h.append('<div class="card"><h2>① 业绩趋势</h2>')
-    h.append('<div class="note">单季绝对值由累计数差分；同比优先用数据源直接给的**单季同比**。'
-             + ('营收的 Q1/Q3 由「净利 ÷ 净利率」反推（该源只在半年报/年报给营收）。'
-                if implied else '营收每季都有，无需反推。') + '</div>')
+
+    # ── 图：近 20 季净利趋势（只留一张）──
+    h.append('<h2>净利趋势（近 20 季）</h2>')
     h.append(bar_chart(labels,
-                       [("单季营收", "#4c6ef5", [(q.get("qRevenue") or 0) / 1e8 for q in cq]),
-                        ("单季净利", "#12b886", [(q.get("qNetProfit") or 0) / 1e8 for q in cq])],
-                       height=240, unit="亿",
-                       legend=[("单季营收", "#4c6ef5"), ("单季净利", "#12b886")]))
-    h.append(line_chart(labels,
-                        [("净利同比", "#e8590c", [q.get("npYoy") for q in cq]),
-                         ("营收同比", "#7048e8", [q.get("revYoy") for q in cq])],
-                        height=200, unit="%",
-                        legend=[("净利同比", "#e8590c"), ("营收同比", "#7048e8")]))
+                       [("单季净利", "#4c6ef5",
+                         [(q.get("qNetProfit") or 0) / 1e8 if q.get("qNetProfit") else None
+                          for q in cq])],
+                       height=200, unit="亿"))
+
+    # ── 结论一行 ──
+    bad = [f[1] for f in flags if f[0] in ("bad", "warn")]
+    head_txt = "无明显风险信号" if not bad else "需留意：" + "、".join(bad)
+    kv = []
+    if last_payout:
+        kv.append(f"分红率 {last_payout:.0f}%")
+    if latest and latest.get("nim") is not None:
+        kv.append(f"净息差 {latest['nim']:.2f}%")
+    if latest and latest.get("provision") is not None:
+        kv.append(f"拨贷比 {latest['provision']:.2f}%")
+    h.append(f'<div class="verdict {"ok" if not bad else "warn"}">'
+             f'<b>{"✓" if not bad else "!"} {html.escape(head_txt)}</b>')
+    if kv:
+        h.append(f'<div class="kv">{"　·　".join(kv)}</div>')
     h.append('</div>')
 
-    # ② 分红历史
-    h.append('<div class="card"><h2>② 分红历史</h2>')
-    h.append('<div class="note">按**财务年度**归集每股现金分红（税前，同一除权日已去重）。'
-             '2025 年起改为一年两次（年报 + 中报），所以最近两个年度各有两笔。'
-             f'滚动 12 个月实际已派 {ttm if ttm else "—"} 元 —— 那含过渡期的三次，'
-             f'**主口径用完整年度**。'
-             + (f'{_years[-1] if _years else ""} 年之后若还没派完，那一年的柱子不进图。'
-                if _partial else '')
-             + '</div>')
-    h.append(bar_chart(div_years, [("每股分红", "#f08c00", div_ps)], height=220, unit="元"))
-    pay_years = [y for y, p in zip(div_years, payout) if p is not None]
-    pay_vals = [p for p in payout if p is not None]
-    if pay_years:
-        h.append(line_chart(pay_years, [("分红率 payout", "#c92a2a", pay_vals)],
-                            height=170, unit="%",
-                            legend=[("分红率 payout", "#c92a2a")]))
-        h.append('<div class="note">分红率 = 每股分红 × 总股本 ÷ 当年净利；只在有年报净利的年度可算。</div>')
-    h.append('</div>')
-
-    # ③ 盈利能力（ROE 与净利率量级差 10 倍，拆成两张图，别挤一个轴）
-    h.append('<div class="card"><h2>③ 盈利能力</h2>')
-    h.append('<div class="note">两张图分开画（ROE 约 2~10%、净利率约 38~45%，共用一个轴会把 ROE 压扁）。'
-             'ROE 已由年内累计**差分**成单季，否则曲线会呈锯齿状、看起来像波动很大。</div>')
-    h.append(line_chart(labels, [("单季 ROE", "#1971c2", [(q.get("qRoe") or 0) * 100 if q.get("qRoe") is not None else None for q in cq])],
-                        height=170, unit="%", legend=[("单季 ROE", "#1971c2")]))
-    h.append(line_chart(labels, [("净利率", "#0ca678", [(q.get("npMargin") or 0) * 100 for q in cq])],
-                        height=170, unit="%", legend=[("净利率", "#0ca678")]))
-    h.append('</div>')
-
-    # ④ 估值位置
-    h.append('<div class="card"><h2>④ 估值位置</h2>')
-    h.append(f'<div class="note">PE_TTM 走势（近 3 年降采样）。当前 {cur_pe:.1f}'
-             f'，20% 分位 {p_lo:.1f}、80% 分位 {p_hi:.1f}。</div>' if cur_pe else '')
-    h.append(line_chart(pe_labels, [("PE_TTM", "#5f3dc4", pe_series)], height=200, unit="",
-                        zero_line=False))
-    h.append('</div>')
-
-    # 业绩预告（东财 RPT_PUBLIC_OP_NEWPREDICT）
-    _cutoff = str((latest or {}).get("year", 9999) - 1)
-    preds = [x for x in (d.get("predicts") or [])
-             if (x.get("reportDate") or "")[:4] >= _cutoff]
-    if preds:
-        h.append('<div class="card"><h2>业绩预告</h2>')
-        h.append('<div class="note">公司自己披露的业绩区间，比正式报表早 1~3 个月 —— '
-                 '这是唯一能"提前"知道结果的合法信息。</div>')
-        h.append('<table><thead><tr><th>报告期</th><th>公告日</th><th>类型</th>'
-                 '<th style="text-align:left">内容</th></tr></thead><tbody>')
-        for p in preds[:5]:
-            h.append(f'<tr><td>{p.get("reportDate") or "—"}</td>'
-                     f'<td>{p.get("notice") or "—"}</td>'
-                     f'<td>{html.escape(str(p.get("type") or "—"))}</td>'
-                     f'<td style="text-align:left;white-space:normal">'
-                     f'{html.escape(p.get("content") or "—")}</td></tr>')
-        h.append('</tbody></table></div>')
-
-    # ⑤ 财务排雷
-    icons = {"ok": ("✓", "ok"), "warn": ("!", "warn"), "bad": ("✕", "bad"), "na": ("–", "na")}
-    h.append('<div class="card"><h2>⑤ 财务排雷</h2>')
-    h.append('<div class="note">这一块是「判断层」—— 数字之外，还要看它靠不靠得住。</div>')
-    for state, title, desc in flags:
-        ic, cls = icons[state]
-        h.append(f'<div class="flag"><div class="ic {cls}">{ic}</div>'
-                 f'<div class="t"><b>{html.escape(title)}</b>'
-                 f'<span>{html.escape(desc)}</span></div></div>')
-    h.append('</div>')
-
-    # 明细表
-    h.append('<div class="card"><h2>季度明细（近 12 季）</h2>')
-    h.append('<table><thead><tr><th>报告期</th><th>公告日</th><th>单季营收(亿)</th>'
-             '<th>单季净利(亿)</th><th>净利同比</th><th>ROE</th><th>净利率</th>'
-             '<th>负债率</th></tr></thead><tbody>')
-    for q in qs[-12:][::-1]:
-        liab = q.get("liabilityToAsset")
-        liab_txt = "—" if liab is None else (
-            f'<span class="na">{liab * 100:.1f}%*</span>' if liab < 0.2 else f"{liab * 100:.1f}%")
-        yoy = q.get("npYoy")
-        yoy_txt = "—" if yoy is None else f'<span class="{"bad" if yoy < 0 else "ok"}">{yoy:+.1f}%</span>'
-        h.append(f'<tr><td>{q["year"]}Q{q["quarter"]}</td><td>{q["pubDate"]}</td>'
-                 f'<td>{(q.get("qRevenue") or 0) / 1e8:,.0f}</td>'
-                 f'<td>{(q.get("qNetProfit") or 0) / 1e8:,.0f}</td>'
-                 f'<td>{yoy_txt}</td>'
-                 f'<td>{(q.get("roe") or 0) * 100:.2f}%</td>'
-                 f'<td>{(q.get("npMargin") or 0) * 100:.1f}%</td>'
-                 f'<td>{liab_txt}</td></tr>')
-    h.append('</tbody></table>')
-    if bad_liab:
-        h.append('<div class="note">* 数据源异常值（&lt;20%），不参与判断。</div>')
-    h.append('</div>')
-
-    h.append(f'<div class="ft">数据：东财 datacenter（季频指标 / 分红 / 业绩预告）'
-             f'· 本地估值序列<br>'
+    h.append(f'<div class="ft">数据：东财 datacenter（季频指标 / 分红）· 本地估值序列<br>'
              f'生成于 {datetime.now():%Y-%m-%d %H:%M}｜仅供参考，不构成投资建议</div>')
     h.append('</div></body></html>')
 
