@@ -32,7 +32,7 @@ CSS = """
 *{box-sizing:border-box;-webkit-text-size-adjust:100%}
 body{margin:0;background:#fff;color:#101828;
   font:14px/1.5 -apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif}
-.page{max-width:820px;margin:0 auto;padding:20px 16px 40px}
+.page{max-width:960px;margin:0 auto;padding:20px 16px 40px}
 
 /* 抬头：白底、无渐变、左对齐 */
 header{border-bottom:2px solid #101828;padding-bottom:12px;margin-bottom:22px}
@@ -89,6 +89,33 @@ tbody tr.gap td{border-bottom:1px solid #eaecf0}
 .rb .rt em{position:absolute;top:9px;font-size:10px;color:#b0b8c7;font-style:normal}
 .rb .rt .rlo{left:0}.rb .rt .rhi{right:0}
 .rb .rp{width:66px;text-align:right;color:#667085;font-size:12px}
+
+/* 横向滚动容器：8 年 + TTM 共 11 列，窄屏横滚，指标列固定 */
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -2px}
+.scroll table{min-width:880px}
+/* J 值刻度条 0~100 */
+.jrow{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:13px;
+  font-variant-numeric:tabular-nums}
+.jrow .jl{width:52px;color:#667085;font-size:12px}
+.jrow .jv{width:44px;font-weight:700;text-align:right}
+.jrow .jt{position:relative;flex:1;height:6px;border-radius:3px;
+  background:linear-gradient(90deg,#dbeafe 0%,#dbeafe 28.6%,#f2f4f7 28.6%,
+  #f2f4f7 71.4%,#fee4e2 71.4%,#fee4e2 100%)}
+.jrow .jt i{position:absolute;top:-5px;width:3px;height:16px;border-radius:2px;
+  background:#101828;transform:translateX(-1.5px)}
+.jrow .js{width:74px;text-align:right;font-size:11.5px;color:#667085}
+/* 当前位置：两列小卡 */
+.nowbox{display:grid;grid-template-columns:1fr 1fr;gap:0 26px;
+  border-top:1px solid #f2f4f7;border-bottom:1px solid #f2f4f7;padding:10px 0}
+.nowbox .col{min-width:0}
+.nowbox .kv{display:flex;justify-content:space-between;font-size:12.5px;
+  padding:4px 0;border-bottom:1px dotted #f2f4f7;font-variant-numeric:tabular-nums}
+.nowbox .kv:last-child{border-bottom:0}
+.nowbox .kv span:first-child{color:#667085}
+.nowbox .kv b{font-weight:600}
+.nowbox .cap{font-size:11px;color:#98a2b3;margin:2px 0 6px}
+.link{display:inline-block;margin-top:10px;font-size:12.5px;color:#175cd3;
+  text-decoration:none;border-bottom:1px solid #d1e0ff}
 /* 同业表 */
 table.peer th.me,table.peer td.me{background:#f7f9fc;font-weight:700}
 table.peer th,table.peer td{text-align:right;font-size:13px}
@@ -519,7 +546,7 @@ def main(argv=None):
     periods = []
     if last_q != 4:
         periods.append(("latest", years_all[-1], last_q))
-    for y in reversed(complete[-4:]):
+    for y in reversed(complete[-8:]):
         periods.append(("annual", y, 4))
 
     def qof(y, q):
@@ -577,6 +604,83 @@ def main(argv=None):
              f'（公告 {latest["pubDate"] if latest else "—"}）</span>')
     h.append('</div></header>')
 
+    # ── 当前位置：把技术面（日J/周J/月J/均线/量比）和估值放在一起 ──
+    # 数据全部来自仓库的 metrics CSV，不需要额外抓取 —— 这就是「和现有系统联动」。
+    def _f(key):
+        v = meta.get(key)
+        try:
+            return float(str(v).replace("%", ""))
+        except (TypeError, ValueError):
+            return None
+
+    J_MIN, J_MAX = -20.0, 120.0     # J 没有上下界（工行周 J 曾到 -16.8、月 J 到 113）
+
+    def jbar(label, j):
+        if j is None:
+            return ""
+        pos = (max(J_MIN, min(J_MAX, j)) - J_MIN) / (J_MAX - J_MIN) * 100
+        if j < 20:
+            state = "超卖"
+        elif j > 80:
+            state = "超买"
+        else:
+            state = "中性"
+        return (f'<div class="jrow"><span class="jl">{label}</span>'
+                f'<span class="jv">{j:.1f}</span>'
+                f'<span class="jt"><i style="left:{pos:.1f}%"></i></span>'
+                f'<span class="js">{state}</span></div>')
+
+    jd, jw, jm = _f("日线J"), _f("周线J"), _f("月线J")
+    if any(v is not None for v in (jd, jw, jm)):
+        h.append('<h2>当前位置<span class="unit">技术面数据来自仓库每日 metrics CSV</span></h2>')
+        h.append('<div class="jrow" style="padding-bottom:2px"><span class="jl"></span>'
+                 '<span class="jv"></span><span class="jt" style="height:0;background:none">'
+                 '<i style="left:20%;background:none"></i></span>'
+                 '<span class="js"></span></div>')
+        h.append(jbar("日线 J", jd))
+        h.append(jbar("周线 J", jw))
+        h.append(jbar("月线 J", jm))
+        h.append('<div class="fn">刻度 −20 ~ 120。浅蓝 = 超卖（J&lt;20），浅红 = 超买（J&gt;80）。J 没有上下界，超出会被夹在端点。</div>')
+
+        ma20, gap20, bull = _f("MA20"), _f("价距MA20%"), meta.get("双均线多头")
+        vr, vr30 = _f("量比"), _f("量比30")
+        h.append('<div class="nowbox" style="margin-top:12px">')
+        h.append('<div class="col"><div class="cap">均线 / 量能</div>')
+        if ma20 is not None:
+            h.append(f'<div class="kv"><span>MA20</span><b>{ma20:.2f}</b></div>')
+        if gap20 is not None:
+            h.append(f'<div class="kv"><span>价距 MA20</span>'
+                     f'<b class="{"up" if gap20 > 0 else "down"}">{gap20:+.2f}%</b></div>')
+        if bull not in (None, ""):
+            txt = {"1": "是", "1.0": "是", "True": "是", "true": "是",
+                   "0": "否", "0.0": "否", "False": "否", "false": "否"}.get(
+                       str(bull).strip(), str(bull))
+            h.append(f'<div class="kv"><span>双均线多头</span><b>{txt}</b></div>')
+        if vr is not None:
+            h.append(f'<div class="kv"><span>量比</span><b>{vr:.2f}</b></div>')
+        if vr30 is not None:
+            h.append(f'<div class="kv"><span>30 日量比</span><b>{vr30:.2f}</b></div>')
+        h.append('</div><div class="col"><div class="cap">估值 / 位置</div>')
+        if pe_now is not None:
+            h.append(f'<div class="kv"><span>PE_TTM</span><b>{pe_now:.2f}</b></div>')
+        if _pct(pe_pct) is not None:
+            h.append(f'<div class="kv"><span>PE 分位</span><b>{_pct(pe_pct):.0f}%</b></div>')
+        if pb_now is not None:
+            h.append(f'<div class="kv"><span>PB</span><b>{pb_now:.2f}</b></div>')
+        if _pct(pb_pct) is not None:
+            h.append(f'<div class="kv"><span>PB 分位</span><b>{_pct(pb_pct):.0f}%</b></div>')
+        h.append('</div></div>')
+
+        # 联动：指向当天的技术面报告
+        _day = ""
+        if args.metrics:
+            import re as _re
+            mt = _re.search(r"(\d{4}-\d{2}-\d{2})", os.path.basename(args.metrics))
+            _day = mt.group(1) if mt else ""
+        if _day:
+            h.append(f'<a class="link" href="https://logic77lhl.github.io/daily-stock-metrics/'
+                     f'{_day}/a.html">查看 {_day} 的完整技术面报告 →</a>')
+
     # ── 估值位置：当前值落在历史区间的哪里 ──
     h.append('<h2>估值位置<span class="unit">区间 = 有数据以来最低~最高</span></h2>')
     h.append('<div class="valbox">')
@@ -586,7 +690,8 @@ def main(argv=None):
 
     # ── 主表：行=指标，列=期间 ──
     h.append('<h2>核心指标<span class="unit">单位：亿元 / %</span></h2>')
-    h.append('<table><thead><tr><th class="k">指标</th><th class="ttmh">TTM</th>')
+    h.append('<div class="scroll"><table><thead><tr><th class="k">指标</th>'
+             '<th class="ttmh">TTM</th>')
     for kind, y, q in periods:
         lab = f"{y}中报" if (kind == "latest" and q == 2) else (
             f"{y}Q{q}" if kind == "latest" else f"{y}年报")
@@ -658,7 +763,7 @@ def main(argv=None):
         return dps / closes_all[i] * 100
 
     metric("股息率", _yield, "{:.2f}%")
-    h.append('</tbody></table>')
+    h.append('</tbody></table></div>')
     h.append('<div class="fn">数字为<b>累计值</b>（中报 = 半年累计，年报 = 全年）。'
              '同比取自数据源的累计同比。股息率 = 该年度每股分红 ÷ 当年末收盘价（含税）。'
              '未走完的年度，分红相关三项留空。</div>')
@@ -697,7 +802,7 @@ def main(argv=None):
     h.append('<h2>单季净利<span class="unit">单位：亿元</span></h2>')
     h.append('<table><thead><tr><th class="k">年度</th><th>Q1</th><th>Q2</th><th>Q3</th>'
              '<th>Q4</th><th>全年</th><th>同比</th></tr></thead><tbody>')
-    for y in reversed(years_all[-5:]):
+    for y in reversed(years_all[-8:]):
         rowq = [q for q in qs if q["year"] == y]
         lq = max(x["quarter"] for x in rowq) if rowq else None
         h.append(f'<tr class="main"><td class="k">{y}</td>')
