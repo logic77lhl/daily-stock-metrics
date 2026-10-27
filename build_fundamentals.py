@@ -543,14 +543,19 @@ def main(argv=None):
     complete = [y for y in years_all
                 if any(x["year"] == y and x["quarter"] == 4 for x in qs)]
     last_q = max(x["quarter"] for x in qs if x["year"] == years_all[-1])
-    periods = []
-    if last_q != 4:
-        periods.append(("latest", years_all[-1], last_q))
-    for y in reversed(complete[-8:]):
-        periods.append(("annual", y, 4))
+    # 主表**只放年报 + TTM**。不把「中报」列摆进去 —— 半年 vs 全年并排，
+    # 营收 4,659 vs 8,383、ROE 4.32% vs 9.45%，看起来像断崖式下滑，其实是口径不同。
+    # StockAnalysis 也是这么做的：TTM | FY2025 | FY2024 …，没有"半年"列。
+    periods = [("annual", y, 4) for y in reversed(complete[-8:])]
 
     def qof(y, q):
         return next((x for x in qs if x["year"] == y and x["quarter"] == q), None)
+
+    def _pct(s):
+        try:
+            return float(str(s).replace("%", ""))
+        except (TypeError, ValueError):
+            return None
 
     # TTM（滚动 12 个月）= 最新累计 + 上年全年 − 上年同期累计。
     # 为什么需要它：中报是半年累计，和右边年报放一起，净利率会显示 37.9% vs 44.2%，
@@ -564,22 +569,18 @@ def main(argv=None):
         return (a + b - c) if None not in (a, b, c) else None
 
     ttm_rev, ttm_np = _ttm("revenue"), _ttm("netProfit")
-    ttm_margin = (ttm_np / ttm_rev * 100) if (ttm_rev and ttm_np) else None
+    ttm_margin = (ttm_np / ttm_rev * 100) if (ttm_rev and ttm_np) else None  # 归母 ÷ 营收
     ttm_roe = (_cum.get("roe") or 0) * 400 / last_q if _cum.get("roe") else None
 
     # 估值区间（PE/PB 的历史最低~最高）
     _pe = [v for v in (d.get("prices", {}).get("pe") or []) if v]
     _pb = [v for v in (d.get("prices", {}).get("pb") or []) if v]
-    pe_now, pe_lo, pe_hi = (_pe[-1] if _pe else None,
-                            min(_pe) if _pe else None, max(_pe) if _pe else None)
-    pb_now, pb_lo, pb_hi = (_pb[-1] if _pb else None,
-                            min(_pb) if _pb else None, max(_pb) if _pb else None)
+    # 当前值取 metrics CSV 的（与表头同一天）；区间仍用估值序列的历史
+    pe_now = _pct(meta.get("PE_TTM")) or (_pe[-1] if _pe else None)
+    pb_now = _pct(meta.get("PB_MRQ")) or (_pb[-1] if _pb else None)
+    pe_lo, pe_hi = (min(_pe) if _pe else None, max(_pe) if _pe else None)
+    pb_lo, pb_hi = (min(_pb) if _pb else None, max(_pb) if _pb else None)
 
-    def _pct(s):
-        try:
-            return float(str(s).replace("%", ""))
-        except (TypeError, ValueError):
-            return None
 
     h = []
     h.append('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">')
@@ -740,10 +741,14 @@ def main(argv=None):
            lambda x, k, y: ((x or {}).get("roe") or 0) * 100
            if (x or {}).get("roe") is not None else None, "{:.2f}%", gap=True,
            ttm=ttm_roe)
-    metric("净利率",
-           lambda x, k, y: ((x or {}).get("npMargin") or 0) * 100
-           if (x or {}).get("npMargin") is not None else None, "{:.1f}%",
-           ttm=ttm_margin)
+    # 净利率统一用**归母净利 ÷ 营收**。数据源的 XSJLL 是「全部净利 ÷ 营收」
+    # （含少数股东损益），与上面的「归母净利」行不同口径 —— 工行 2026 中报
+    # 1737/4659 = 37.3%，而 XSJLL 给 37.9%，读者一除就会发现对不上。
+    def _margin(x, k, y):
+        rv, npf = (x or {}).get("revenue"), (x or {}).get("netProfit")
+        return npf / rv * 100 if (rv and npf) else None
+
+    metric("净利率", _margin, "{:.1f}%", ttm=ttm_margin)
     metric("每股分红", lambda x, k, y: div_by_year.get(str(y)) if k == "annual" else None,
            "{:.4f}", gap=True)
     metric("分红率",
@@ -764,9 +769,10 @@ def main(argv=None):
 
     metric("股息率", _yield, "{:.2f}%")
     h.append('</tbody></table></div>')
-    h.append('<div class="fn">数字为<b>累计值</b>（中报 = 半年累计，年报 = 全年）。'
-             '同比取自数据源的累计同比。股息率 = 该年度每股分红 ÷ 当年末收盘价（含税）。'
-             '未走完的年度，分红相关三项留空。</div>')
+    h.append('<div class="fn">年报为全年累计；<b>TTM = 最近 12 个月</b>'
+             '（最新累计 + 上年全年 − 上年同期累计），因此与年报天然可比 —— '
+             '这也是主表不放「中报」列的原因：半年 vs 全年并排，营收和 ROE 会看起来像断崖。'
+             '净利率 = <b>归母净利 ÷ 营业收入</b>。股息率 = 该年度每股分红 ÷ 当年末收盘价（含税）。</div>')
 
     # ── 同业对比：孤立的数字没有参照，横着比才有意义 ──
     peers = d.get("peers") or []
