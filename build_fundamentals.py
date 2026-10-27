@@ -29,40 +29,55 @@ elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
 
 CSS = """
-*{box-sizing:border-box}
-body{margin:0;background:#f2f4f8;font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;color:#1a1a2e}
-.wrap{max-width:760px;margin:0 auto;padding:12px 12px 28px}
-.hd{background:linear-gradient(135deg,#141e30,#2d4a6e);color:#fff;border-radius:12px;padding:15px 17px;margin-bottom:12px}
-.hd h1{margin:0;font-size:20px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.hd h1 .code{font-size:13px;color:#aab4cf;font-weight:400}
-.hd h1 .tag{font-size:11.5px;background:rgba(255,255,255,.15);padding:2px 7px;border-radius:5px;font-weight:400}
-.hd .sub{color:#aab4cf;font-size:12px;margin-top:7px;line-height:1.6}
-.kpis{display:grid;grid-template-columns:repeat(4,1fr);background:#fff;border-radius:12px;
-  box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden;margin-bottom:4px}
-.kpis>div{padding:12px 6px;text-align:center;border-right:1px solid #eef1f6}
-.kpis>div:last-child{border-right:0}
-.kpis b{display:block;font-size:19px;font-variant-numeric:tabular-nums;line-height:1.25}
-.kpis span{font-size:11px;color:#8a93a5}
-h2{font-size:14px;margin:18px 0 8px;padding-left:9px;border-left:3px solid #2d4a6e;color:#1a1a2e}
-table{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums;
-  background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-th,td{padding:9px 10px;text-align:right;border-bottom:1px solid #f2f5f9}
-th:first-child,td:first-child{text-align:left;font-weight:600}
-th{background:#f7f9fc;color:#6b7488;font-size:11.5px;font-weight:600;white-space:nowrap}
-tbody tr:last-child td{border-bottom:0}
-tbody tr:hover td{background:#fafcff}
-.sum{background:#f7f9fc;font-weight:700}
-.na{color:#c8ceda}
-.up{color:#c92a2a}
-.down{color:#2f9e44}
-.fn{font-size:11px;color:#98a1b3;line-height:1.7;margin:7px 2px 0}
-.verdict{background:#fff;border-radius:10px;padding:12px 15px;font-size:13px;
-  box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:16px;line-height:1.7}
-.verdict.ok{color:#2f9e44}
-.verdict.warn{color:#e8590c}
-.verdict b{font-size:13.5px}
-.verdict .kv{color:#6b7488;font-size:12.5px;margin-top:5px}
-.ft{color:#a4adbd;font-size:11px;text-align:center;padding:16px 0 4px;line-height:1.8}
+*{box-sizing:border-box;-webkit-text-size-adjust:100%}
+body{margin:0;background:#fff;color:#101828;
+  font:14px/1.5 -apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif}
+.page{max-width:820px;margin:0 auto;padding:20px 16px 40px}
+
+/* 抬头：白底、无渐变、左对齐 */
+header{border-bottom:2px solid #101828;padding-bottom:12px;margin-bottom:22px}
+.title{font-size:22px;font-weight:700;letter-spacing:-.2px}
+.title .code{font-size:14px;color:#667085;font-weight:400;margin-left:6px}
+.title .ind{font-size:12px;background:#f2f4f7;color:#475467;padding:2px 7px;
+  border-radius:4px;margin-left:8px;font-weight:400;vertical-align:2px}
+.prow{display:flex;align-items:baseline;gap:10px;margin-top:8px;flex-wrap:wrap}
+.prow .px{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.prow .chg{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.prow .meta{font-size:12px;color:#667085}
+
+/* 区块标题 */
+h2{font-size:15px;font-weight:700;margin:26px 0 10px;display:flex;
+  align-items:baseline;justify-content:space-between;gap:12px}
+h2 .unit{font-size:11.5px;color:#98a2b3;font-weight:400}
+
+/* 财务表：行=指标，列=期间 */
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;
+  font-size:13.5px}
+thead th{position:sticky;top:0;background:#fff;z-index:1}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid #f0f2f5;
+  white-space:nowrap}
+th.k,td.k{text-align:left;font-weight:500;color:#101828;position:sticky;left:0;
+  background:#fff;z-index:2}
+thead tr:first-child th{border-bottom:0;font-size:12.5px;font-weight:700;color:#101828}
+thead tr.sub th{border-bottom:1.5px solid #d0d5dd;font-size:11px;font-weight:400;
+  color:#98a2b3;padding-top:0}
+tbody tr.main td{font-weight:600}
+tbody tr.subrow td{font-size:12px;color:#667085;padding-top:0;border-bottom:1px solid #f7f8fa}
+tbody tr.subrow td.k{color:#98a2b3;padding-left:22px;font-size:11.5px}
+tbody tr.gap td{border-bottom:1px solid #eaecf0}
+.up{color:#d92d20}
+.down{color:#079455}
+.na{color:#d0d5dd}
+.fn{font-size:11px;color:#98a2b3;margin:8px 0 0;line-height:1.7}
+
+/* 结论 */
+.verdict{border-left:3px solid #d0d5dd;padding:10px 0 10px 14px;margin-top:26px;
+  font-size:13.5px}
+.verdict.warn{border-left-color:#f79009}
+.verdict.ok{border-left-color:#12b76a}
+.verdict b{display:block;margin-bottom:4px}
+.verdict .kv{font-size:12.5px;color:#667085}
+.ft{color:#98a2b3;font-size:11px;text-align:center;margin-top:34px;line-height:1.9}
 """
 
 
@@ -100,7 +115,8 @@ def _scale(v, lo, hi, px, py, pw, ph):
     return x
 
 
-def bar_chart(labels, series, height=230, unit="亿", width=780, legend=None):
+def bar_chart(labels, series, height=230, unit="亿", width=780, legend=None,
+              grid=True, bar_gap=0.28):
     """分组柱状图。series = [(名字, 颜色, [值...]), ...]"""
     pad_l, pad_r, pad_t, pad_b = 52, 12, 14, 34
     pw, ph = width - pad_l - pad_r, height - pad_t - pad_b
@@ -112,12 +128,13 @@ def bar_chart(labels, series, height=230, unit="亿", width=780, legend=None):
     lo, hi = min(ticks), max(ticks)
     n = len(labels)
     slot = pw / max(n, 1)
-    bw = slot * 0.72 / max(len(series), 1)
+    bw = slot * (1 - bar_gap) / max(len(series), 1)
     out = [f'<svg viewBox="0 0 {width} {height}" width="100%" role="img">']
     for t in ticks:
         y = pad_t + ph - (t - lo) / (hi - lo) * ph
-        out.append(f'<line x1="{pad_l}" y1="{y:.1f}" x2="{width - pad_r}" y2="{y:.1f}" '
-                   f'stroke="#eef1f6"/>')
+        if grid:
+            out.append(f'<line x1="{pad_l}" y1="{y:.1f}" x2="{width - pad_r}" '
+                       f'y2="{y:.1f}" stroke="#f2f4f7"/>')
         out.append(f'<text x="{pad_l - 6}" y="{y + 3.5:.1f}" font-size="10" fill="#9aa3b5" '
                    f'text-anchor="end">{_fmt(t, 0)}</text>')
     for i, lab in enumerate(labels):
@@ -128,7 +145,7 @@ def bar_chart(labels, series, height=230, unit="亿", width=780, legend=None):
                 continue
             y0 = pad_t + ph - (0 - lo) / (hi - lo) * ph
             y1 = pad_t + ph - (v - lo) / (hi - lo) * ph
-            x = cx + slot * 0.14 + bw * j
+            x = cx + slot * bar_gap / 2 + bw * j
             out.append(f'<rect x="{x:.1f}" y="{min(y0, y1):.1f}" width="{bw * 0.92:.1f}" '
                        f'height="{abs(y1 - y0):.1f}" fill="{color}" rx="1.5">'
                        f'<title>{html.escape(lab)} {name}: {_fmt(v)} {unit}</title></rect>')
@@ -421,125 +438,155 @@ def main(argv=None):
     # CFO/净利：银行不适用
     flags.append(("na", "经营现金流 ÷ 净利润", "对银行不适用（存贷款业务现金流口径不同），已跳过"))
 
-    # ── 渲染（表格优先：按年 / 按季度，数字对齐、颜色编码）──
+    # ── 渲染（对齐 StockAnalysis / 专业 F10 的排版：行=指标、列=期间）──
+    def cell(v, fmt="{:.0f}", cls="", na="—"):
+        return (f'<td class="{cls}">{fmt.format(v)}</td>' if v is not None
+                else f'<td class="na">{na}</td>')
+
+    def yoy_cell(cur, prev, pct=True):
+        if cur is None or prev in (None, 0):
+            return '<td class="na">—</td>'
+        d = (cur / prev - 1) * 100
+        return f'<td class="{"up" if d > 0 else "down"}">{d:+.1f}%</td>'
+
+    # 期间列：最新一期（若不是年报）+ 最近 4 个完整年度
+    years_all = sorted({q["year"] for q in qs})
+    complete = [y for y in years_all
+                if any(x["year"] == y and x["quarter"] == 4 for x in qs)]
+    last_q = max(x["quarter"] for x in qs if x["year"] == years_all[-1])
+    periods = []
+    if last_q != 4:
+        periods.append(("latest", years_all[-1], last_q))
+    for y in reversed(complete[-4:]):
+        periods.append(("annual", y, 4))
+
+    def qof(y, q):
+        return next((x for x in qs if x["year"] == y and x["quarter"] == q), None)
+
     h = []
     h.append('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">')
     h.append('<meta name="viewport" content="width=device-width,initial-scale=1">')
-    h.append(f'<title>{name} 基本面</title><style>{CSS}</style></head><body><div class="wrap">')
+    h.append(f'<title>{name} 基本面</title><style>{CSS}</style></head><body><div class="page">')
 
-    # 抬头：一行
-    h.append(f'<div class="hd"><h1>{html.escape(name)}<span class="code">{code}</span>'
-             f'<span class="tag">{html.escape(str(ind))}</span></h1>')
-    h.append(f'<div class="sub">最新价 {last_px} ｜ PE 分位 {pe_pct} ｜ PB 分位 {pb_pct} ｜ '
-             f'数据截止 {latest["statDate"] if latest else "—"}'
-             f'（公告 {latest["pubDate"] if latest else "—"}）</div></div>')
+    # 抬头
+    h.append('<header>')
+    h.append(f'<div class="title">{html.escape(name)}<span class="code">{code}</span>'
+             f'<span class="ind">{html.escape(str(ind))}</span></div>')
+    chg = meta.get("涨跌幅")
+    h.append('<div class="prow">')
+    h.append(f'<span class="px">{last_px}</span>')
+    if chg not in (None, ""):
+        try:
+            c = float(chg)
+            h.append(f'<span class="chg {"up" if c > 0 else "down"}">{c:+.2f}%</span>')
+        except ValueError:
+            pass
+    h.append(f'<span class="meta">PE 分位 {pe_pct} ｜ PB 分位 {pb_pct} ｜ '
+             f'最新数据 {latest["statDate"] if latest else "—"}'
+             f'（公告 {latest["pubDate"] if latest else "—"}）</span>')
+    h.append('</div></header>')
 
-    # KPI：4 个数字，一屏内先给结论
-    fy_year, fy_amt = full_year_dividend(div_by_year)
-    ttm = ttm_dividend(d["dividends"])
-    yld = (fy_amt / float(last_px) * 100) if fy_amt and last_px else None
-    last_payout = next((v for v in reversed(payout) if v is not None), None)
-    h.append('<div class="kpis">')
-    h.append(f'<div><b>{yld:.2f}%</b><span>股息率（{fy_year} 年度）</span></div>' if yld else
-             '<div><b>—</b><span>股息率</span></div>')
-    np_yoy = latest.get("npYoy") if latest else None
-    h.append(f'<div><b class="{"up" if (np_yoy or 0) > 0 else "down"}">'
-             f'{np_yoy:+.1f}%</b><span>净利同比（单季）</span></div>' if np_yoy is not None else
-             '<div><b>—</b><span>净利同比</span></div>')
-    h.append(f'<div><b>{(latest.get("roe") or 0) * 100:.2f}%</b>'
-             f'<span>ROE（{latest["year"]} 累计）</span></div>' if latest else
-             '<div><b>—</b><span>ROE</span></div>')
-    h.append(f'<div><b>{last_payout:.0f}%</b><span>分红率</span></div>' if last_payout else
-             '<div><b>—</b><span>分红率</span></div>')
-    h.append('</div>')
+    # ── 主表：行=指标，列=期间 ──
+    h.append('<h2>核心指标<span class="unit">单位：亿元 / %</span></h2>')
+    h.append('<table><thead><tr><th class="k">指标</th>')
+    for kind, y, q in periods:
+        lab = f"{y}中报" if (kind == "latest" and q == 2) else (
+            f"{y}Q{q}" if kind == "latest" else f"{y}年报")
+        h.append(f'<th>{lab}</th>')
+    h.append('</tr><tr class="sub"><th class="k"></th>')
+    for kind, y, q in periods:
+        node = qof(y, q)
+        h.append(f'<th>{node["pubDate"][5:] if node and node.get("pubDate") else "—"}</th>')
+    h.append('</tr></thead><tbody>')
 
-    # ── 表 1：季度净利（行=年，列=Q1~Q4）──
-    years = sorted({q["year"] for q in qs})[-5:]
-    h.append('<h2>季度净利（亿元）</h2>')
-    h.append('<table><thead><tr><th>年度</th><th>Q1</th><th>Q2</th><th>Q3</th>'
-             '<th>Q4</th><th class="sum">全年</th><th>同比</th></tr></thead><tbody>')
-    for y in reversed(years):
-        row = [q for q in qs if q["year"] == y]
-        cells = []
-        for k in (1, 2, 3, 4):
-            q = next((x for x in row if x["quarter"] == k), None)
-            v = q.get("qNetProfit") if q else None
-            cells.append(f'<td>{v / 1e8:,.0f}</td>' if v else '<td class="na">—</td>')
-        # 全年 = 最新可得季度的**累计**净利；未走完的年份就是半年累计
-        last_q = max(x["quarter"] for x in row) if row else None
-        full = next((x["netProfit"] for x in row if x["quarter"] == last_q), None)
-        partial = last_q != 4
-        # 同比必须**同期累计**比（半年比半年、全年比全年）。曾经拿半年比全年，
-        # 2026 算出 −52.9% 这种荒谬值 —— 表格最怕这种"看起来精确的错"。
-        prev = next((x["netProfit"] for x in qs if x["year"] == y - 1
-                     and x["quarter"] == last_q), None)
-        yoy = (full / prev - 1) * 100 if (full and prev) else None
-        cls = "up" if (yoy or 0) > 0 else "down"
-        yoy_txt = f'<td class="{cls}">{yoy:+.1f}%</td>' if yoy is not None else '<td class="na">—</td>'
-        full_txt = f'<td class="sum">{full / 1e8:,.0f}{"*" if partial else ""}</td>'
-        h.append(f'<tr><td>{y}</td>' + "".join(cells) + full_txt + yoy_txt + '</tr>')
-    h.append('</tbody></table>')
-    h.append('<div class="fn">单位亿元。* 该年度尚未走完，为已披露的累计值。'
-             '单季值由累计数差分；同比为**同期累计**口径（半年比半年、全年比全年）。</div>')
+    def metric(label, getter, fmt="{:.0f}", gap=False):
+        h.append(f'<tr class="{"main gap" if gap else "main"}"><td class="k">{label}</td>')
+        for kind, y, q in periods:
+            v = getter(qof(y, q), kind, y)
+            h.append(f'<td>{fmt.format(v)}</td>' if v is not None
+                     else '<td class="na">—</td>')
+        h.append('</tr>')
 
-    # ── 表 2：年度指标（营收 / 净利 / 盈利能力 / 现金回报）──
-    h.append('<h2>年度指标</h2>')
-    h.append('<table><thead><tr><th>年度</th><th>营收</th><th>净利</th><th>ROE</th>'
-             '<th>净利率</th><th>每股分红</th><th>分红率</th><th>股息率</th>'
-             '</tr></thead><tbody>')
-    for y in reversed(years):
-        row = [q for q in qs if q["year"] == y]
-        q4 = next((x for x in row if x["quarter"] == 4), None)
-        base = q4 or (max(row, key=lambda x: x["quarter"]) if row else None)
-        if base is None:
-            continue
-        rev, npr = base.get("revenue"), base.get("netProfit")
+    def yoy_row(key, label="同比"):
+        h.append(f'<tr class="subrow"><td class="k">{label}</td>')
+        for kind, y, q in periods:
+            v = (qof(y, q) or {}).get(key)
+            h.append(f'<td class="{"up" if (v or 0) > 0 else "down"}">{v:+.1f}%</td>'
+                     if v is not None else '<td class="na">—</td>')
+        h.append('</tr>')
+
+    def yi(x, key):
+        v = (x or {}).get(key)
+        return v / 1e8 if v else None
+
+    metric("营业收入", lambda x, k, y: yi(x, "revenue"), "{:,.0f}")
+    yoy_row("yoyRev")
+    metric("归母净利", lambda x, k, y: yi(x, "netProfit"), "{:,.0f}")
+    yoy_row("yoyNi")
+    metric("ROE（加权）",
+           lambda x, k, y: ((x or {}).get("roe") or 0) * 100
+           if (x or {}).get("roe") is not None else None, "{:.2f}%", gap=True)
+    metric("净利率",
+           lambda x, k, y: ((x or {}).get("npMargin") or 0) * 100
+           if (x or {}).get("npMargin") is not None else None, "{:.1f}%")
+    metric("每股分红", lambda x, k, y: div_by_year.get(str(y)) if k == "annual" else None,
+           "{:.4f}", gap=True)
+    metric("分红率",
+           lambda x, k, y: (div_by_year.get(str(y)) * share
+                            / (qof(y, 4) or {}).get("netProfit") * 100)
+           if (k == "annual" and div_by_year.get(str(y)) and share
+               and (qof(y, 4) or {}).get("netProfit")) else None, "{:.0f}%")
+
+    def _yield(x, k, y):
         dps = div_by_year.get(str(y))
-        # 分红率：每股分红 × 总股本 ÷ 当年净利
-        pay = (dps * share / npr * 100) if (dps and share and npr) else None
-        # 当年股息率：每股分红 ÷ 当年末收盘价
-        yend = None
-        if dps:
-            try:
-                import bisect
-                i = bisect.bisect_right(dates_all, f"{y}-12-31") - 1
-                if i >= 0:
-                    px_close = closes_all[i]
-                    yend = dps / px_close * 100 if px_close else None
-            except Exception:
-                yend = None
-        partial = q4 is None
-        h.append(
-            f'<tr><td>{y}{"*" if partial else ""}</td>'
-            f'<td>{rev / 1e8:,.0f}</td>' if rev else '<tr><td>' + str(y) + '</td><td class="na">—</td>')
-        h.append(f'<td>{npr / 1e8:,.0f}</td>' if npr else '<td class="na">—</td>')
-        h.append(f'<td>{(base.get("roe") or 0) * 100:.2f}%</td>')
-        h.append(f'<td>{(base.get("npMargin") or 0) * 100:.1f}%</td>')
-        h.append(f'<td>{dps:.4f}</td>' if dps else '<td class="na">—</td>')
-        # 未走完的年度：分红率/股息率是「半年分红 ÷ 半年净利」，与全年不可比，
-        # 摆出来会被误读成「分红腰斩」→ 直接留空
-        h.append(f'<td>{pay:.0f}%</td>' if (pay and not partial) else '<td class="na">—</td>')
-        h.append(f'<td>{yend:.2f}%</td>' if (yend and not partial) else '<td class="na">—</td>')
+        if not dps or k != "annual":
+            return None
+        import bisect
+        i = bisect.bisect_right(dates_all, f"{y}-12-31") - 1
+        if i < 0 or not closes_all[i]:
+            return None
+        return dps / closes_all[i] * 100
+
+    metric("股息率", _yield, "{:.2f}%")
+    h.append('</tbody></table>')
+    h.append('<div class="fn">数字为<b>累计值</b>（中报 = 半年累计，年报 = 全年）。'
+             '同比取自数据源的累计同比。股息率 = 该年度每股分红 ÷ 当年末收盘价（含税）。'
+             '未走完的年度，分红相关三项留空。</div>')
+
+    # ── 季度表：行=年，列=Q1~Q4 ──
+    h.append('<h2>单季净利<span class="unit">单位：亿元</span></h2>')
+    h.append('<table><thead><tr><th class="k">年度</th><th>Q1</th><th>Q2</th><th>Q3</th>'
+             '<th>Q4</th><th>全年</th><th>同比</th></tr></thead><tbody>')
+    for y in reversed(years_all[-5:]):
+        rowq = [q for q in qs if q["year"] == y]
+        lq = max(x["quarter"] for x in rowq) if rowq else None
+        h.append(f'<tr class="main"><td class="k">{y}</td>')
+        for k in (1, 2, 3, 4):
+            node = next((x for x in rowq if x["quarter"] == k), None)
+            v = node.get("qNetProfit") if node else None
+            h.append(f'<td>{v / 1e8:,.0f}</td>' if v else '<td class="na">—</td>')
+        cum = next((x["netProfit"] for x in rowq if x["quarter"] == lq), None)
+        pcum = next((x["netProfit"] for x in qs if x["year"] == y - 1
+                     and x["quarter"] == lq), None)
+        mark = "*" if lq != 4 else ""
+        h.append(f'<td><b>{cum / 1e8:,.0f}{mark}</b></td>' if cum else '<td class="na">—</td>')
+        h.append(yoy_cell(cum, pcum))
         h.append('</tr>')
     h.append('</tbody></table>')
-    h.append('<div class="fn">单位亿元 / 元。ROE 为加权（累计），Q4 即全年。'
-             '股息率 = 该年度每股分红 ÷ 当年末收盘价（含税，未扣红利税）。</div>')
+    h.append('<div class="fn">单季 = 累计差分。* 该年度未走完，为已披露累计值；'
+             '同比为同期累计口径。</div>')
 
-    # 东财一次给 85 季，但图上画 85 根柱子没法看 → 只画近 20 季（5 年）
+    # ── 图：只留一张，细柱无网格 ──
     cq = qs[-20:]
     labels = [quarter_label(q) for q in cq]
+    h.append('<h2>单季净利趋势<span class="unit">近 20 季</span></h2>')
+    h.append(bar_chart(labels, [("单季净利", "#2d4a6e",
+                                 [(q.get("qNetProfit") or 0) / 1e8 if q.get("qNetProfit")
+                                  else None for q in cq])], height=180, unit="亿"))
 
-    # ── 图：近 20 季净利趋势（只留一张）──
-    h.append('<h2>净利趋势（近 20 季）</h2>')
-    h.append(bar_chart(labels,
-                       [("单季净利", "#4c6ef5",
-                         [(q.get("qNetProfit") or 0) / 1e8 if q.get("qNetProfit") else None
-                          for q in cq])],
-                       height=200, unit="亿"))
-
-    # ── 结论一行 ──
+    # ── 结论 ──
+    last_payout = next((v for v in reversed(payout) if v is not None), None)
     bad = [f[1] for f in flags if f[0] in ("bad", "warn")]
-    head_txt = "无明显风险信号" if not bad else "需留意：" + "、".join(bad)
     kv = []
     if last_payout:
         kv.append(f"分红率 {last_payout:.0f}%")
@@ -547,14 +594,14 @@ def main(argv=None):
         kv.append(f"净息差 {latest['nim']:.2f}%")
     if latest and latest.get("provision") is not None:
         kv.append(f"拨贷比 {latest['provision']:.2f}%")
-    h.append(f'<div class="verdict {"ok" if not bad else "warn"}">'
-             f'<b>{"✓" if not bad else "!"} {html.escape(head_txt)}</b>')
+    h.append(f'<div class="verdict {"warn" if bad else "ok"}">'
+             f'<b>{"! 需留意：" + "、".join(bad) if bad else "✓ 无明显风险信号"}</b>')
     if kv:
         h.append(f'<div class="kv">{"　·　".join(kv)}</div>')
     h.append('</div>')
 
     h.append(f'<div class="ft">数据：东财 datacenter（季频指标 / 分红）· 本地估值序列<br>'
-             f'生成于 {datetime.now():%Y-%m-%d %H:%M}｜仅供参考，不构成投资建议</div>')
+             f'生成于 {datetime.now():%Y-%m-%d %H:%M}　·　仅供参考，不构成投资建议</div>')
     h.append('</div></body></html>')
 
     out = args.out
