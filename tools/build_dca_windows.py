@@ -67,9 +67,9 @@ h2{margin:0 0 4px;padding-top:18px;border-top:1px solid #e4e8ef;
 h2 .hint{font-weight:400;color:#5c6675;font-size:12.5px;margin-left:10px;
   letter-spacing:0}
 
-table{width:100%;border-collapse:collapse;margin-top:16px;
-  font-size:14px;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
-th,td{padding:9px 11px;text-align:right;border-bottom:1px solid #eef1f6}
+table{width:100%;border-collapse:collapse;margin-top:18px;
+  font-size:14.5px;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+th,td{padding:12px 12px;text-align:right;border-bottom:1px solid #eef1f6}
 th:first-child,td:first-child{text-align:left;font-weight:620}
 th{font-size:11.5px;font-weight:600;color:#5c6675;letter-spacing:.03em;
   text-transform:uppercase;background:transparent;border-bottom:1px solid #dbe0e9}
@@ -261,19 +261,24 @@ def main(argv=None):
     # 表 1
     h.append('<section><h2>每个起点，月定投拿到什么'
              '<span class="hint">其余 7 种策略见下方对照</span></h2>')
-    h.append('<table><thead><tr><th>起点</th><th>年数</th><th>年化</th>'
-             '<th>累计收益</th><th>8 策略区间</th><th>策略影响</th>'
-             '</tr></thead><tbody>')
+    h.append('<table><thead><tr><th>开始年份</th><th>投了多久</th><th>年化</th>'
+             '<th>每 1 元变</th><th>策略影响</th></tr></thead><tbody>')
+    _mx = max(w["spread"] for w in wins) or 1.0
     for w in wins:
         m = w["res"][MAIN]
-        h.append(f'<tr><td>{w["year"]}</td><td class="dim">{w["yrs"]:.1f}</td>'
-                 f'<td class="peak">{m["r"] * 100:.2f}%</td>'
-                 f'<td>{m["ret"] * 100:.0f}%</td>'
-                 f'<td class="dim">{w["lo"] * 100:.1f}% ~ {w["hi"] * 100:.1f}%</td>'
-                 f'<td>{w["spread"] * 100:.2f}pp</td></tr>')
+        # 热度：把「策略影响」用极淡的底色编码，一眼看出 0.5 和 25.7 的量级差
+        a = 0.03 + 0.13 * (w["spread"] / _mx)
+        h.append(f'<tr><td>{w["year"]}</td>'
+                 f'<td class="dim">{w["yrs"]:.0f} 年</td>'
+                 f'<td class="peak">{m["r"] * 100:.1f}%</td>'
+                 f'<td>{1 + m["ret"]:.2f} 元</td>'
+                 f'<td style="background:rgba(28,58,94,{a:.3f})">'
+                 f'{w["spread"] * 100:.1f}pp</td></tr>')
     h.append('</tbody></table>')
-    h.append('<p class="note">「策略影响」= 同一窗口内 8 种策略年化最好与最差之差。'
-             '窗口越长它越小：投满 12.8 年只差 0.49pp，只剩 1.8 年却差 25.74pp。</p>')
+    h.append('<p class="note">「每 1 元变」= 含分红再投的期末倍数：投 1 元收回 '
+             f'{1 + wins[0]["res"][MAIN]["ret"]:.2f} 元。<br>'
+             '「策略影响」= 同一窗口内 8 种策略年化最好与最差之差，底色越深差越大。'
+             '窗口越长它越小 —— 投满 13 年只差 0.5pp，只剩 2 年却差 25.7pp。</p>')
     h.append('</section>')
 
     # 图
@@ -310,22 +315,21 @@ def main(argv=None):
     h.append('<section><h2>哪种策略最不挑起点'
              '<span class="hint">标准差越小越稳</span></h2>')
     h.append('<table><thead><tr><th>策略</th><th>平均年化</th>'
-             '<th>最差窗口</th><th>最好窗口</th><th>标准差</th><th>窗口内最优</th>'
+             '<th>最差 ~ 最好</th><th>标准差</th><th>当过最优</th>'
              '</tr></thead><tbody>')
     for s in sorted(stats, key=lambda z: z["sd"]):
-        h.append(f'<tr><td>{s["label"]}</td><td>{s["mean"] * 100:.2f}%</td>'
-                 f'<td class="dim">{s["lo"] * 100:.2f}%</td>'
-                 f'<td class="dim">{s["hi"] * 100:.2f}%</td>'
-                 f'<td class="peak">{s["sd"] * 100:.2f}pp</td>'
+        h.append(f'<tr><td>{s["label"]}</td><td>{s["mean"] * 100:.1f}%</td>'
+                 f'<td class="dim">{s["lo"] * 100:.1f}% ~ {s["hi"] * 100:.1f}%</td>'
+                 f'<td class="peak">{s["sd"] * 100:.1f}pp</td>'
                  f'<td class="dim">{s["wins"]}/{s["n"]}</td></tr>')
     h.append('</tbody></table>')
     paced_sd = [s for s in stats if s["label"] in paced]
     if paced_sd:
         steadiest = min(paced_sd, key=lambda z: z["sd"])
         h.append(f'<p class="note">「{steadiest["label"]}」标准差最小'
-                 f'（{steadiest["sd"] * 100:.2f}pp），换 {steadiest["n"]} 个起点都落在 '
-                 f'{steadiest["lo"] * 100:.2f}% ~ {steadiest["hi"] * 100:.2f}% 之间 —— '
-                 f'这就是"不挑起点"。反过来，平均年化最高的策略往往标准差也最大：'
+                 f'（{steadiest["sd"] * 100:.1f}pp），换 {steadiest["n"]} 个起点都落在 '
+                 f'{steadiest["lo"] * 100:.1f}% ~ {steadiest["hi"] * 100:.1f}% 之间 —— '
+                 f'这就是"不挑起点"。反过来，平均年化最高的策略标准差也最大：'
                  f'那不是本事，是它把投入推得更晚、正好吃到上涨。</p>')
     h.append('</section>')
 
