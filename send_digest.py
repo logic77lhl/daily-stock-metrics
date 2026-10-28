@@ -163,6 +163,16 @@ def build_html(iso: str, fragments, included, skipped) -> str:
             'padding:10px 14px;margin-top:12px;font-size:12.5px;color:#8a4b00;line-height:1.7">'
             f'⚠️ 以下市场本期未收录：{"、".join(skipped)}。'
             f'数据质量门未通过的市场不会进入邮件（宁缺一天，不发布一天错数据）。</div>')
+    # 先交代「今天要读多少」：变化条数 + 市场数，让读者决定要不要往下看
+    try:
+        import fundamentals_changes as _fc
+        _ev, _first = _fc.detect(iso, os.path.join(BASE_DIR, "output"))
+        _n_ev = 0 if _first else len(_ev)
+    except Exception:
+        _n_ev = 0
+    _head = (f'今天：{len(included)} 个市场 ｜ '
+             + (f'<b style="color:#c92a2a">{_n_ev} 条基本面变化</b>' if _n_ev
+                else '无基本面变化'))
     return (
         '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
@@ -174,8 +184,8 @@ def build_html(iso: str, fragments, included, skipped) -> str:
         'padding:18px 20px;margin-bottom:14px;color:#fff">'
         f'<div style="font-size:19px;font-weight:700">📈 每日市场指标 ｜ {iso}</div>'
         f'<div style="font-size:12.5px;color:#aab4cf;margin-top:6px">'
-        f'本期收录：{"、".join(included)} ｜ 完整报告见附件与站点：{links}</div></div>'
-        + "".join(fragments) + _fundamentals_block(iso) + skip_html +
+        f'{_head} ｜ 完整报告见附件与站点：{links}</div></div>'
+        + _fundamentals_block(iso) + "".join(fragments) + skip_html +
         '<div style="color:#98a1b3;font-size:12px;text-align:center;padding:10px 0 20px;'
         'line-height:1.8">'
         '指标为收盘后计算值；「今日速览」里的胜率已并排给出基线 —— '

@@ -482,6 +482,20 @@ def annual_rows(d, years=10):
             bk_cancel=bk.get(y, {}).get("注销", 0),
             bk_prog=bk.get(y, {}).get("进展", 0)))
     out.sort(key=lambda x: x["year"])
+
+    # 自动异常标记 —— 这类错不该靠肉眼发现。
+    # 实例：五粮液 2025 营收 −54.6%、净利 −71.9%，但每股分红没降、
+    # 分红率算出来 224%（分红超过净利），而次年一季度单季营收就超过前一年的半年。
+    # 标记「分红超过净利」—— 这是**可持续性**信号，不是数据错误。
+    # 曾经把它标成「数据可疑」，是错的：五粮液 2025（营收 −55%、净利 −72%、
+    # 分红率 224%）与中石油 2020（净利 −58%、分红率 168%）都是**真实的**
+    # 业绩崩塌下维持分红，序列内部完全自洽。误判成脏数据会误导读者去核对
+    # 一个本来没问题的年报。
+    for x in out:
+        if x["payout"] is not None and x["payout"] > 100:
+            x["flag"] = f'分红 {x["payout"]:.0f}% 超过当年净利，需看能否持续'
+        else:
+            x["flag"] = ""
     return out[-years:]
 
 
@@ -991,7 +1005,9 @@ def main(argv=None, payload=None):
 
             bk = (f'{x["bk_cancel"]} / {x["bk_prog"]}'
                   if (x["bk_cancel"] or x["bk_prog"]) else "—")
-            h.append(f'<tr><td class="k">{x["year"]}{mark}</td>')
+            warn = (f'<span title="{html.escape(x["flag"])}" '
+                    f'style="color:#c92a2a;cursor:help">⚠</span>') if x.get("flag") else ""
+            h.append(f'<tr><td class="k">{x["year"]}{mark} {warn}</td>')
             h.append(f'<td>{x["revenue"]:,.0f}</td>' if x["revenue"] else '<td class="na">—</td>')
             h.append(_p(x["yoyRev"], sign=True))
             h.append(f'<td>{x["netProfit"]:,.0f}</td>' if x["netProfit"] else '<td class="na">—</td>')
@@ -1015,6 +1031,10 @@ def main(argv=None, payload=None):
                        else f'分红率 {p0:.0f}% → {p1:.0f}%')
         _tot = sum(x["bk_cancel"] + x["bk_prog"] for x in _ar)
         obs.append(f'回购公告 {_tot} 条' if _tot else '无回购')
+        _bad = [x for x in _ar if x.get("flag")]
+        if _bad:
+            obs.append("⚠ " + "；".join(
+                f'{x["year"]} {x["flag"]}' for x in _bad))
         h.append(f'<div class="fn">{"　·　".join(obs)}<br>'
                  '业绩取年报（年内累计）。每股分红按 <b>财务年度</b> 归集（年报+中报相加），'
                  '不按除权日。分红率 = 每股分红 × 总股本 ÷ 归母净利；'
