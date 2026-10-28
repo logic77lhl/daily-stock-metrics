@@ -115,6 +115,43 @@ def _collect(iso: str):
     return fragments, attachments, included, skipped
 
 
+def _fundamentals_block(iso: str) -> str:
+    """基本面变化段。没变化返回空串。"""
+    try:
+        import fundamentals_changes
+        events, first = fundamentals_changes.detect(iso, os.path.join(BASE_DIR, "output"))
+    except Exception as exc:
+        print(f"[warn] 基本面变化检测失败：{type(exc).__name__}: {exc}")
+        return ""
+    if first or not events:
+        return ""
+    tag_color = {"季报": "#1971c2", "分红": "#2f9e44",
+                 "回购": "#c92a2a", "分位": "#e8590c"}
+    rows = []
+    for e in events[:5]:
+        c = tag_color.get(e["kind"], "#868e96")
+        rows.append(
+            f'<div style="padding:6px 0;border-bottom:1px solid #eef1f6;font-size:12.5px;'
+            f'line-height:1.65">'
+            f'<span style="display:inline-block;min-width:38px;color:{c};font-weight:600">'
+            f'{e["kind"]}</span>'
+            f'<a href="{SITE}/基本面/{e["code"]}.html" '
+            f'style="color:#1a1a2e;text-decoration:none;font-weight:600">'
+            f'{e["name"]}</a>'
+            f'<span style="color:#7a8397"> {e["code"]} </span>'
+            f'<span style="color:#495057">{e["text"]}</span></div>')
+    more = (f'<div style="font-size:11.5px;color:#98a1b3;padding-top:6px">'
+            f'另有 {len(events) - 5} 条未显示</div>' if len(events) > 5 else "")
+    return (
+        '<div style="background:#fff;border-radius:10px;padding:14px 18px;margin-top:14px;'
+        'box-shadow:0 1px 3px rgba(0,0,0,.06)">'
+        '<div style="font-size:14px;font-weight:700;margin-bottom:4px">'
+        '🔔 基本面变化</div>'
+        '<div style="font-size:11.5px;color:#8a93a5;margin-bottom:8px">'
+        '与上一次运行相比：新季报 / 新分红方案 / 新回购公告 / 估值分位穿越 30%·70%</div>'
+        + "".join(rows) + more + '</div>')
+
+
 def build_html(iso: str, fragments, included, skipped) -> str:
     links = " ｜ ".join(
         f'<a href="{SITE}/{iso}/{key}.html" style="color:#1971c2">{spec["label"]}</a>'
@@ -138,7 +175,7 @@ def build_html(iso: str, fragments, included, skipped) -> str:
         f'<div style="font-size:19px;font-weight:700">📈 每日市场指标 ｜ {iso}</div>'
         f'<div style="font-size:12.5px;color:#aab4cf;margin-top:6px">'
         f'本期收录：{"、".join(included)} ｜ 完整报告见附件与站点：{links}</div></div>'
-        + "".join(fragments) + skip_html +
+        + "".join(fragments) + _fundamentals_block(iso) + skip_html +
         '<div style="color:#98a1b3;font-size:12px;text-align:center;padding:10px 0 20px;'
         'line-height:1.8">'
         '指标为收盘后计算值；「今日速览」里的胜率已并排给出基线 —— '

@@ -814,7 +814,11 @@ def main(argv=None, payload=None):
                 f'<span class="js">{state}</span></div>')
 
     if any(v is not None for v in (jd, jw, jm)):
-        h.append('<h2>当前位置<span class="unit">技术面数据来自仓库每日 metrics CSV</span></h2>')
+        _md = (meta.get("数据日期") or "")[:10]
+        h.append(f'<h2>当前位置<span class="unit">'
+                 f'{"技术面截至 " + _md + "（每日更新）" if _md else "技术面数据来自每日 metrics CSV"}'
+                 f'　·　财务截至 {latest["statDate"] if latest else "—"}（季报更新）'
+                 f'</span></h2>')
         h.append('<div class="jrow" style="padding-bottom:2px"><span class="jl"></span>'
                  '<span class="jv"></span><span class="jt" style="height:0;background:none">'
                  '<i style="left:20%;background:none"></i></span>'
