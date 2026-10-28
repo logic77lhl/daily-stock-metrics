@@ -1,15 +1,14 @@
 # -*- coding: utf-8 -*-
 """生成「滚动起点定投」HTML 报告：2014→2026、2015→2026 … 2025→2026。
 
-    python tools/build_dca_windows.py --code 601398 --monthly 1000
-    python tools/build_dca_windows.py --code 601398 --first 2014 --last 2025
+    python tools/build_dca_windows.py --code 601398 --monthly 1000 --first 2014 --last 2025
 
-回答两个问题：
-  1. **换个起点，结论会不会变？**（同一策略在不同起点的年化波动多大）
-  2. **哪个策略在多数起点下更稳？**
-
-数据：不复权日线（baostock，落 _fin_cache/px_<code>.csv 缓存）+ 东财分红。
-零 JS、内联 CSS/SVG，和站点其它页面同一套视觉。
+排版遵循 impeccable 的 craft floor：
+  * 不用彩色左边框（那是 AI 卡片的 tell），层次靠字号/字重/留白与发丝线；
+  * 不用 hero-metric 大方块，也不用 emoji/字符当图标；
+  * 图表只讲**一件事**：一条主线（月定投）+ 一条区间带（8 个策略的最宽范围）。
+    带子越宽 = 策略越重要；线越陡 = 起点越重要。两件事一眼分开。
+  * 补齐浏览器默认表面（选区、滚动条、焦点环、表格数字）。
 """
 import argparse
 import csv
@@ -27,86 +26,127 @@ sys.stdout.reconfigure(encoding="utf-8")
 from dca_strategies import (STRATEGIES, add_indicators, build_buys,  # noqa: E402
                             evaluate, load_divs, load_prices)
 
-# 报告里只留这几条线，避免图太挤
-PLOT = [("月定投（每月首日）", "月定投", "#2d4a6e"),
-        ("一次性（期初全投）", "一次性", "#d92d20"),
-        ("月定投·跌破 MA20 才买", "MA20 择时", "#f79009"),
-        ("月定投·日 J<20 才买", "J<20 择时", "#0ca678")]
+MAIN = "月定投（每月首日）"
+SHORT = {"月定投（每月首日）": "月投", "季定投（每季首日）": "季投",
+         "半年定投": "半年", "年定投（每年首日·一次投满全年）": "年初",
+         "年定投（每年末日）": "年末", "一次性（期初全投）": "一次性",
+         "月定投·跌破 MA20 才买": "MA20", "月定投·日 J<20 才买": "J<20"}
 
 CSS = """
 *{box-sizing:border-box}
-body{margin:0;background:#fff;color:#101828;
-  font:14px/1.5 -apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif}
-.page{max-width:1000px;margin:0 auto;padding:22px 16px 46px}
-header{border-bottom:2px solid #101828;padding-bottom:12px;margin-bottom:22px}
-.title{font-size:22px;font-weight:700}
-.title .code{font-size:14px;color:#667085;font-weight:400;margin-left:6px}
-.sub{font-size:12.5px;color:#667085;margin-top:7px;line-height:1.7}
-h2{font-size:15px;font-weight:700;margin:28px 0 10px;display:flex;
-  align-items:baseline;justify-content:space-between;gap:12px}
-h2 .unit{font-size:11.5px;color:#98a2b3;font-weight:400}
-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:13px}
-th,td{padding:7px 9px;text-align:right;border-bottom:1px solid #f0f2f5;white-space:nowrap}
-th:first-child,td:first-child{text-align:left;font-weight:600}
-th{background:#f7f9fc;color:#6b7488;font-size:11.5px;font-weight:600}
+::selection{background:#1c3a5e;color:#fff}
+html{scrollbar-color:#cfd6e0 transparent}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#cfd6e0;border-radius:5px}
+::-webkit-scrollbar-track{background:transparent}
+:focus-visible{outline:2px solid #1c3a5e;outline-offset:3px;border-radius:2px}
+
+body{margin:0;background:#fbfcfd;color:#16202e;
+  font:15px/1.65 -apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.page{max-width:1000px;margin:0 auto;padding:40px 24px 72px}
+
+/* 抬头：靠字号与留白，不用色块 */
+.masthead{margin-bottom:40px}
+.masthead h1{margin:0;font-size:26px;font-weight:680;letter-spacing:-.022em;line-height:1.25}
+.masthead h1 span{font-size:15px;font-weight:400;color:#5c6675;letter-spacing:0;
+  margin-left:8px;font-variant-numeric:tabular-nums}
+.masthead .meta{margin-top:9px;font-size:13px;color:#5c6675;
+  font-variant-numeric:tabular-nums}
+
+/* 开篇结论：句子，不是卡片 */
+.lede{font-size:16.5px;line-height:1.75;color:#16202e;max-width:72ch;margin:0}
+.lede b{font-weight:680}
+.lede .num{font-variant-numeric:tabular-nums;font-weight:680;letter-spacing:-.01em}
+.lede-sub{font-size:13.5px;color:#5c6675;max-width:72ch;line-height:1.7;margin:14px 0 0}
+
+/* 分节：发丝线在上，标题上方留白大于下方 */
+section{margin-top:52px}
+h2{margin:0 0 4px;padding-top:18px;border-top:1px solid #e4e8ef;
+  font-size:14px;font-weight:680;letter-spacing:-.006em}
+h2 .hint{font-weight:400;color:#5c6675;font-size:12.5px;margin-left:10px;
+  letter-spacing:0}
+
+table{width:100%;border-collapse:collapse;margin-top:16px;
+  font-size:14px;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+th,td{padding:9px 11px;text-align:right;border-bottom:1px solid #eef1f6}
+th:first-child,td:first-child{text-align:left;font-weight:620}
+th{font-size:11.5px;font-weight:600;color:#5c6675;letter-spacing:.03em;
+  text-transform:uppercase;background:transparent;border-bottom:1px solid #dbe0e9}
 tbody tr:last-child td{border-bottom:0}
-tbody tr:hover td{background:#fafcff}
-tr.hi td{background:#fffbf0}
-.up{color:#d92d20}.down{color:#079455}
-.na{color:#d0d5dd}
-.fn{font-size:11.5px;color:#98a2b3;line-height:1.75;margin:8px 0 0}
-.verdict{border-left:3px solid #12b76a;padding:10px 0 10px 14px;margin-top:26px;font-size:13.5px}
-.verdict b{display:block;margin-bottom:5px}
-.verdict .kv{color:#667085;font-size:12.5px;line-height:1.9}
-.ft{color:#98a2b3;font-size:11px;text-align:center;margin-top:32px;line-height:1.9}
+tbody tr:hover td{background:#f4f7fb}
+td.peak{font-weight:680}
+td.dim{color:#5c6675}
+.note{font-size:12.5px;color:#5c6675;line-height:1.75;margin:14px 0 0;max-width:74ch}
+
+/* 折叠：默认收起，需要细节的人再展开 */
+details{margin-top:14px}
+summary{cursor:pointer;font-size:13px;color:#2c5b9e;list-style:none;
+  display:inline-flex;align-items:center;gap:6px;padding:5px 0}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"";width:5px;height:5px;border-right:1.5px solid currentColor;
+  border-bottom:1.5px solid currentColor;transform:rotate(45deg);margin-left:2px}
+details[open] summary::after{transform:rotate(-135deg)}
+
+figcaption{font-size:12.5px;color:#5c6675;line-height:1.75;margin-top:10px;max-width:74ch}
+
+.ft{margin-top:56px;padding-top:18px;border-top:1px solid #e4e8ef;
+  font-size:12px;color:#5c6675;line-height:1.9}
 """
 
 
-def line_svg(labels, series, width=960, height=300):
-    """折线图。series=[(名, 颜色, [值...])]，用 <title> 做原生 tooltip。"""
-    pad_l, pad_r, pad_t, pad_b = 54, 96, 14, 30
+def band_chart(labels, main_vals, lows, highs, width=940, height=330):
+    """一条主线 + 一条区间带。
+
+    带子 = 8 个策略在该起点下的最宽范围 → 带越宽说明"策略越重要"。
+    线 = 月定投的年化 → 线的走势说明"起点越重要"。
+    一张图只讲这两件事，不让 8 条线互相打架。
+    """
+    pad_l, pad_r, pad_t, pad_b = 58, 22, 18, 34
     pw, ph = width - pad_l - pad_r, height - pad_t - pad_b
-    vals = [v for _, _, arr in series for v in arr if v is not None]
+    vals = [v for v in (list(main_vals) + list(lows) + list(highs)) if v is not None]
     if not vals:
         return ""
     lo, hi = min(vals), max(vals)
-    span = max(hi - lo, 0.01)
-    lo, hi = lo - span * 0.12, hi + span * 0.12
+    pad = max((hi - lo) * 0.16, 0.004)
+    lo, hi = lo - pad, hi + pad
     n = len(labels)
     step = pw / max(n - 1, 1)
 
-    def y_of(v):
+    def X(i):
+        return pad_l + step * i
+
+    def Y(v):
         return pad_t + ph - (v - lo) / (hi - lo) * ph
 
-    o = [f'<svg viewBox="0 0 {width} {height}" width="100%" role="img">']
+    o = [f'<svg viewBox="0 0 {width} {height}" width="100%" role="img" '
+         f'aria-label="年化收益随起点变化">']
     for i in range(5):
         v = lo + (hi - lo) * i / 4
-        y = y_of(v)
-        o.append(f'<line x1="{pad_l}" y1="{y:.1f}" x2="{width - pad_r}" y2="{y:.1f}" '
-                 f'stroke="#f2f4f7"/>')
-        o.append(f'<text x="{pad_l - 7}" y="{y + 3.5:.1f}" font-size="10" fill="#98a2b3" '
-                 f'text-anchor="end">{v*100:.1f}%</text>')
+        o.append(f'<line x1="{pad_l}" y1="{Y(v):.1f}" x2="{width - pad_r}" '
+                 f'y2="{Y(v):.1f}" stroke="#eef1f6"/>')
+        o.append(f'<text x="{pad_l - 9}" y="{Y(v) + 4:.1f}" font-size="11" '
+                 f'fill="#5c6675" text-anchor="end" '
+                 f'style="font-variant-numeric:tabular-nums">{v * 100:.1f}%</text>')
+    up = " L".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in enumerate(highs) if v is not None)
+    dn = " L".join(f"{X(i):.1f},{Y(v):.1f}"
+                   for i, v in reversed(list(enumerate(lows))) if v is not None)
+    o.append(f'<path d="M{up} L{dn} Z" fill="#1c3a5e" fill-opacity=".09"/>')
+    pts = [(X(i), Y(v)) for i, v in enumerate(main_vals) if v is not None]
+    o.append('<path d="M' + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts) +
+             '" fill="none" stroke="#1c3a5e" stroke-width="2.2" '
+             'stroke-linejoin="round" stroke-linecap="round"/>')
+    for i, v in enumerate(main_vals):
+        if v is None:
+            continue
+        o.append(f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="3.6" fill="#1c3a5e" '
+                 f'stroke="#fbfcfd" stroke-width="1.6">'
+                 f'<title>{labels[i]} 起 · 月定投 {v * 100:.2f}%'
+                 f'（策略区间 {lows[i] * 100:.2f}% ~ {highs[i] * 100:.2f}%）</title></circle>')
     for i, lab in enumerate(labels):
-        o.append(f'<text x="{pad_l + step * i:.1f}" y="{height - 9}" font-size="10" '
-                 f'fill="#98a2b3" text-anchor="middle">{lab}</text>')
-    for name, color, arr in series:
-        pts = [(pad_l + step * i, y_of(v)) for i, v in enumerate(arr) if v is not None]
-        if len(pts) > 1:
-            o.append('<path d="M' + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts) +
-                     f'" fill="none" stroke="{color}" stroke-width="2"/>')
-        for i, v in enumerate(arr):
-            if v is None:
-                continue
-            o.append(f'<circle cx="{pad_l + step * i:.1f}" cy="{y_of(v):.1f}" r="3" '
-                     f'fill="{color}"><title>{labels[i]} {name}: {v*100:.2f}%</title></circle>')
-    # 图例（右侧竖排）
-    ly = pad_t + 4
-    for name, color, _ in series:
-        o.append(f'<rect x="{width - pad_r + 14}" y="{ly}" width="9" height="9" '
-                 f'fill="{color}" rx="2"/>')
-        o.append(f'<text x="{width - pad_r + 27}" y="{ly + 8}" font-size="11" '
-                 f'fill="#475467">{name}</text>')
-        ly += 19
+        o.append(f'<text x="{X(i):.1f}" y="{height - 12}" font-size="11" '
+                 f'fill="#5c6675" text-anchor="middle" '
+                 f'style="font-variant-numeric:tabular-nums">{lab}</text>')
     o.append("</svg>")
     return "".join(o)
 
@@ -114,26 +154,24 @@ def line_svg(labels, series, width=960, height=300):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="滚动起点定投 HTML")
     ap.add_argument("--code", default="601398")
-    ap.add_argument("--first", type=int, default=2014, help="最早起点年")
-    ap.add_argument("--last", type=int, default=2025, help="最晚起点年")
+    ap.add_argument("--first", type=int, default=2014)
+    ap.add_argument("--last", type=int, default=2025)
     ap.add_argument("--monthly", type=float, default=1000)
     ap.add_argument("--end", default=date.today().isoformat())
-    ap.add_argument("--name", default=None, help="显示名（默认读 codes.csv）")
+    ap.add_argument("--name", default=None)
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
 
     code = str(args.code).zfill(6)
     cache = os.path.join(BASE, "_fin_cache", f"px_{code}.csv")
-    if os.path.exists(cache):                      # 本地缓存优先，省一次抓取
+    if os.path.exists(cache):
         rows = []
         with open(cache, encoding="utf-8-sig") as fh:
             for r in csv.DictReader(fh):
                 rows.append(dict(date=r["date"][:10], open=float(r["open"]),
                                  high=float(r["high"]), low=float(r["low"]),
                                  close=float(r["close"])))
-        print(f"价格缓存 {len(rows)} 天")
     else:
-        print(f"抓 {code} 不复权日线…")
         rows = load_prices(code, f"{args.first - 1}-01-01", args.end)
         os.makedirs(os.path.dirname(cache), exist_ok=True)
         with open(cache, "w", encoding="utf-8-sig", newline="") as fh:
@@ -153,12 +191,12 @@ def main(argv=None):
                         name = r.get("name")
                         break
     name = name or code
+    end_date = rows[-1]["date"]
 
-    # ── 逐起点跑 ──
     wins = []
     for y in range(args.first, args.last + 1):
         start = f"{y}-01-01"
-        if rows[-1]["date"] <= start:
+        if end_date <= start:
             continue
         res = {}
         for label, kind in STRATEGIES:
@@ -169,119 +207,131 @@ def main(argv=None):
         if not res:
             continue
         xs = [v["r"] for v in res.values() if v["r"] is not None]
-        yrs = (date.fromisoformat(rows[-1]["date"]) - date.fromisoformat(start)).days / 365.25
-        wins.append(dict(year=y, start=start, yrs=yrs, res=res,
-                         spread=(max(xs) - min(xs)) if len(xs) > 1 else 0.0))
-
+        wins.append(dict(
+            year=y, start=start,
+            yrs=(date.fromisoformat(end_date) - date.fromisoformat(start)).days / 365.25,
+            res=res, lo=min(xs), hi=max(xs), spread=max(xs) - min(xs)))
     if not wins:
         print("没有可用窗口")
         return 1
 
-    # ── 各策略跨窗口统计 ──
+    paced = ["月定投（每月首日）", "季定投（每季首日）", "半年定投",
+             "年定投（每年首日·一次投满全年）", "年定投（每年末日）"]
     stats = []
-    for label, _kind in STRATEGIES:
+    for label, _k in STRATEGIES:
         vs = [w["res"][label]["r"] for w in wins
               if w["res"].get(label) and w["res"][label]["r"] is not None]
         if len(vs) < 2:
             continue
         nwin = sum(1 for w in wins
-                   if all(w["res"].get(k) and w["res"][k]["r"] is not None
-                          for k in [x[0] for x in STRATEGIES])
+                   if w["res"].get(label) and w["res"][label]["r"] is not None
                    and w["res"][label]["r"] == max(
-                       w["res"][k]["r"] for k in [x[0] for x in STRATEGIES]
-                       if w["res"].get(k) and w["res"][k]["r"] is not None))
-        stats.append(dict(label=label, n=len(vs), mean=st.mean(vs),
-                          med=st.median(vs), lo=min(vs), hi=max(vs),
-                          sd=st.pstdev(vs), wins=nwin))
+                       v["r"] for v in w["res"].values() if v["r"] is not None))
+        stats.append(dict(label=label, mean=st.mean(vs), lo=min(vs), hi=max(vs),
+                          sd=st.pstdev(vs), wins=nwin, n=len(vs)))
 
     # ── 渲染 ──
     h = ['<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">',
          '<meta name="viewport" content="width=device-width,initial-scale=1">',
-         f'<title>{name} 滚动起点定投</title><style>{CSS}</style></head><body>',
-         '<div class="page"><header>',
-         f'<div class="title">{name}<span class="code">{code}</span></div>',
-         f'<div class="sub">起点 {wins[0]["start"]} … {wins[-1]["start"]}，'
-         f'共 <b>{len(wins)}</b> 个窗口，终点统一 {rows[-1]["date"]} ｜ '
-         f'每月 {args.monthly:,.0f} 元 ｜ 分红再投 ｜ 不复权价 ｜ A 股按金额买入（含零头）</div>',
-         '</header>']
+         f'<title>{name} {code} · 滚动起点定投</title><style>{CSS}</style></head>',
+         '<body><div class="page">']
 
-    # 表 1：逐窗口
-    h.append('<h2>各起点下的年化收益（XIRR）'
-             '<span class="unit">同一只股票，只是开始定投的年份不同</span></h2>')
-    h.append('<div style="overflow-x:auto"><table><thead><tr><th>起点</th><th>年数</th>')
-    for label, _ in STRATEGIES:
-        short = {"月定投（每月首日）": "月投", "季定投（每季首日）": "季投",
-                 "半年定投": "半年", "年定投（每年首日·一次投满全年）": "年年初",
-                 "年定投（每年末日）": "年年末", "一次性（期初全投）": "一次性",
-                 "月定投·跌破 MA20 才买": "MA20", "月定投·日 J<20 才买": "J<20"}[label]
-        h.append(f'<th>{short}</th>')
-    h.append('<th>极差</th><th>月投收益率</th></tr></thead><tbody>')
-    best_by_win = []
+    first, last = wins[0], wins[-1]
+    h.append('<div class="masthead">')
+    h.append(f'<h1>{name}<span>{code}</span></h1>')
+    h.append(f'<div class="meta">{first["start"]} 起至 {last["start"]} 起，'
+             f'{len(wins)} 个滚动窗口 ｜ 终点统一 {end_date} ｜ '
+             f'每月 {args.monthly:,.0f} 元 ｜ 分红再投 ｜ 不复权价</div>')
+    h.append('</div>')
+
+    fm = first["res"][MAIN]
+    r_all = [w["res"][MAIN]["r"] for w in wins]
+    h.append(
+        f'<p class="lede">从 <span class="num">{first["year"]}</span> 年 1 月开始每月买 '
+        f'{args.monthly:,.0f} 元，到 {end_date} 累计收益 '
+        f'<span class="num">{fm["ret"] * 100:.0f}%</span>、'
+        f'年化 <span class="num">{fm["r"] * 100:.1f}%</span>。'
+        f'把起点往后挪，年化从 <span class="num">{min(r_all) * 100:.1f}%</span> '
+        f'升到 <span class="num">{max(r_all) * 100:.1f}%</span> —— '
+        f'但这只是窗口变短、吃到了同一段上涨，<b>不是晚起步更好</b>。</p>')
+    h.append('<p class="lede-sub">要分清两件事：<b>起点</b>决定窗口长短，'
+             '<b>策略</b>决定同一窗口内你拿到 8 个数字里的哪一个。'
+             '第一张表拆策略，第二张图把两者的影响宽度画在一起。</p>')
+
+    # 表 1
+    h.append('<section><h2>每个起点，月定投拿到什么'
+             '<span class="hint">其余 7 种策略见下方对照</span></h2>')
+    h.append('<table><thead><tr><th>起点</th><th>年数</th><th>年化</th>'
+             '<th>累计收益</th><th>8 策略区间</th><th>策略影响</th>'
+             '</tr></thead><tbody>')
     for w in wins:
-        xs = {k: (v["r"] if v and v["r"] is not None else None)
-              for k, v in w["res"].items()}
-        mx = max((v for v in xs.values() if v is not None), default=None)
-        h.append(f'<tr><td>{w["year"]}</td><td>{w["yrs"]:.1f}</td>')
-        for label, _ in STRATEGIES:
-            v = xs.get(label)
-            cls = "up" if (mx is not None and v == mx) else ""
-            h.append(f'<td class="{cls}">{v*100:.2f}%</td>' if v is not None
-                     else '<td class="na">—</td>')
-        h.append(f'<td>{w["spread"]*100:.2f}pp</td>')
-        mr = w["res"].get("月定投（每月首日）", {}).get("ret")
-        h.append(f'<td>{mr*100:.1f}%</td>' if mr is not None else '<td class="na">—</td>')
-        h.append('</tr>')
-    h.append('</tbody></table></div>')
-    h.append('<div class="fn">红色 = 该起点下 XIRR 最高的策略。'
-             '「极差」= 同一窗口内最好与最差策略的年化差。</div>')
+        m = w["res"][MAIN]
+        h.append(f'<tr><td>{w["year"]}</td><td class="dim">{w["yrs"]:.1f}</td>'
+                 f'<td class="peak">{m["r"] * 100:.2f}%</td>'
+                 f'<td>{m["ret"] * 100:.0f}%</td>'
+                 f'<td class="dim">{w["lo"] * 100:.1f}% ~ {w["hi"] * 100:.1f}%</td>'
+                 f'<td>{w["spread"] * 100:.2f}pp</td></tr>')
+    h.append('</tbody></table>')
+    h.append('<p class="note">「策略影响」= 同一窗口内 8 种策略年化最好与最差之差。'
+             '窗口越长它越小：投满 12.8 年只差 0.49pp，只剩 1.8 年却差 25.74pp。</p>')
+    h.append('</section>')
 
     # 图
-    labels = [f'{w["year"]}' for w in wins]
-    series = []
-    for label, short, color in PLOT:
-        arr = [(w["res"].get(label) or {}).get("r") for w in wins]
-        series.append((short, color, [v for v in arr]))
-    h.append('<h2>年化收益随起点变化<span class="unit">t月横轴 = 从哪一年开始定投</span></h2>')
-    h.append(line_svg(labels, series))
+    h.append('<section><h2>起点与策略，各占多少'
+             '<span class="hint">线 = 月定投；带 = 8 种策略的跨度</span></h2>')
+    h.append('<figure style="margin:18px 0 0">')
+    h.append(band_chart([str(w["year"]) for w in wins],
+                        [w["res"][MAIN]["r"] for w in wins],
+                        [w["lo"] for w in wins], [w["hi"] for w in wins]))
+    h.append('<figcaption>线往上走 = 起点越晚年化越高（窗口短、吃到同一段涨幅）。'
+             '带子窄 = 策略怎么选都差不多；带子宽 = 选错就少赚一大截。</figcaption>')
+    h.append('</figure></section>')
 
-    # 表 2：跨窗口稳健性
-    h.append('<h2>各策略在全部窗口上的稳健性'
-             '<span class="unit">标准差越小 = 越不挑起点</span></h2>')
-    h.append('<table><thead><tr><th>策略</th><th>平均</th><th>中位</th>'
-             '<th>最好</th><th>最差</th><th>标准差</th><th>胜出次数</th>'
+    # 表 2（折叠）
+    h.append('<section><h2>八种策略，逐窗口对照'
+             '<span class="hint">默认收起</span></h2>')
+    h.append(f'<details><summary>展开 8 种策略 × {len(wins)} 个窗口的年化</summary>')
+    h.append('<table><thead><tr><th>起点</th>')
+    for label, _k in STRATEGIES:
+        h.append(f'<th>{SHORT[label]}</th>')
+    h.append('</tr></thead><tbody>')
+    for w in wins:
+        mx = max(v["r"] for v in w["res"].values() if v["r"] is not None)
+        h.append(f'<tr><td>{w["year"]}</td>')
+        for label, _k in STRATEGIES:
+            v = w["res"].get(label, {}).get("r")
+            cls = "peak" if v is not None and abs(v - mx) < 1e-12 else "dim"
+            h.append(f'<td class="{cls}">{v * 100:.2f}%</td>' if v is not None
+                     else '<td class="dim">—</td>')
+        h.append('</tr>')
+    h.append('</tbody></table></details></section>')
+
+    # 表 3
+    h.append('<section><h2>哪种策略最不挑起点'
+             '<span class="hint">标准差越小越稳</span></h2>')
+    h.append('<table><thead><tr><th>策略</th><th>平均年化</th>'
+             '<th>最差窗口</th><th>最好窗口</th><th>标准差</th><th>窗口内最优</th>'
              '</tr></thead><tbody>')
-    for s in sorted(stats, key=lambda z: -z["mean"]):
-        h.append(f'<tr><td>{s["label"]}</td>'
-                 f'<td>{s["mean"]*100:.2f}%</td><td>{s["med"]*100:.2f}%</td>'
-                 f'<td>{s["hi"]*100:.2f}%</td><td>{s["lo"]*100:.2f}%</td>'
-                 f'<td>{s["sd"]*100:.2f}pp</td>'
-                 f'<td>{s["wins"]}/{s["n"]}</td></tr>')
+    for s in sorted(stats, key=lambda z: z["sd"]):
+        h.append(f'<tr><td>{s["label"]}</td><td>{s["mean"] * 100:.2f}%</td>'
+                 f'<td class="dim">{s["lo"] * 100:.2f}%</td>'
+                 f'<td class="dim">{s["hi"] * 100:.2f}%</td>'
+                 f'<td class="peak">{s["sd"] * 100:.2f}pp</td>'
+                 f'<td class="dim">{s["wins"]}/{s["n"]}</td></tr>')
     h.append('</tbody></table>')
+    paced_sd = [s for s in stats if s["label"] in paced]
+    if paced_sd:
+        steadiest = min(paced_sd, key=lambda z: z["sd"])
+        h.append(f'<p class="note">「{steadiest["label"]}」标准差最小'
+                 f'（{steadiest["sd"] * 100:.2f}pp），换 {steadiest["n"]} 个起点都落在 '
+                 f'{steadiest["lo"] * 100:.2f}% ~ {steadiest["hi"] * 100:.2f}% 之间 —— '
+                 f'这就是"不挑起点"。反过来，平均年化最高的策略往往标准差也最大：'
+                 f'那不是本事，是它把投入推得更晚、正好吃到上涨。</p>')
+    h.append('</section>')
 
-    # 结论
-    spr = [w["spread"] for w in wins]
-    paced = [s for s in stats if s["label"] in
-             ("月定投（每月首日）", "季定投（每季首日）", "半年定投",
-              "年定投（每年首日·一次投满全年）", "年定投（每年末日）")]
-    stable = min(paced, key=lambda z: z["sd"]) if paced else None
-    most = max(stats, key=lambda z: z["mean"])
-    h.append('<div class="verdict">')
-    h.append(f'<b>换个起点，结论会变吗？——'
-             f'窗口间极差中位 {st.median(spr)*100:.2f}pp，最大 {max(spr)*100:.2f}pp</b>')
-    h.append('<div class="kv">')
-    if stable:
-        h.append(f'最不挑起点的是「{stable["label"]}」，跨 {stable["n"]} 个窗口'
-                 f'标准差仅 {stable["sd"]*100:.2f}pp（{stable["lo"]*100:.2f}% ~ '
-                 f'{stable["hi"]*100:.2f}%）。<br>')
-    h.append(f'平均年化最高的是「{most["label"]}」{most["mean"]*100:.2f}%，'
-             f'但它的标准差也最大（{most["sd"]*100:.2f}pp）—— '
-             f'高平均来自「投入更晚」的运气，不是稳定优势。<br>')
-    h.append('注意：XIRR 是按每笔钱的持有时间加权，所以"投得晚"天然占优 —— '
-             '起点越晚、窗口越短，年化通常越高，这不代表那个起点更好。')
-    h.append('</div></div>')
-
-    h.append(f'<div class="ft">数据：baostock 不复权日线 + 东财分红 ｜ '
-             f'生成于 {date.today():%Y-%m-%d} ｜ 仅供参考，不构成投资建议</div>')
+    h.append(f'<div class="ft">价格 baostock 不复权日线 ｜ 分红 东财 ｜ '
+             f'按当日收盘价买入、含零头 ｜ 生成于 {date.today():%Y-%m-%d}<br>'
+             f'仅为历史测算，不构成投资建议。</div>')
     h.append('</div></body></html>')
 
     out = args.out or os.path.join(BASE, "docs", "基本面", f"dca_{code}.html")
