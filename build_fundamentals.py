@@ -1321,6 +1321,39 @@ def build_all_simple(metrics=None, out_dir=None) -> int:
     return build_all(ns)
 
 
+def _peer_of(code, ind, meta_by_code, payloads, limit=4):
+    """同行业其他股 —— 从池子里自动找，不再硬编码。
+
+    原来 peers 写在单只的 JSON 里（4 家大行），换成 CSV 缓存后没人填，
+    整个「同业对比」区块就静默消失了。改成按行业反聚合，零额外请求，
+    而且任何行业都适用。
+    """
+    if not ind or ind == "—":
+        return []
+    out = []
+    for other, m in meta_by_code.items():
+        if other == code or (m.get("行业") or "") != ind:
+            continue
+        pl = payloads.get(other)
+        if not pl:
+            continue
+        qs = pl.get("quarters") or []
+        latest = qs[-1] if qs else {}
+        div_by_year = yearly_dividends(pl.get("dividends") or [])
+        _, fy = full_year_dividend(div_by_year)
+        px = _num(m.get("最新价"))
+        roe = latest.get("roe")
+        margin = latest.get("npMargin")
+        out.append(dict(
+            code=other, name=m.get("名称") or other,
+            roe=(roe * 100) if roe is not None else None,
+            margin=(margin * 100) if margin is not None else None,
+            yld=(fy / px * 100) if (fy and px) else None,
+            pb=_num(m.get("PB_MRQ")), pe=_num(m.get("PE_TTM"))))
+    out.sort(key=lambda z: -(z["yld"] or 0))
+    return out[:limit]
+
+
 def build_all(args) -> int:
     """池子里每只一页 + 索引页。"""
     cache_dir = os.path.join(BASE_DIR, "_fin_cache")
@@ -1359,6 +1392,9 @@ def build_all(args) -> int:
         pl = payloads[code]
         pl["_meta"] = meta_by_code[code]
         pl["_out"] = os.path.join(out_dir, f"{code}.html")
+        if not pl.get("peers"):
+            pl["peers"] = _peer_of(code, meta_by_code[code].get("行业"),
+                                   meta_by_code, payloads)
         try:
             main(["--quiet"], payload=pl)
             ok += 1
