@@ -21,6 +21,7 @@ import argparse
 import csv
 import os
 import sys
+import time
 from datetime import date
 
 sys.path.insert(0, r"C:\Users\user\.dsh\ungrouped\_probe_libs")
@@ -100,14 +101,16 @@ def budget_days(rows, start):
     return months, quarters, years
 
 
-def build_buys(kind, rows, start, M):
+def build_buys(kind, rows, start, M, bd=None):
     """按策略生成 [(buy_date, amount)] 与期末未投出现金。
 
     **关键约束**：每一期的金额 = 该期实际包含的月数 × M。
     不能一律用 12×M / 3×M —— 部分年份上市的股票会被超投，
     「总投入相同」就不成立了，比较也就失去意义。
     """
-    months, quarters, years = budget_days(rows, start)
+    # 预算日历（月/季/年 → 首末日）与策略无关，按**窗口**算一次就够。
+    # 不传 bd 时退回自己算 —— 原来每个策略都算一遍，占 72% 的时间。
+    months, quarters, years = bd if bd is not None else budget_days(rows, start)
     total = len(months) * M
     by_date = {r["date"]: r for r in rows}
     buys = []
@@ -158,15 +161,23 @@ def build_buys(kind, rows, start, M):
 
 # ─────────────────────────── 评估 ───────────────────────────
 def xirr(flows):
-    if not flows:
+    """资金加权年化。**向量化**：把日期差和金额预先转成 numpy 数组，
+    否则 60 次二分的每一次都要跑一遍 Python 循环，会占掉 90% 的时间。"""
+    if not flows or len(flows) < 2:
         return None
+    import numpy as np
+    t0 = flows[0][0]
+    t = np.fromiter(((d - t0).days / 365.0 for d, _ in flows), dtype=float,
+                    count=len(flows))
+    a = np.fromiter((x for _, x in flows), dtype=float, count=len(flows))
+
     def npv(r):
-        t0 = flows[0][0]
-        return sum(a / (1 + r) ** ((d - t0).days / 365.0) for d, a in flows)
+        return float((a / (1.0 + r) ** t).sum())
+
     if npv(-0.9999) < 0 and npv(3.0) < 0:
         return None
     lo, hi = -0.9999, 3.0
-    for _ in range(200):
+    for _ in range(60):          # 4/2^60 早已到浮点极限，200 次是浪费
         mid = (lo + hi) / 2
         if npv(mid) > 0:
             lo = mid
@@ -177,7 +188,7 @@ def xirr(flows):
     # 不能把 -99.99% 当成"年化收益"，那是求解器的下界，不是结果。
     if r <= -0.99 or r >= 2.99:
         return None
-    scale = sum(abs(a) for _, a in flows) or 1.0
+    scale = float(np.abs(a).sum()) or 1.0
     if abs(npv(r)) > 0.02 * scale:
         return None
     return r
@@ -233,6 +244,115 @@ def evaluate(rows, divs, buys, leftover, reinvest, start):
                 r=xirr(flows), n_buy=len(buys))
 
 
+# ─────────────────────────── 快路径（事件驱动）───────────────────────────
+# ─────────────────────────── 全股级索引（每只股票只建一次）───────────────────────────
+def stock_ctx(rows):
+    """全股价格/日期/月季年索引。每只股票只建一次，12 个窗口用 bisect 切片。
+
+    旧做法：prep() 和 budget_days() 每个窗口各扫一遍全部交易日（~3107 行 × 12），
+    占单股耗时的大头。切片后这部分从 O(12N) 降到 O(N + 12 log N)。
+    """
+    import bisect as _bi
+    dates = [r["date"] for r in rows]
+    px = {r["date"]: r["close"] for r in rows}
+    months, quarters, years = {}, {}, {}
+    for d in dates:
+        ym, yq, y = d[:7], f"{d[:4]}Q{(int(d[5:7]) - 1) // 3 + 1}", d[:4]
+        for bucket, key in ((months, ym), (quarters, yq), (years, y)):
+            if key not in bucket:
+                bucket[key] = [d, d]
+            else:
+                bucket[key][1] = d
+    return dict(dates=dates, px=px, months=months, quarters=quarters, years=years,
+                mkeys=sorted(months), qkeys=sorted(quarters), ykeys=sorted(years))
+
+
+def prep_fast(stock, divs, start):
+    """prep() 的切片版：共享全股 px，日期用 bisect 切。"""
+    import bisect as _bi
+    dates_all = stock["dates"]
+    i = _bi.bisect_left(dates_all, start)
+    dates = dates_all[i:]
+    ev = []
+    for d in sorted(divs):
+        if d < start:
+            continue
+        j = _bi.bisect_left(dates, d)
+        if j < len(dates):
+            ev.append((dates[j], divs[d]))
+    last = dates_all[-1]
+    return dict(dates=dates, px=stock["px"], divs=ev, last=last,
+                last_px=stock["px"][last])
+
+
+def budget_fast(stock, start):
+    """budget_days() 的切片版。"""
+    import bisect as _bi
+    ym0 = start[:7]
+    months = {k: stock["months"][k] for k in stock["mkeys"]
+              if _bi.bisect_left(stock["mkeys"], ym0) <= stock["mkeys"].index(k)
+              and k >= ym0}
+    quarters = {k: v for k, v in stock["quarters"].items() if v[0] >= start}
+    years = {k: v for k, v in stock["years"].items() if k >= start[:4]}
+    return months, quarters, years
+
+def prep(rows, divs, start):
+    """一只股票只建一次索引，供所有窗口/策略复用。"""
+    dates = [r["date"] for r in rows if r["date"] >= start]
+    px = {r["date"]: r["close"] for r in rows if r["date"] >= start}
+    import bisect as _bi
+    ev = []
+    for d in sorted(divs):
+        if d < start:
+            continue
+        i = _bi.bisect_left(dates, d)      # 非交易日顺延到下一个交易日，与原实现一致
+        if i < len(dates):
+            ev.append((dates[i], divs[d]))
+    return dict(dates=dates, px=px, divs=ev, last=dates[-1],
+                last_px=px[dates[-1]])
+
+
+def evaluate_fast(ctx, buys, leftover, reinvest=True):
+    """事件驱动版 evaluate()：不逐日扫，只走「买入日 + 除权日」。
+
+    顺序与 evaluate 严格一致：同一日期**先处理分红、后处理买入**
+    （当天买入的不享当天分红）。因此结果应逐位一致，见 tools/verify_fastpath.py。
+    """
+    px, last_px = ctx["px"], ctx["last_px"]
+    buys = [(d, a) for d, a in buys if d in px]
+    if not buys:
+        return dict(cost=0.0, shares=0.0, bought=0.0, value=0.0, div=0.0,
+                    leftover=leftover, terminal=leftover, profit=0.0, ret=0.0,
+                    r=None, n_buy=0)
+    events = sorted([(d, 0, v) for d, v in ctx["divs"]] +
+                    [(d, 1, a) for d, a in buys])       # 0=分红先，1=买入后
+    shares = bought = cost = cash_div = 0.0
+    flows = []
+    for d, kind, v in events:
+        if kind == 0:
+            if shares > 0:
+                amt = shares * v
+                cash_div += amt
+                if reinvest:
+                    shares += amt / px[d]
+                else:
+                    flows.append((date.fromisoformat(d), amt))
+        else:
+            add = v / px[d]
+            shares += add
+            bought += add
+            cost += v
+            flows.append((date.fromisoformat(d), -v))
+    value = shares * last_px
+    terminal = value + leftover + (0.0 if reinvest else cash_div)
+    flows.append((date.fromisoformat(ctx["last"]), value + leftover))
+    return dict(cost=cost, shares=shares, bought=bought, value=value,
+                div=cash_div, leftover=leftover, terminal=terminal,
+                profit=terminal - cost,
+                ret=(terminal / cost - 1) if cost else 0.0,
+                r=xirr(flows), n_buy=len(buys))
+
+
 STRATEGIES = [
     ("月定投（每月首日）", "monthly"),
     ("季定投（每季首日）", "quarterly"),
@@ -282,44 +402,110 @@ def load_names():
     return out
 
 
-def batch(args):
-    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    pdir = args.price_dir or os.path.join(os.path.dirname(base), "_top_raw")
-    prices = load_prices_dir(pdir)
-    names = load_names()
-    if not prices:
-        print(f"价格缓存为空：{pdir}")
-        return 1
-    print(f"价格缓存 {len(prices)} 只（{pdir}）")
+def _load_px_file(path):
+    rows = []
+    # utf-8-sig：缓存带 BOM
+    with open(path, encoding="utf-8-sig") as fh:
+        for r in csv.DictReader(fh):
+            try:
+                rows.append(dict(date=r["date"][:10], open=float(r["open"]),
+                                 high=float(r["high"]), low=float(r["low"]),
+                                 close=float(r["close"])))
+            except (KeyError, ValueError):
+                continue
+    return rows
 
-    # 每只自己的起点：尽量用统一起点，没有就退到其最早交易日
-    rows_out = []
-    for code, rows in prices.items():
-        rows = add_indicators(rows)
-        first = rows[0]["date"]
-        start = args.start if args.start >= first else first
-        yrs = (date.fromisoformat(rows[-1]["date"])
-               - date.fromisoformat(start)).days / 365.25
-        if yrs < args.min_years:      # 史太短，各策略不可比
+
+def _eval_one(task):
+    """(code, path, divs, first, last, M) -> 汇总 dict。进程池的 worker 入口。
+
+    每个 worker 自己读自己的 CSV —— 不把 300KB 的价格表 pickle 过去。
+    """
+    code, path, divs, first, last, M, min_years = task
+    rows = _load_px_file(path)
+    if len(rows) < 60:
+        return None
+    rows = add_indicators(rows)
+    end = rows[-1]["date"]
+    stock = stock_ctx(rows)                # 全股索引只建一次
+    out = {}
+    for y in range(first, last + 1):
+        start = f"{y}-01-01"
+        if end <= start:
             continue
-        if args.start < first:
-            pass                      # 已在最早
-        divs = load_divs(code)
+        yrs = (date.fromisoformat(end) - date.fromisoformat(start)).days / 365.25
+        if yrs < min_years:            # 史太短的窗口不可比
+            continue
+        ctx = prep_fast(stock, divs, start)
+        bd = budget_fast(stock, start)     # 切片，不再整表扫
         res = {}
         for label, kind in STRATEGIES:
-            total, buys, leftover = build_buys(kind, rows, start, args.monthly)
+            total, buys, leftover = build_buys(kind, rows, start, M, bd)
             if not buys:
                 continue
-            res[label] = evaluate(rows, divs, buys, leftover, not args.no_reinvest, start)
-        if len(res) < 4:
+            res[label] = evaluate_fast(ctx, buys, leftover, True)
+        if res:
+            xs = [v["r"] for v in res.values() if v["r"] is not None]
+            out[y] = dict(res=res, lo=min(xs), hi=max(xs),
+                          spread=max(xs) - min(xs),
+                          yrs=(date.fromisoformat(end) - date.fromisoformat(start)).days / 365.25)
+    return dict(code=code, start=end, windows=out) if out else None
+
+
+def batch(args):
+    """整池批量。--jobs N 用多进程（CPU 密集，进程池是唯一有效的杠杆）。"""
+    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    pdir = args.price_dir or os.path.join(os.path.dirname(base), "_top_raw")
+    if not os.path.isdir(pdir):
+        print(f"价格缓存目录不存在：{pdir}")
+        return 1
+    # 只列文件名，不读内容 —— 2000 只全读进内存要 600MB
+    codes = sorted(fn[:-4] for fn in os.listdir(pdir)
+                   if fn.endswith(".csv") and not fn.startswith("_")
+                   and len(fn) == 10 and fn[:6].isdigit())
+    if not codes:
+        print(f"价格缓存为空：{pdir}")
+        return 1
+    names = load_names()
+    print(f"价格缓存 {len(codes)} 只（{pdir}）")
+
+    tasks = [(c, os.path.join(pdir, f"{c}.csv"), load_divs(c),
+              args.start_year, args.end_year, args.monthly, args.min_years)
+             for c in codes]
+
+    jobs = max(1, getattr(args, "jobs", 1) or 1)
+    t0 = time.perf_counter()
+    if jobs > 1:
+        import concurrent.futures as _cf
+        print(f"  {jobs} 个进程并行…", flush=True)
+        with _cf.ProcessPoolExecutor(max_workers=jobs) as ex:
+            raw = list(ex.map(_eval_one, tasks, chunksize=4))
+    else:
+        raw = []
+        for i, t in enumerate(tasks, 1):
+            raw.append(_eval_one(t))
+            if i % 200 == 0:
+                print(f"  [{i}/{len(tasks)}]", flush=True)
+    elapsed = time.perf_counter() - t0
+    print(f"  计算完成：{elapsed:.1f}s（{elapsed/max(1,len(codes)):.2f}s/只，"
+          f"{jobs} 进程）")
+
+    rows_out = []
+    for item in raw:
+        if not item:
             continue
+        code, wins = item["code"], item["windows"]
+        if len(wins) < 2:
+            continue
+        first_y = min(wins)
+        res = wins[first_y]["res"]
         xs = {k: (v["r"] or -9) for k, v in res.items()}
-        best = max(xs, key=xs.get)
+        if len(xs) < 4:
+            continue
         rows_out.append(dict(
-            code=code, name=names.get(code) or code, start=start,
-            months=int((len(rows) - sum(1 for r in rows if r["date"] < start)) / 21),
-            x=res, best=best, spread=max(xs.values()) - min(xs.values()),
-        ))
+            code=code, name=names.get(code) or code, start=f"{first_y}-01-01",
+            x=res, best=max(xs, key=xs.get),
+            spread=max(xs.values()) - min(xs.values())))
 
     if not rows_out:
         print("没有可评估的标的")
@@ -435,6 +621,9 @@ def main(argv=None):
     ap.add_argument("--batch", action="store_true", help="整池批量跑（读本地价格缓存）")
     ap.add_argument("--price-dir", default=None, help="价格缓存目录（<code>.csv）")
     ap.add_argument("--top", type=int, default=20, help="明细表显示前 N 只（按极差排序）")
+    ap.add_argument("--jobs", type=int, default=1, help="并行进程数")
+    ap.add_argument("--start-year", type=int, default=2014)
+    ap.add_argument("--end-year", type=int, default=date.today().year)
     ap.add_argument("--sort", choices=("desc", "asc"), default="desc",
                     help="按极差排序：desc=最敏感在前，asc=最稳定在前")
     ap.add_argument("--min-years", type=float, default=5.0,
