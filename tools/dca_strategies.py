@@ -101,48 +101,52 @@ def budget_days(rows, start):
 
 
 def build_buys(kind, rows, start, M):
-    """按策略生成 [(buy_date, amount)]，以及期末未投出的现金。"""
+    """按策略生成 [(buy_date, amount)] 与期末未投出现金。
+
+    **关键约束**：每一期的金额 = 该期实际包含的月数 × M。
+    不能一律用 12×M / 3×M —— 部分年份上市的股票会被超投，
+    「总投入相同」就不成立了，比较也就失去意义。
+    """
     months, quarters, years = budget_days(rows, start)
-    n_month = len(months)
-    total = n_month * M
+    total = len(months) * M
     by_date = {r["date"]: r for r in rows}
     buys = []
 
     if kind == "monthly":
-        for ym, (first, _last) in months.items():
-            buys.append((first, M))
+        for ym in sorted(months):
+            buys.append((months[ym][0], M))
+
     elif kind == "quarterly":
-        for _, (first, _last) in quarters.items():
-            buys.append((first, 3 * M))
+        for key in sorted(quarters):
+            n = sum(1 for ym in months if ym[:4] == key[:4] and
+                    (int(ym[5:7]) - 1) // 3 + 1 == int(key[-1]))
+            buys.append((quarters[key][0], n * M))
+
     elif kind == "semiannual":
-        for y in sorted({k[:4] for k in months}):
-            for half in ("01", "07"):
-                days = [k for k in months if k[:4] == y and
-                        ((half == "01" and k[5:7] <= "06") or (half == "07" and k[5:7] >= "07"))]
-                if days:
-                    buys.append((months[sorted(days)[0]][0], 6 * M))
-    elif kind == "annual":
-        for _, (first, _last) in years.items():
-            buys.append((first, 12 * M))
-    elif kind == "annual_end":
-        for _, (_first, last) in years.items():
-            buys.append((last, 12 * M))
+        for y in sorted({ym[:4] for ym in months}):
+            for lo, hi in (("01", "06"), ("07", "12")):
+                grp = [ym for ym in months if ym[:4] == y and lo <= ym[5:7] <= hi]
+                if grp:
+                    buys.append((months[sorted(grp)[0]][0], len(grp) * M))
+
+    elif kind in ("annual", "annual_end"):
+        for y in sorted(years):
+            n = sum(1 for ym in months if ym[:4] == y)
+            d = years[y][0] if kind == "annual" else years[y][1]
+            buys.append((d, n * M))
+
     elif kind == "lump":
-        buys.append((rows[0]["date"] if rows[0]["date"] >= start else
-                     min(d for d in months.values())[0], total))
+        buys.append((min(months[ym][0] for ym in months), total))
+
     elif kind in ("dip_ma20", "dip_j20"):
         pending = 0.0
         for ym in sorted(months):
             pending += M
-            d = months[ym][0]
-            r = by_date[d]
-            cond = False
-            if kind == "dip_ma20":
-                cond = r["ma20"] is not None and r["close"] < r["ma20"]
-            else:
-                cond = r["j"] is not None and r["j"] < 20
+            r = by_date[months[ym][0]]
+            cond = (r["ma20"] is not None and r["close"] < r["ma20"]) \
+                if kind == "dip_ma20" else (r["j"] is not None and r["j"] < 20)
             if cond and pending > 0:
-                buys.append((d, pending))
+                buys.append((months[ym][0], pending))
                 pending = 0.0
         return total, buys, pending
     else:
@@ -168,7 +172,15 @@ def xirr(flows):
             lo = mid
         else:
             hi = mid
-    return (lo + hi) / 2
+    r = (lo + hi) / 2
+    # 撞到边界 = 无解（例如全部资金在最后一天投入、期间价值没变）。
+    # 不能把 -99.99% 当成"年化收益"，那是求解器的下界，不是结果。
+    if r <= -0.99 or r >= 2.99:
+        return None
+    scale = sum(abs(a) for _, a in flows) or 1.0
+    if abs(npv(r)) > 0.02 * scale:
+        return None
+    return r
 
 
 def evaluate(rows, divs, buys, leftover, reinvest, start):
@@ -233,6 +245,149 @@ STRATEGIES = [
 ]
 
 
+
+# ─────────────────────────── 批量模式 ───────────────────────────
+def load_prices_dir(path):
+    """从缓存目录读 <code>.csv → {code: rows}"""
+    out = {}
+    for fn in sorted(os.listdir(path)):
+        if not fn.endswith(".csv") or fn.startswith("_"):
+            continue
+        code = fn[:-4]
+        if not (len(code) == 6 and code.isdigit()):
+            continue
+        rows = []
+        # utf-8-sig：缓存文件带 BOM，用 utf-8 读会让表头变成 \ufeffdate
+        with open(os.path.join(path, fn), encoding="utf-8-sig") as fh:
+            for r in csv.DictReader(fh):
+                try:
+                    rows.append(dict(date=r["date"][:10], open=float(r["open"]),
+                                     high=float(r["high"]), low=float(r["low"]),
+                                     close=float(r["close"])))
+                except (KeyError, ValueError):
+                    continue
+        if len(rows) > 60:
+            out[code] = rows
+    return out
+
+
+def load_names():
+    p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "_fin_cache", "codes.csv")
+    out = {}
+    if os.path.exists(p):
+        with open(p, encoding="utf-8-sig") as fh:
+            for r in csv.DictReader(fh):
+                out[str(r["code"]).zfill(6)] = r.get("name") or ""
+    return out
+
+
+def batch(args):
+    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    pdir = args.price_dir or os.path.join(os.path.dirname(base), "_top_raw")
+    prices = load_prices_dir(pdir)
+    names = load_names()
+    if not prices:
+        print(f"价格缓存为空：{pdir}")
+        return 1
+    print(f"价格缓存 {len(prices)} 只（{pdir}）")
+
+    # 每只自己的起点：尽量用统一起点，没有就退到其最早交易日
+    rows_out = []
+    for code, rows in prices.items():
+        rows = add_indicators(rows)
+        first = rows[0]["date"]
+        start = args.start if args.start >= first else first
+        yrs = (date.fromisoformat(rows[-1]["date"])
+               - date.fromisoformat(start)).days / 365.25
+        if yrs < args.min_years:      # 史太短，各策略不可比
+            continue
+        if args.start < first:
+            pass                      # 已在最早
+        divs = load_divs(code)
+        res = {}
+        for label, kind in STRATEGIES:
+            total, buys, leftover = build_buys(kind, rows, start, args.monthly)
+            if not buys:
+                continue
+            res[label] = evaluate(rows, divs, buys, leftover, not args.no_reinvest, start)
+        if len(res) < 4:
+            continue
+        xs = {k: (v["r"] or -9) for k, v in res.items()}
+        best = max(xs, key=xs.get)
+        rows_out.append(dict(
+            code=code, name=names.get(code) or code, start=start,
+            months=int((len(rows) - sum(1 for r in rows if r["date"] < start)) / 21),
+            x=res, best=best, spread=max(xs.values()) - min(xs.values()),
+        ))
+
+    if not rows_out:
+        print("没有可评估的标的")
+        return 1
+
+    # 明细表
+    cols = [("月定投（每月首日）", "月投"), ("季定投（每季首日）", "季投"),
+            ("半年定投", "半年"), ("年定投（每年首日·一次投满全年）", "年初"),
+            ("年定投（每年末日）", "年末"), ("一次性（期初全投）", "一次性"),
+            ("月定投·跌破 MA20 才买", "MA20"), ("月定投·日 J<20 才买", "J<20")]
+    hdr = f"{'代码':<8}{'名称':<10}{'起点':<12}"
+    hdr += "".join(f"{c[1]:>9}" for c in cols) + f"{'最优':>8}{'极差':>8}"
+    print("\n" + hdr)
+    print("-" * len(hdr))
+    for r in sorted(rows_out, key=lambda z: -z["spread"])[:args.top]:
+        line = f"{r['code']:<8}{(r['name'] or '')[:8]:<10}{r['start']:<12}"
+        for key, _short in cols:
+            v = r["x"].get(key)
+            line += f"{(v['r'] or 0):>8.2%} " if v else f"{'—':>9}"
+        line += f"{r['best'].split('（')[0][:6]:>8}{r['spread']*100:>7.1f}pp"
+        print(line)
+
+    # 统计：策略选择有多重要
+    import statistics as st
+    sp = [r["spread"] for r in rows_out]
+    print(f"\n【统计】{len(rows_out)} 只，起点跨度 {min(r['start'] for r in rows_out)} ~ "
+          f"{max(r['start'] for r in rows_out)}")
+    print(f"  策略极差（同一只股票，最好 vs 最差策略的 XIRR 差）：")
+    print(f"    中位 {st.median(sp)*100:.2f}pp　平均 {st.mean(sp)*100:.2f}pp　"
+          f"最大 {max(sp)*100:.2f}pp")
+    wins = {}
+    for r in rows_out:
+        wins[r["best"]] = wins.get(r["best"], 0) + 1
+    # 分组极差：定投变体之间 vs 加上择时/一次性
+    DCA_ONLY = ["月定投（每月首日）", "季定投（每季首日）", "半年定投",
+                "年定投（每年首日·一次投满全年）", "年定投（每年末日）"]
+    sp_dca = []
+    for r in rows_out:
+        xs = [r["x"][k]["r"] for k in DCA_ONLY if r["x"].get(k) and r["x"][k]["r"] is not None]
+        if len(xs) >= 4:
+            sp_dca.append(max(xs) - min(xs))
+    if sp_dca:
+        print(f"  **只比投入节奏**（月/季/半年/年年初/年年末）的极差：")
+        print(f"    中位 {st.median(sp_dca)*100:.2f}pp　平均 {st.mean(sp_dca)*100:.2f}pp　"
+              f"最大 {max(sp_dca)*100:.2f}pp")
+    # 终值维度：最赚的是哪个
+    tv = {}
+    for r in rows_out:
+        best = max((k for k in r["x"] if r["x"][k]["terminal"]),
+                   key=lambda k: r["x"][k]["terminal"])
+        tv[best] = tv.get(best, 0) + 1
+    print(f"  各策略胜出次数（按 **XIRR**）：")
+    for k, v in sorted(wins.items(), key=lambda x: -x[1]):
+        print(f"    {k:<34}{v:>4} 次  ({v/len(rows_out):.0%})")
+    # 一次性 vs 月定投：谁赢
+    a = sum(1 for r in rows_out
+            if (r["x"].get("一次性（期初全投）", {}).get("r") or -9)
+            > (r["x"].get("月定投（每月首日）", {}).get("r") or -9))
+    b = sum(1 for r in rows_out if r["x"].get("一次性（期初全投）")
+            and r["x"].get("月定投（每月首日）"))
+    if b:
+        print(f"  一次性 XIRR 高于月定投：{a}/{b} 只（{a/b:.0%}）")
+    print(f"  各策略胜出次数（按 **期末终值**）：")
+    for k, v in sorted(tv.items(), key=lambda x: -x[1]):
+        print(f"    {k:<34}{v:>4} 次  ({v/len(rows_out):.0%})")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="定投策略对比（总投入相同）")
     ap.add_argument("--code", default="601398")
@@ -240,9 +395,17 @@ def main(argv=None):
     ap.add_argument("--end", default=date.today().isoformat())
     ap.add_argument("--monthly", type=float, default=1000, help="每月金额（其余策略按此缩放）")
     ap.add_argument("--no-reinvest", action="store_true", help="分红收现金（不再投）")
+    ap.add_argument("--batch", action="store_true", help="整池批量跑（读本地价格缓存）")
+    ap.add_argument("--price-dir", default=None, help="价格缓存目录（<code>.csv）")
+    ap.add_argument("--top", type=int, default=20, help="明细表显示前 N 只（按极差排序）")
+    ap.add_argument("--min-years", type=float, default=5.0,
+                    help="最短历史年数，太短的次新股不进统计（默认 5）")
     args = ap.parse_args(argv)
 
     reinvest = not args.no_reinvest
+    if args.batch:
+        return batch(args)
+
     print(f"抓 {args.code} 不复权日线（含 high/low）…")
     rows = add_indicators(load_prices(args.code, "2011-12-01", args.end))
     divs = load_divs(args.code)
