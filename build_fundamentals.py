@@ -564,16 +564,21 @@ def main(argv=None, payload=None):
     # 价格序列 + **当年日均价**
     # 股息率为什么用均价而不是年末价：一年之内股价有高有低，年末那一天的收盘价
     # 只是个抽样点。用全年日均价，代表「那一年买入的典型成本」。
-    _px = d.get("prices") or {}
-    dates_all = [x for x in (_px.get("dates") or [])]
-    closes_all = [x for x in (_px.get("close") or [])]
-    _yr = {}
-    for _d, _c in zip(dates_all, closes_all):
-        if _d and _c:
-            _yr.setdefault(_d[:4], []).append(_c)
-    yr_avg = {y: sum(v) / len(v) for y, v in _yr.items()}
-    yr_lo = {y: min(v) for y, v in _yr.items()}
-    yr_hi = {y: max(v) for y, v in _yr.items()}
+    # 两种 payload 都支持：
+    #   批量（CSV 缓存）→ d["yr_avg"] 已经是 {年: 年均价}
+    #   单只（JSON）    → d["prices"] 有完整日线，现算
+    # 这里曾经只剩 else 分支，于是批量模式下 yr_avg 恒为空 ——
+    # 结果核心指标表的「股息率」列 116 只全是「—」，决策卡也少了「现金回报」信号，
+    # 而且不报错。是个静默回归。
+    if d.get("yr_avg"):
+        yr_avg = {str(k): v for k, v in d["yr_avg"].items() if v}
+    else:
+        _px = d.get("prices") or {}
+        _yr = {}
+        for _d, _c in zip(_px.get("dates") or [], _px.get("close") or []):
+            if _d and _c:
+                _yr.setdefault(str(_d)[:4], []).append(_c)
+        yr_avg = {y: sum(v) / len(v) for y, v in _yr.items()}
 
     # 分红
     div_by_year = yearly_dividends(d["dividends"])
