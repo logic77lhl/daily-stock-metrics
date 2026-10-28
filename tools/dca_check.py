@@ -132,9 +132,11 @@ def _dca(prices, divs, start, per, reinvest):
             if shares > 0:
                 amt = shares * divs[ex]
                 div_total += amt
-                flows.append((date.fromisoformat(ex), amt))
+                # 再投时不能再把分红记成现金流流入 —— 它已变成股票、在终值里了
                 if reinvest:
                     shares += amt / close
+                else:
+                    flows.append((date.fromisoformat(ex), amt))
             di += 1
         if first.get(d[:7]) == d:
             shares += per
