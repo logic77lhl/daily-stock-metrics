@@ -164,8 +164,11 @@ def fetch_one(session, code: str) -> tuple:
     return rows, divs, preds, info
 
 
-def fetch_buybacks(session, code, pages=1):
-    """回购公告（标题含「回购」）。1 页 100 条 ≈ 近 1~2 年，够判断「有没有在回购」。
+def fetch_buybacks(session, code, pages=3):
+    """回购公告（标题含「回购」）。
+
+    3 页 ≈ 300 条公告 ≈ 近 3~6 年（活跃公司每年 10~20 条回购进展）。
+    1 页只覆盖 1~2 年，会让早年回购显示成「无」，属于误导，所以取 3 页。
 
     kind: 注销 = 「回购注销…减资」（真减少股本）；进展 = 其它回购公告。
     """

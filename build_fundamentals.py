@@ -408,6 +408,83 @@ def consecutive_years(by_year):
     return n, years[-n], years[-1]
 
 
+def annual_rows(d, years=10):
+    """业绩 ↔ 分红 ↔ 回购，同一财务年度一行。
+
+    三个数据源的时间键不同（季报按 statDate、分红按 reportDate 的财务年度、
+    回购按公告日），分开看永远看不出「业绩变了，分红跟着变了吗」。
+    """
+    qs = d.get("quarters") or []
+    annual = {}
+    latest = {}
+    for q in qs:
+        y, k = q["year"], q["quarter"]
+        if k == 4:
+            annual[y] = q
+        if y not in latest or k > latest[y]["quarter"]:
+            latest[y] = q
+
+    dps = {}
+    for r in d.get("dividends") or []:
+        rd = (r.get("reportDate") or "")[:10]
+        v = r.get("cashPs")
+        if rd and v:
+            try:
+                y = int(rd[:4])
+            except ValueError:
+                continue
+            dps[y] = dps.get(y, 0.0) + float(v)
+
+    bk = {}
+    for r in d.get("buybacks") or []:
+        dd = (r.get("date") or "")[:10]
+        if not dd:
+            continue
+        try:
+            y = int(dd[:4])
+        except ValueError:
+            continue
+        slot = bk.setdefault(y, {"注销": 0, "进展": 0})
+        slot["注销" if r.get("kind") == "注销" else "进展"] += 1
+
+    yr_avg = d.get("yr_avg") or {}
+    out = []
+    for y in sorted(annual):
+        a = annual[y]
+        rev, npf = a.get("revenue"), a.get("netProfit")
+        share = a.get("totalShare")
+        dv = dps.get(y)
+        out.append(dict(
+            year=y, complete=True,
+            revenue=rev / 1e8 if rev else None,
+            netProfit=npf / 1e8 if npf else None,
+            yoyRev=a.get("yoyRev"), yoyNi=a.get("yoyNi"),
+            roe=(a.get("roe") or 0) * 100 if a.get("roe") is not None else None,
+            margin=(npf / rev * 100) if (rev and npf) else None,
+            dps=dv,
+            payout=(dv * share / npf * 100) if (dv and share and npf) else None,
+            yld=(dv / yr_avg[str(y)] * 100) if (dv and yr_avg.get(str(y))) else None,
+            bk_cancel=bk.get(y, {}).get("注销", 0),
+            bk_prog=bk.get(y, {}).get("进展", 0)))
+    for y in sorted(latest):
+        if y in annual:
+            continue
+        r = latest[y]
+        rev, npf = r.get("revenue"), r.get("netProfit")
+        out.append(dict(
+            year=y, complete=False,
+            revenue=rev / 1e8 if rev else None,
+            netProfit=npf / 1e8 if npf else None,
+            yoyRev=r.get("yoyRev"), yoyNi=r.get("yoyNi"),
+            roe=(r.get("roe") or 0) * 100 if r.get("roe") is not None else None,
+            margin=(npf / rev * 100) if (rev and npf) else None,
+            dps=dps.get(y), payout=None, yld=None,
+            bk_cancel=bk.get(y, {}).get("注销", 0),
+            bk_prog=bk.get(y, {}).get("进展", 0)))
+    out.sort(key=lambda x: x["year"])
+    return out[-years:]
+
+
 def main(argv=None, payload=None):
     ap = argparse.ArgumentParser(description="生成个股基本面档案页")
     ap.add_argument("--json", default=None, help="季频财务 JSON（单只调试用）")
@@ -881,6 +958,62 @@ def main(argv=None, payload=None):
              '③ 按当前价（表头那个数，代表「现在买能拿多少」）。'
              '一年之内股价有高低，实际股息率会在区间内浮动 —— 所以这是一个代表值，不是唯一值。'
              '分红均为税前，未扣红利税。</div>')
+
+    # ── 年度串联：业绩 ↔ 分红 ↔ 回购 ──
+    _ar = annual_rows(d, years=10)
+    if len(_ar) >= 3:
+        h.append('<h2>年度：业绩 ↔ 分红 ↔ 回购'
+                 '<span class="unit">同一财务年度一行</span></h2>')
+        h.append('<table><thead><tr><th class="k">年度</th><th>营收(亿)</th>'
+                 '<th>同比</th><th>归母净利</th><th>同比</th><th>ROE</th>'
+                 '<th>净利率</th><th>每股分红</th><th>分红率</th><th>股息率</th>'
+                 '<th>回购</th></tr></thead><tbody>')
+        for x in _ar:
+            mark = "" if x["complete"] else "*"
+            cls = ' class="na"' if not x["complete"] else ""
+
+            def _p(v, nd=1, sign=False):
+                if v is None:
+                    return '<td class="na">—</td>'
+                c = ""
+                if sign:
+                    c = ' class="up"' if v > 0 else ' class="down"'
+                return f'<td{c}>{v:+.{nd}f}%</td>' if sign else f'<td>{v:.{nd}f}%</td>'
+
+            bk = (f'{x["bk_cancel"]} / {x["bk_prog"]}'
+                  if (x["bk_cancel"] or x["bk_prog"]) else "—")
+            h.append(f'<tr><td class="k">{x["year"]}{mark}</td>')
+            h.append(f'<td>{x["revenue"]:,.0f}</td>' if x["revenue"] else '<td class="na">—</td>')
+            h.append(_p(x["yoyRev"], sign=True))
+            h.append(f'<td>{x["netProfit"]:,.0f}</td>' if x["netProfit"] else '<td class="na">—</td>')
+            h.append(_p(x["yoyNi"], sign=True))
+            h.append(_p(x["roe"], nd=2))
+            h.append(_p(x["margin"]))
+            h.append(f'<td>{x["dps"]:.4f}</td>' if x["dps"] else '<td class="na">—</td>')
+            h.append(_p(x["payout"], nd=0))
+            h.append(_p(x["yld"], nd=2))
+            h.append(f'<td class="{"na" if not (x["bk_cancel"] or x["bk_prog"]) else ""}">{bk}</td></tr>')
+        h.append('</tbody></table>')
+        # 一句话观察
+        _c = [x for x in _ar if x["complete"] and x["payout"] is not None]
+        obs = []
+        if len(_c) >= 3:
+            r0, r1 = _c[0]["roe"], _c[-1]["roe"]
+            if r0 is not None and r1 is not None:
+                obs.append(f'ROE {r0:.1f}% → {r1:.1f}%（{r1 - r0:+.1f}pp）')
+            p0, p1 = _c[0]["payout"], _c[-1]["payout"]
+            obs.append(f'分红率稳定在 {p1:.0f}%' if abs(p1 - p0) < 1
+                       else f'分红率 {p0:.0f}% → {p1:.0f}%')
+        _tot = sum(x["bk_cancel"] + x["bk_prog"] for x in _ar)
+        obs.append(f'回购公告 {_tot} 条' if _tot else '无回购')
+        h.append(f'<div class="fn">{"　·　".join(obs)}<br>'
+                 '业绩取年报（年内累计）。每股分红按 <b>财务年度</b> 归集（年报+中报相加），'
+                 '不按除权日。分红率 = 每股分红 × 总股本 ÷ 归母净利；'
+                 '股息率 = 每股分红 ÷ 当年日均价。回购按公告日年份归集，'
+                 '格式为「注销式 / 激励式」—— 只有注销式才真正提高每股价值。<br>'
+                 '⚠ 回购列只覆盖公告接口可取到的最近约 300 条公告（通常 2~4 年），'
+                 '更早年份显示「—」<b>不代表当年没有回购</b>。'
+                 '* 该年度未走完，分红率与股息率不计算。</div>')
 
     # ── 同业对比：孤立的数字没有参照，横着比才有意义 ──
     peers = d.get("peers") or []
