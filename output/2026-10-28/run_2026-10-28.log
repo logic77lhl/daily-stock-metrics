@@ -1,0 +1,23 @@
+2026-10-28 16:35:23  ===== 开始每日A股指标任务 2026-10-28 =====
+2026-10-28 16:35:23  步骤1: 获取 A股市值前100…
+2026-10-28 16:35:25  [fetch_top100] push2.eastmoney.com 第 1 轮失败: HTTPError: 502 Server Error: Bad Gateway for url: https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=100&po=1&np=1&fltt
+2026-10-28 16:35:26  [fetch_top100] push2delay.eastmoney.com 第 1 轮失败: HTTPError: 502 Server Error: Bad Gateway for url: https://push2delay.eastmoney.com/api/qt/clist/get?pn=1&pz=100&po=1&np=1
+2026-10-28 16:35:27  [fetch_top100] 82.push2.eastmoney.com 第 1 轮失败: ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-10-28 16:35:28  [fetch_top100] 1.push2.eastmoney.com 第 1 轮失败: ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-10-28 16:35:28  步骤1失败(耗时 4s，预算 45.0s，ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')))，降级为观察池历史名单
+2026-10-28 16:35:28  步骤1完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-28/top100_2026-10-28.csv（名单来源: pool-fallback，耗时 4s）
+2026-10-28 16:35:28  步骤2: 计算 KDJ-J(日/周/月) 及估值…
+2026-10-28 16:35:28  观察池: 共116只(含历史追踪0只) -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-28/tracked_2026-10-28.csv
+2026-10-28 16:35:28  待处理 116 条，并发数 16
+2026-10-28 16:35:46  共享价格序列：116 只写入 /tmp/dsm-prices-vq9tsre8/output.csv（回测将直接读它，省掉 116 次重复请求）
+2026-10-28 16:35:46  全部完成：成功 116/116，失败 0，数据日期 2026-10-28，结果已写入 /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-28/metrics_2026-10-28.csv
+2026-10-28 16:35:46  步骤2完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-28/metrics_2026-10-28.csv（成功 116/116，失败 0）
+2026-10-28 16:35:46  步骤2.5: 获取全市场大盘温度（活跃市值指标）…
+2026-10-28 16:35:50  步骤2.5失败(不影响主流程): ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-10-28 16:35:50  步骤2.6: 本地聚合 → 行业板块温度 / 大盘宽度仪表盘 / 机会榜
+2026-10-28 16:35:50    - 板块温度: 1 个行业
+2026-10-28 16:35:50    - 机会榜: 超跌 18 / 超买 10
+2026-10-28 16:35:50  步骤2.6完成
+2026-10-28 16:35:50  步骤3: 生成 HTML 总结报告…
+2026-10-28 16:35:50  步骤3完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output/2026-10-28/report_2026-10-28.html
+2026-10-28 16:35:50  ===== 全部完成 2026-10-28（邮件由流水线末尾统一发送）=====
