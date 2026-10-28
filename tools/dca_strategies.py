@@ -334,7 +334,8 @@ def batch(args):
     hdr += "".join(f"{c[1]:>9}" for c in cols) + f"{'最优':>8}{'极差':>8}"
     print("\n" + hdr)
     print("-" * len(hdr))
-    for r in sorted(rows_out, key=lambda z: -z["spread"])[:args.top]:
+    order = sorted(rows_out, key=lambda z: z["spread"], reverse=(args.sort == "desc"))
+    for r in order[:args.top]:
         line = f"{r['code']:<8}{(r['name'] or '')[:8]:<10}{r['start']:<12}"
         for key, _short in cols:
             v = r["x"].get(key)
@@ -342,49 +343,85 @@ def batch(args):
         line += f"{r['best'].split('（')[0][:6]:>8}{r['spread']*100:>7.1f}pp"
         print(line)
 
-    # 统计：策略选择有多重要
+    # ── 统计 ──
     import statistics as st
     sp = [r["spread"] for r in rows_out]
-    print(f"\n【统计】{len(rows_out)} 只，起点跨度 {min(r['start'] for r in rows_out)} ~ "
-          f"{max(r['start'] for r in rows_out)}")
-    print(f"  策略极差（同一只股票，最好 vs 最差策略的 XIRR 差）：")
-    print(f"    中位 {st.median(sp)*100:.2f}pp　平均 {st.mean(sp)*100:.2f}pp　"
-          f"最大 {max(sp)*100:.2f}pp")
-    wins = {}
-    for r in rows_out:
-        wins[r["best"]] = wins.get(r["best"], 0) + 1
-    # 分组极差：定投变体之间 vs 加上择时/一次性
+    qs_ = sorted(sp)
+
+    def _q(f):
+        return qs_[min(len(qs_) - 1, int(len(qs_) * f))] * 100
+
+    print(f"\n【统计】{len(rows_out)} 只，起点跨度 "
+          f"{min(r['start'] for r in rows_out)} ~ {max(r['start'] for r in rows_out)}")
+
+    # 1. 极差分布（同一只股票，最好 vs 最差策略的 XIRR 差）
+    print(f"  策略极差分布：min {qs_[0]*100:.2f}pp ｜ 25% {_q(.25):.2f}pp ｜ "
+          f"中位 {_q(.5):.2f}pp ｜ 75% {_q(.75):.2f}pp ｜ max {qs_[-1]*100:.2f}pp")
+
+    # 2. 只比投入节奏
     DCA_ONLY = ["月定投（每月首日）", "季定投（每季首日）", "半年定投",
                 "年定投（每年首日·一次投满全年）", "年定投（每年末日）"]
     sp_dca = []
     for r in rows_out:
-        xs = [r["x"][k]["r"] for k in DCA_ONLY if r["x"].get(k) and r["x"][k]["r"] is not None]
+        xs = [r["x"][k]["r"] for k in DCA_ONLY
+              if r["x"].get(k) and r["x"][k]["r"] is not None]
         if len(xs) >= 4:
             sp_dca.append(max(xs) - min(xs))
     if sp_dca:
-        print(f"  **只比投入节奏**（月/季/半年/年年初/年年末）的极差：")
-        print(f"    中位 {st.median(sp_dca)*100:.2f}pp　平均 {st.mean(sp_dca)*100:.2f}pp　"
-              f"最大 {max(sp_dca)*100:.2f}pp")
-    # 终值维度：最赚的是哪个
+        print(f"  只比投入节奏（月/季/半年/年年初/年末）的极差："
+              f"中位 {st.median(sp_dca)*100:.2f}pp ｜ 平均 {st.mean(sp_dca)*100:.2f}pp "
+              f"｜ 最大 {max(sp_dca)*100:.2f}pp")
+
+    # 3. 按策略敏感度分组
+    def _avg(rs, key):
+        vs = [r["x"][key]["r"] for r in rs
+              if r["x"].get(key) and r["x"][key]["r"] is not None]
+        return st.mean(vs) if vs else None
+
+    BUCKETS = [("<2pp 策略无关", 0, 0.02), ("2~5pp", 0.02, 0.05),
+               ("5~10pp", 0.05, 0.10), (">10pp 策略敏感", 0.10, 9.0)]
+    print(f"\n  【按策略敏感度分组】")
+    print(f"    {'组别':<18}{'只数':>5}{'占比':>7}{'平均极差':>10}"
+          f"{'月投XIRR':>10}{'一次性XIRR':>11}{'一次性终值胜':>13}")
+    for label, lo, hi in BUCKETS:
+        rs = [r for r in rows_out if lo <= r["spread"] < hi]
+        if not rs:
+            continue
+        m0 = _avg(rs, "月定投（每月首日）")
+        m1 = _avg(rs, "一次性（期初全投）")
+        win = sum(1 for r in rs
+                  if r["x"].get("一次性（期初全投）") and r["x"].get("月定投（每月首日）")
+                  and r["x"]["一次性（期初全投）"]["terminal"]
+                  > r["x"]["月定投（每月首日）"]["terminal"])
+        print(f"    {label:<18}{len(rs):>5}{len(rs)/len(rows_out):>6.0%}"
+              f"{st.mean([r['spread'] for r in rs])*100:>9.2f}pp"
+              f"{(m0 or 0)*100:>9.2f}%{(m1 or 0)*100:>10.2f}%"
+              f"{f'{win}/{len(rs)}':>13}")
+
+    # 4. 谁赢（两个维度分别看）
+    wins = {}
+    for r in rows_out:
+        wins[r["best"]] = wins.get(r["best"], 0) + 1
     tv = {}
     for r in rows_out:
         best = max((k for k in r["x"] if r["x"][k]["terminal"]),
                    key=lambda k: r["x"][k]["terminal"])
         tv[best] = tv.get(best, 0) + 1
-    print(f"  各策略胜出次数（按 **XIRR**）：")
-    for k, v in sorted(wins.items(), key=lambda x: -x[1]):
-        print(f"    {k:<34}{v:>4} 次  ({v/len(rows_out):.0%})")
-    # 一次性 vs 月定投：谁赢
+
+    print(f"\n  【各策略胜出次数】")
+    print(f"    {'策略':<32}{'按XIRR':>10}{'按终值':>10}")
+    allk = set(wins) | set(tv)
+    for k in sorted(allk, key=lambda z: -(wins.get(z, 0) + tv.get(z, 0))):
+        w, t = wins.get(k, 0), tv.get(k, 0)
+        print(f"    {k:<32}{w:>5}（{w/len(rows_out):>3.0%}）{t:>5}（{t/len(rows_out):>3.0%}）")
+
     a = sum(1 for r in rows_out
             if (r["x"].get("一次性（期初全投）", {}).get("r") or -9)
             > (r["x"].get("月定投（每月首日）", {}).get("r") or -9))
     b = sum(1 for r in rows_out if r["x"].get("一次性（期初全投）")
             and r["x"].get("月定投（每月首日）"))
     if b:
-        print(f"  一次性 XIRR 高于月定投：{a}/{b} 只（{a/b:.0%}）")
-    print(f"  各策略胜出次数（按 **期末终值**）：")
-    for k, v in sorted(tv.items(), key=lambda x: -x[1]):
-        print(f"    {k:<34}{v:>4} 次  ({v/len(rows_out):.0%})")
+        print(f"\n  一次性 XIRR 高于月定投：{a}/{b} 只（{a/b:.0%}）")
     return 0
 
 
@@ -398,6 +435,8 @@ def main(argv=None):
     ap.add_argument("--batch", action="store_true", help="整池批量跑（读本地价格缓存）")
     ap.add_argument("--price-dir", default=None, help="价格缓存目录（<code>.csv）")
     ap.add_argument("--top", type=int, default=20, help="明细表显示前 N 只（按极差排序）")
+    ap.add_argument("--sort", choices=("desc", "asc"), default="desc",
+                    help="按极差排序：desc=最敏感在前，asc=最稳定在前")
     ap.add_argument("--min-years", type=float, default=5.0,
                     help="最短历史年数，太短的次新股不进统计（默认 5）")
     args = ap.parse_args(argv)
