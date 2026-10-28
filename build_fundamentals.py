@@ -1330,6 +1330,11 @@ def _peer_of(code, ind, meta_by_code, payloads, limit=4):
     """
     if not ind or ind == "—":
         return []
+    import math
+    me = payloads.get(code) or {}
+    mq = (me.get("quarters") or [{}])[-1]
+    my_np = mq.get("netProfit") or 0
+
     out = []
     for other, m in meta_by_code.items():
         if other == code or (m.get("行业") or "") != ind:
@@ -1349,8 +1354,19 @@ def _peer_of(code, ind, meta_by_code, payloads, limit=4):
             roe=(roe * 100) if roe is not None else None,
             margin=(margin * 100) if margin is not None else None,
             yld=(fy / px * 100) if (fy and px) else None,
-            pb=_num(m.get("PB_MRQ")), pe=_num(m.get("PE_TTM"))))
-    out.sort(key=lambda z: -(z["yld"] or 0))
+            pb=_num(m.get("PB_MRQ")), pe=_num(m.get("PE_TTM")),
+            _np=(latest.get("netProfit") or 0)))
+    # 按**规模**（归母净利）挑最接近的同行，而不是按股息率 ——
+    # 同业对比的意义是「和我可比的公司」，不是「高股息榜」。
+    # 用对数差是为了让 100 亿和 1000 亿的差距与 1000 亿和 1 万亿一样对待。
+    if my_np > 0:
+        def _dist(z):
+            return abs(math.log10(max(z["_np"], 1)) - math.log10(max(my_np, 1)))
+        out.sort(key=_dist)
+    else:
+        out.sort(key=lambda z: -(z["_np"] or 0))
+    for z in out:
+        z.pop("_np", None)
     return out[:limit]
 
 
