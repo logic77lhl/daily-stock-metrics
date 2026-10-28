@@ -67,29 +67,32 @@ STEPS: tuple[Step, ...] = (
     Step("A股", ("run_daily.py",), 2700, True, group=1),
     Step("ETF", ("run_etf_daily.py",), 2700, True, group=1),
     Step("港股", ("run_hk_daily.py",), 1500, True, group=1),
-    # ── 第 2 组：发信 / 回测 / 价值标的（写的文件不相交，可并行）──────────
+
+    # ── 第 2 组：基本面数据（必须独占，且必须在邮件之前）──────────────────
+    # 两个约束同时成立，所以它不能和任何东西并行：
+    #   ① 它要读 group1 写出的 output*/watchlist.json（观察池）；
+    #   ② send_digest 要读 _fin_cache 判断「今天有什么变化」，
+    #      若与它并行，邮件可能读到写了一半的 CSV，或把「已见过」标记提前推进，
+    #      导致当天的变化永远不再提醒（静默丢失）。
+    # 慢变量：季报一年 4 次、分红 1~2 次，但**每只股票披露时间不同**。
+    # --refresh 只做两件事：① 2 个请求查全市场最新报告期与已披露名单；
+    # ② 只重抓落后的那几只。无事可做时成本 = 2 个请求（实测 5.7s）。
+    Step("基本面数据", ("fetch_fundamentals.py", "--refresh"), 900, True, group=2),
+    # ── 第 3 组：发信 / 回测 / 价值标的（写的文件不相交，可并行）──────────
     # 三个市场都写完之后再发信：合成一封，且只收录 DONE 有效（=质量门通过）的市场。
     # 邮件读 DONE + metrics CSV、写 report_*.html 与 digest_*.html；
     # 回测读 metrics CSV、写 backtest_results/；价值标的读 metrics CSV、写 value_*.html。
-    Step("合并摘要邮件", ("send_digest.py",), 300, True, group=2),
-    Step("回测", ("backtest.py",), 900, True, group=2),
-    Step("价值标的", ("build_value.py",), 600, True, group=2),
-    # ── 第 3 组：裁剪（必须独占）───────────────────────────────────────
+    Step("合并摘要邮件", ("send_digest.py",), 300, True, group=3),
+    Step("回测", ("backtest.py",), 900, True, group=3),
+    Step("价值标的", ("build_value.py",), 600, True, group=3),
+    # ── 第 4 组：裁剪（必须独占）───────────────────────────────────────
     # 裁剪会 `git rm` 掉过期日期目录，而**建站按最终存在的目录生成归档页** ——
     # 两者并行就会产出指向「已被裁掉的报告」的死链。
     # 这不是假设：第一版把它们放进同一组并行跑，靠回测恰好先完成才没暴露。
-    Step("裁剪产物", ("prune_outputs.py",), 300, False, group=3),
-    # ── 第 4 组：建站（必须最后，且必须独占）─────────────────────────────
+    Step("裁剪产物", ("prune_outputs.py",), 300, False, group=4),
+    # ── 第 5 组：建站（必须最后，且必须独占）─────────────────────────────
     # 它读回测/价值标的刚写下的产物（collect_extras）与裁剪后的目录结构。
-    Step("构建站点", ("build_pages.py",), 300, False, group=4),
-    # ── 第 2 组（续）：基本面数据（采集）────────────────────────────────
-    # 慢变量：季报一年 4 次、分红一年 1~2 次，但**每只股票披露时间不同**
-    # （2026-10-27 全市场 5576 只里只有 1948 只出了三季报）。
-    # --refresh 只做两件事：① 1 个请求查全市场最新报告期；② 只重抓落后的那几只。
-    # 无事可做时成本 = 1 个请求。缓存落在 _fin_cache/，随每日提交入库。
-    # 只写 _fin_cache/，与同组的邮件/回测/价值标的没有文件交集。
-    # 页面渲染不在这里 —— 它必须在 build_pages 内部（见 build_pages.py 末尾）。
-    Step("基本面数据", ("fetch_fundamentals.py", "--refresh"), 900, True, group=2),
+    Step("构建站点", ("build_pages.py",), 300, False, group=5),
 )
 
 # 只有它失败会让整个入口返回非零（见模块 docstring）。
