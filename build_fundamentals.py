@@ -101,6 +101,13 @@ details table{margin-bottom:12px}
 .dec .row .txt b{font-weight:620;margin-right:10px}
 .dec .row .txt em{font-style:normal;color:#6b7488;font-size:12px}
 .dec .sum{background:#f7f9fc;padding:13px 15px;font-size:13.5px;font-weight:660}
+.dec .ev{flex:none;display:flex;align-items:center;margin-left:auto;padding-left:14px}
+.dec .ev svg{display:block;overflow:visible}
+
+/* 年度表的趋势行 */
+.trow td{background:#f7f9fc;color:#3d4450;font-size:12px;font-weight:600;
+  border-top:1px solid #dcdfe4;border-bottom:0}
+.trow td.k{color:#6b7488}
 
 /* 技术面 / TTM 各一行 */
 .strip{margin:9px 0 0;font-size:12.5px;color:#3d4450;line-height:1.9;
@@ -112,6 +119,85 @@ details table{margin-bottom:12px}
 
 
 # ─────────────────────────── SVG 基础件 ───────────────────────────
+def trend_word(vals, tol=0.0):
+    """一串序列的方向词：↑8/9 年 / ↓7/8 年 / → 基本持平。
+
+    只统计**相邻两期**的变化，不做回归 —— 读者能自己复核：
+    「9 次变化里 8 次在涨」是可以数出来的。
+    """
+    seq = [v for v in vals if v is not None]
+    if len(seq) < 2:
+        return ""
+    ups = sum(1 for a, b in zip(seq, seq[1:]) if b - a > tol)
+    downs = sum(1 for a, b in zip(seq, seq[1:]) if b - a < -tol)
+    n = len(seq) - 1
+    if ups == 0 and downs == 0:
+        return "→ 持平"
+    if ups >= n * 0.75:
+        return f'↑{ups}/{n} 年'
+    if downs >= n * 0.75:
+        return f'↓{downs}/{n} 年'
+    if ups > downs:
+        return f'↑{ups} ↓{downs}'
+    if downs > ups:
+        return f'↓{downs} ↑{ups}'
+    return f'↑{ups} ↓{downs}'
+
+
+def spark(vals, w=62, h=20, color="#24425c"):
+    """迷你折线：只表达方向，不带坐标轴。
+
+    刻意不画网格、不标数值 —— 数值已经在左边用大字写着了，
+    这里唯一的职责是让「在涨还是在跌」一眼可见。
+    """
+    pts = [(i, v) for i, v in enumerate(vals) if v is not None]
+    if len(pts) < 2:
+        return ""
+    lo = min(v for _, v in pts)
+    hi = max(v for _, v in pts)
+    if hi - lo < 1e-12:
+        hi = lo + 1.0
+    n = len(vals)
+
+    def X(i):
+        return 1.5 + (i / (n - 1)) * (w - 3)
+
+    def Y(v):
+        return h - 2.5 - (v - lo) / (hi - lo) * (h - 5)
+
+    d = "M" + " L".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in pts)
+    lx, ly = X(pts[-1][0]), Y(pts[-1][1])
+    return (f'<svg class="spk" width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
+            f'aria-hidden="true"><path d="{d}" fill="none" stroke="{color}" '
+            f'stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>'
+            f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="1.9" fill="{color}"/></svg>')
+
+
+def posbar(lo, hi, cur, w=62, h=14):
+    """位置条：当前值落在 [lo, hi] 的哪里。
+
+    用于估值 —— 我们没有 PE 的历史时间序列（缓存里只有区间上下沿），
+    但「现在贴着上沿还是下沿」本身就是最有用的证据。
+    """
+    try:
+        lo, hi, cur = float(lo), float(hi), float(cur)
+    except (TypeError, ValueError):
+        return ""
+    if hi <= lo:
+        return ""
+    t = max(0.0, min(1.0, (cur - lo) / (hi - lo)))
+    y = h / 2
+    x = 1.5 + t * (w - 3)
+    return (f'<svg class="pos" width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
+            f'aria-hidden="true">'
+            f'<line x1="1.5" y1="{y}" x2="{w - 1.5}" y2="{y}" stroke="#e4e8ef" '
+            f'stroke-width="3" stroke-linecap="round"/>'
+            f'<line x1="1.5" y1="{y}" x2="{x:.1f}" y2="{y}" stroke="#24425c" '
+            f'stroke-width="3" stroke-linecap="round"/>'
+            f'<circle cx="{x:.1f}" cy="{y}" r="2.7" fill="#fff" stroke="#24425c" '
+            f'stroke-width="1.6"/></svg>')
+
+
 def _fmt(v, nd=1):
     if v is None:
         return "—"
@@ -645,28 +731,38 @@ def main(argv=None, payload=None):
     sig = []
     if _pp is not None:
         st = "bad" if _pp > 70 else ("ok" if _pp < 30 else "warn")
+        _pe_r = d.get("pe_range") or (None, None)
+        _pe_now = _f("PE_TTM")
         sig.append(("估值", st,
                     f'PE 分位 {_pp:.0f}%' + (f'　PB 分位 {_pbp:.0f}%' if _pbp is not None else ''),
-                    "相对自身历史偏贵" if _pp > 70 else ("相对自身历史便宜" if _pp < 30 else "中性")))
+                    "相对自身历史偏贵" if _pp > 70 else ("相对自身历史便宜" if _pp < 30 else "中性"),
+                    posbar(_pe_r[0], _pe_r[1], _pe_now) if _pe_now else ""))
     if len(_roe) >= 2:
         _droe = _roe[-1][1] - _roe[0][1]
         st = "bad" if _droe < -1 else ("ok" if _droe > 1 else "warn")
+        # 折线用完整年度序列（不只是比较的首尾 5 年）
+        _roe_ser = [(qof(y, 4) or {}).get("roe") for y in annual_chrono]
+        _roe_ser = [(v * 100 if v is not None else None) for v in _roe_ser]
         sig.append(("盈利", st,
                     f'ROE {_roe[0][1]:.2f}%（{_roe[0][0]}）→ {_roe[-1][1]:.2f}%（{_roe[-1][0]}）',
                     f'{_droe:+.2f}pp，'
-                    f'{"持续下滑" if _droe < -1 else ("在改善" if _droe > 1 else "基本持平")}'))
+                    f'{"持续下滑" if _droe < -1 else ("在改善" if _droe > 1 else "基本持平")}',
+                    spark(_roe_ser)))
     if _yld_med and yld_now:
         st = "ok" if yld_now >= _yld_med else "warn"
+        _yld_ser = [_yield(None, "annual", y) for y in annual_chrono]
         sig.append(("现金回报", st,
                     f'股息率 {yld_now:.2f}%　历史中位 {_yld_med:.2f}%',
-                    "高于自身历史中位" if st == "ok" else "低于自身历史中位"))
+                    "高于自身历史中位" if st == "ok" else "低于自身历史中位",
+                    spark(_yld_ser)))
     if _js:
         m = sum(_js) / len(_js)
         st = "bad" if m > 80 else ("ok" if m < 20 else "warn")
         sig.append(("技术位置", st,
                     f'日 J {jd:.0f}　周 J {jw:.0f}　月 J {jm:.0f}' if all(
                         v is not None for v in (jd, jw, jm)) else f'三周期 J 均值 {m:.0f}',
-                    "三周期都在超买区" if m > 80 else ("三周期都在超卖区" if m < 20 else "在中性区")))
+                    "三周期都在超买区" if m > 80 else ("三周期都在超卖区" if m < 20 else "在中性区"),
+                    spark([jd, jw, jm])))
 
     if sig:
         nbad = sum(1 for s in sig if s[1] == "bad")
@@ -678,10 +774,13 @@ def main(argv=None, payload=None):
         else:
             concl = "信号混合 —— 没有明显方向"
         h.append('<div class="dec">')
-        for name, st, val, note in sig:
+        for name, st, val, note, *rest in sig:
+            ev = rest[0] if rest else ""
             h.append(f'<div class="row"><span class="n">{name}</span>'
                      f'<span class="dot {st}"></span>'
-                     f'<span class="txt"><b>{val}</b><em>{note}</em></span></div>')
+                     f'<span class="txt"><b>{val}</b><em>{note}</em></span>'
+                     + (f'<span class="ev">{ev}</span>' if ev else '')
+                     + '</div>')
         h.append(f'<div class="sum">{concl}</div>')
         h.append('</div>')
         h.append('<div class="fn">这四项都是<b>位置描述</b>，不是预测。'
@@ -761,7 +860,28 @@ def main(argv=None, payload=None):
             h.append(_p(x["payout"], nd=0))
             h.append(_p(x["yld"], nd=2))
             h.append(f'<td class="{"na" if not (x["bk_cancel"] or x["bk_prog"]) else ""}">{bk}</td></tr>')
-        h.append('</tbody></table>')
+        h.append('</tbody>')
+
+        # 趋势行：把 10 行数字扫成一句可读的方向。
+        # 折线已经在决策卡里了，这里只给文字结论 —— 读者能自己数着复核。
+        _cv = [x for x in _ar if x["complete"]]
+        if len(_cv) >= 3:
+            _pay = [x["payout"] for x in _cv if x["payout"] is not None]
+            _pay_txt = ""
+            if _pay:
+                _spread = max(_pay) - min(_pay)
+                _pay_txt = (f'稳定在 {_pay[-1]:.0f}%' if _spread < 2
+                            else f'{_pay[0]:.0f}% → {_pay[-1]:.0f}%')
+            h.append('<tfoot><tr class="trow"><td class="k">趋势</td>'
+                     f'<td>{trend_word([x["revenue"] for x in _cv])}</td>'
+                     f'<td>{trend_word([x["netProfit"] for x in _cv])}</td>'
+                     f'<td>{trend_word([x["roe"] for x in _cv], tol=0.05)}</td>'
+                     f'<td>{trend_word([x["dps"] for x in _cv], tol=0.0001)}</td>'
+                     f'<td>{_pay_txt}</td>'
+                     f'<td>{trend_word([x["yld"] for x in _cv], tol=0.01)}</td>'
+                     f'<td>{(str(sum(x["bk_cancel"] + x["bk_prog"] for x in _ar)) + " 条") if any(x["bk_cancel"] + x["bk_prog"] for x in _ar) else "—"}</td>'
+                     '</tr></tfoot>')
+        h.append('</table>')
         # 一句话观察
         _c = [x for x in _ar if x["complete"] and x["payout"] is not None]
         obs = []
