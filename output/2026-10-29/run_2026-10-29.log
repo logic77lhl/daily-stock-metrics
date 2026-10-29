@@ -1,0 +1,41 @@
+2026-10-29 16:03:46  ===== 开始每日A股指标任务 2026-10-29 =====
+2026-10-29 16:03:46  步骤1: 获取 A股市值前100…
+2026-10-29 16:03:59  步骤1完成 -> C:\Users\user\.dsh\ungrouped\dsm\output\2026-10-29\top100_2026-10-29.csv（名单来源: eastmoney，耗时 1s）
+2026-10-29 16:03:59  步骤2: 计算 KDJ-J(日/周/月) 及估值…
+2026-10-29 16:03:59  观察池: 共380只(含历史追踪280只) -> C:\Users\user\.dsh\ungrouped\dsm\output\2026-10-29\tracked_2026-10-29.csv
+2026-10-29 16:03:59  待处理 380 条，并发数 16
+2026-10-29 16:04:10  [ 88] 002352 顺丰控股  失败: [Errno 22] Invalid argument
+2026-10-29 16:04:15  [138] 000885 城发环境  失败: [Errno 22] Invalid argument
+2026-10-29 16:04:18  [186] 002938 鹏鼎控股  失败: [Errno 22] Invalid argument
+2026-10-29 16:04:21  [230] 600066 宇通客车  失败: [Errno 22] Invalid argument
+2026-10-29 16:04:24  [279] 600874 创业环保  失败: [Errno 22] Invalid argument
+2026-10-29 16:04:28  ===== 开始每日A股指标任务 2026-10-29 =====
+2026-10-29 16:04:28  步骤1已存在，跳过 -> C:\Users\user\.dsh\ungrouped\dsm\output\2026-10-29\top100_2026-10-29.csv
+2026-10-29 16:04:28  [328] 603049 中策橡胶  失败: [Errno 22] Invalid argument
+2026-10-29 16:04:29  步骤2: 计算 KDJ-J(日/周/月) 及估值…
+2026-10-29 16:04:29  观察池: 共380只(含历史追踪280只) -> C:\Users\user\.dsh\ungrouped\dsm\output\2026-10-29\tracked_2026-10-29.csv
+2026-10-29 16:04:29  检测到已完成 338 条，跳过续跑
+2026-10-29 16:04:29  待处理 42 条，并发数 16
+2026-10-29 16:04:33  [373] 688526 科前生物  失败: [Errno 22] Invalid argument
+2026-10-29 16:04:33  全部完成：成功 373/380，失败 7，数据日期 2026-10-29，结果已写入 C:\Users\user\.dsh\ungrouped\dsm\output\2026-10-29\metrics_2026-10-29.csv
+2026-10-29 16:04:33  步骤2完成 -> C:\Users\user\.dsh\ungrouped\dsm\output\2026-10-29\metrics_2026-10-29.csv（成功 373/380，失败 7）
+2026-10-29 16:04:33  步骤2.5: 获取全市场大盘温度（活跃市值指标）…
+2026-10-29 16:04:37  全部完成：成功 380/380，失败 0，数据日期 2026-10-29，结果已写入 C:\Users\user\.dsh\ungrouped\dsm\output\2026-10-29\metrics_2026-10-29.csv
+2026-10-29 16:04:37  步骤2完成 -> C:\Users\user\.dsh\ungrouped\dsm\output\2026-10-29\metrics_2026-10-29.csv（成功 380/380，失败 0）
+2026-10-29 16:04:37  步骤2.5: 获取全市场大盘温度（活跃市值指标）…
+2026-10-29 16:04:38  步骤2.5失败(不影响主流程): ProxyError: HTTPSConnectionPool(host='1.push2.eastmoney.com', port=443): Max retries exceeded with url: /api/qt/clist/get?pn=1&pz=500&po=1&np=1&fltt=2&invt=2&fid=f20&fs=m%3A0+t%3A6%2Cm%3A0+t%3A80%2Cm%3A1+t%3A2%2Cm%3A1+t%3A23%2Cm%3A0+t%3A81+s%3A2048&fields=f12%2Cf14%2Cf2%2Cf3%2Cf6%2Cf8%2Cf20%2Cf21 (Caused by ProxyError('Unable to connect to proxy', RemoteDisconnected('Remote end closed connection without response')))
+2026-10-29 16:04:38  步骤2.6: 本地聚合 → 行业板块温度 / 大盘宽度仪表盘 / 机会榜
+2026-10-29 16:04:38    - 板块温度: 12 个行业
+2026-10-29 16:04:38    - 机会榜: 超跌 30 / 超买 30
+2026-10-29 16:04:38  步骤2.6完成
+2026-10-29 16:04:38  步骤3: 生成 HTML 总结报告…
+2026-10-29 16:04:40  步骤2.5失败(不影响主流程): ProxyError: HTTPSConnectionPool(host='1.push2.eastmoney.com', port=443): Max retries exceeded with url: /api/qt/clist/get?pn=1&pz=500&po=1&np=1&fltt=2&invt=2&fid=f20&fs=m%3A0+t%3A6%2Cm%3A0+t%3A80%2Cm%3A1+t%3A2%2Cm%3A1+t%3A23%2Cm%3A0+t%3A81+s%3A2048&fields=f12%2Cf14%2Cf2%2Cf3%2Cf6%2Cf8%2Cf20%2Cf21 (Caused by ProxyError('Unable to connect to proxy', RemoteDisconnected('Remote end closed connection without response')))
+2026-10-29 16:04:40  步骤2.6: 本地聚合 → 行业板块温度 / 大盘宽度仪表盘 / 机会榜
+2026-10-29 16:04:40    - 板块温度: 12 个行业
+2026-10-29 16:04:40    - 机会榜: 超跌 30 / 超买 30
+2026-10-29 16:04:40  步骤2.6完成
+2026-10-29 16:04:40  步骤3: 生成 HTML 总结报告…
+2026-10-29 16:04:40  步骤3完成 -> C:\Users\user\.dsh\ungrouped\dsm\output\2026-10-29\report_2026-10-29.html
+2026-10-29 16:04:40  ===== 全部完成 2026-10-29（邮件由流水线末尾统一发送）=====
+2026-10-29 16:04:41  步骤3完成 -> C:\Users\user\.dsh\ungrouped\dsm\output\2026-10-29\report_2026-10-29.html
+2026-10-29 16:04:41  ===== 全部完成 2026-10-29（邮件由流水线末尾统一发送）=====
