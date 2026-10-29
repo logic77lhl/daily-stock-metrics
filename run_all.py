@@ -84,6 +84,9 @@ STEPS: tuple[Step, ...] = (
     # 慢变量（季报节奏）；--refresh 只抓 fundamentals.csv 里报告期更新的那几只，
     # 实测无事可做时 0 请求。
     Step("资产负债表", ("fetch_balance.py", "--refresh"), 600, True, group=3),
+    # 港股财务：与资产负债表同组（也写 _fin_cache，串行执行）。
+    # 100 只 × 1 请求 ≈ 23 秒；无事可做时直接跳过。
+    Step("港股财务", ("fetch_hk_fundamentals.py", "--refresh"), 600, True, group=3),
     # ── 第 4 组：发信 / 回测 / 价值标的（写的文件不相交，可并行）──────────
     # 三个市场都写完之后再发信：合成一封，且只收录 DONE 有效（=质量门通过）的市场。
     # 邮件读 DONE + metrics CSV、写 report_*.html 与 digest_*.html；
