@@ -1155,6 +1155,18 @@ def main():
     except Exception as e:
         print(f"[warn] 基本面页面构建失败: {type(e).__name__}: {e}")
 
+    # 全池分组榜单（值得看 / 中性 / 高位）。与个股页共用 verdict.py 的规则，
+    # 所以两边的判断不会跑偏。失败只警告，不阻塞建站。
+    try:
+        import sys as _sys
+        _tools = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools")
+        if _tools not in _sys.path:
+            _sys.path.insert(0, _tools)
+        import verdict_board
+        verdict_board.main([])
+    except Exception as e:
+        print(f"[warn] 分组榜单构建失败: {type(e).__name__}: {e}")
+
     # 返回值分级：最新一天三个市场的报告全缺 → 真的没东西可发布，判失败；
     # 只缺子板块 → 通过（已在页面上用 banner 说明）。
     if not dates:
