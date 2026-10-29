@@ -78,69 +78,6 @@ tbody tr.gap td{border-bottom:1px solid #eaecf0}
 .verdict b{display:block;margin-bottom:4px}
 .verdict .kv{font-size:12.5px;color:#667085}
 .ft{color:#98a2b3;font-size:11px;text-align:center;margin-top:34px;line-height:1.9}
-/* 估值位置条 */
-.rb{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:13px;
-  font-variant-numeric:tabular-nums}
-.rb .rl{width:34px;color:#667085;font-size:12px}
-.rb .rv{width:52px;font-weight:700;text-align:right}
-.rb .rt{position:relative;flex:1;height:5px;background:#eef1f6;border-radius:3px}
-.rb .rt i{position:absolute;top:-4px;width:3px;height:13px;background:#d92d20;
-  border-radius:2px;transform:translateX(-1.5px)}
-.rb .rt em{position:absolute;top:9px;font-size:10px;color:#b0b8c7;font-style:normal}
-.rb .rt .rlo{left:0}.rb .rt .rhi{right:0}
-.rb .rp{width:66px;text-align:right;color:#667085;font-size:12px}
-
-/* 横向滚动容器：8 年 + TTM 共 11 列，窄屏横滚，指标列固定 */
-.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -2px}
-.scroll table{min-width:880px}
-/* J 值刻度条 0~100 */
-.jrow{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:13px;
-  font-variant-numeric:tabular-nums}
-.jrow .jl{width:52px;color:#667085;font-size:12px}
-.jrow .jv{width:44px;font-weight:700;text-align:right}
-.jrow .jt{position:relative;flex:1;height:6px;border-radius:3px;
-  background:linear-gradient(90deg,#dbeafe 0%,#dbeafe 28.6%,#f2f4f7 28.6%,
-  #f2f4f7 71.4%,#fee4e2 71.4%,#fee4e2 100%)}
-.jrow .jt i{position:absolute;top:-5px;width:3px;height:16px;border-radius:2px;
-  background:#101828;transform:translateX(-1.5px)}
-.jrow .js{width:74px;text-align:right;font-size:11.5px;color:#667085}
-/* 当前位置：两列小卡 */
-.nowbox{display:grid;grid-template-columns:1fr 1fr;gap:0 26px;
-  border-top:1px solid #f2f4f7;border-bottom:1px solid #f2f4f7;padding:10px 0}
-.nowbox .col{min-width:0}
-.nowbox .kv{display:flex;justify-content:space-between;font-size:12.5px;
-  padding:4px 0;border-bottom:1px dotted #f2f4f7;font-variant-numeric:tabular-nums}
-.nowbox .kv:last-child{border-bottom:0}
-.nowbox .kv span:first-child{color:#667085}
-.nowbox .kv b{font-weight:600}
-.nowbox .cap{font-size:11px;color:#98a2b3;margin:2px 0 6px}
-.link{display:inline-block;margin-top:10px;font-size:12.5px;color:#175cd3;
-  text-decoration:none;border-bottom:1px solid #d1e0ff}
-/* 公式提示 */
-td.k abbr{text-decoration:none;border-bottom:1px dotted #d0d5dd;cursor:help}
-td.k abbr i.q{font-style:normal;font-size:9px;color:#b0b8c7;margin-left:3px;
-  vertical-align:super}
-/* 决策速览 */
-.dec{border:1px solid #eaecf0;border-radius:10px;overflow:hidden;margin-bottom:4px}
-.dec .row{display:flex;align-items:flex-start;gap:10px;padding:9px 13px;
-  border-bottom:1px solid #f7f8fa;font-size:13px}
-.dec .row:last-child{border-bottom:0}
-.dec .row .n{width:58px;color:#667085;font-size:12px;flex-shrink:0;white-space:nowrap}
-.dec .row .dot{width:7px;height:7px;border-radius:50%;margin-top:6px;flex-shrink:0}
-.dec .row .dot.ok{background:#12b76a}.dec .row .dot.warn{background:#f79009}
-.dec .row .dot.bad{background:#d92d20}
-.dec .row .txt{flex:1;line-height:1.6}
-.dec .row .txt b{font-weight:600;margin-right:8px}
-.dec .row .txt em{font-style:normal;color:#98a2b3;font-size:11.5px;margin-left:4px}
-.dec .sum{background:#f7f9fc;padding:11px 13px;font-size:13px;font-weight:600}
-/* 同业表 */
-table.peer th.me,table.peer td.me{background:#f7f9fc;font-weight:700}
-table.peer th,table.peer td{text-align:right;font-size:13px}
-/* 估值条容器 */
-.valbox{border-top:1px solid #f2f4f7;border-bottom:1px solid #f2f4f7;padding:4px 0}
-/* sparkline */
-.sp{display:block;margin-left:auto}
-td.trend{padding-top:6px;padding-bottom:6px}
 /* 折叠 */
 details{margin-top:10px;border:1px solid #eaecf0;border-radius:8px;padding:0 12px}
 details summary{cursor:pointer;padding:10px 0;font-size:13px;color:#475467;
@@ -150,6 +87,27 @@ details summary::before{content:"▸ ";color:#98a2b3}
 details[open] summary::before{content:"▾ "}
 details table{margin-bottom:12px}
 
+
+/* 决策速览：四信号（首屏唯一主角） */
+.dec{border:1px solid #e4e8ef;border-radius:10px;overflow:hidden;margin:18px 0 0}
+.dec .row{display:flex;align-items:flex-start;gap:10px;padding:11px 15px;
+  border-bottom:1px solid #f4f6f9;font-size:13.5px}
+.dec .row:last-child{border-bottom:0}
+.dec .row .n{width:60px;color:#5c6675;font-size:12px;flex-shrink:0;white-space:nowrap}
+.dec .row .dot{width:7px;height:7px;border-radius:50%;margin-top:7px;flex-shrink:0}
+.dec .row .dot.ok{background:#12b76a}.dec .row .dot.warn{background:#f79009}
+.dec .row .dot.bad{background:#d92d20}.dec .row .dot.na{background:#d0d5dd}
+.dec .row .txt{flex:1;line-height:1.6;font-variant-numeric:tabular-nums}
+.dec .row .txt b{font-weight:620;margin-right:10px}
+.dec .row .txt em{font-style:normal;color:#6b7488;font-size:12px}
+.dec .sum{background:#f7f9fc;padding:13px 15px;font-size:13.5px;font-weight:660}
+
+/* 技术面 / TTM 各一行 */
+.strip{margin:9px 0 0;font-size:12.5px;color:#3d4450;line-height:1.9;
+  font-variant-numeric:tabular-nums;max-width:80ch}
+.strip .strip-k{display:inline-block;min-width:46px;color:#6b7488;font-size:11px;
+  letter-spacing:.04em;margin-right:9px}
+.strip .strip-d{color:#8a93a5;font-size:11px;margin-left:10px}
 """
 
 
@@ -185,40 +143,6 @@ def _nice_ticks(lo, hi, n=4):
 def _scale(v, lo, hi, px, py, pw, ph):
     x = px + (v - lo) / (hi - lo) * pw if hi > lo else px
     return x
-
-
-def sparkline(values, width=62, height=18, color="#2d4a6e"):
-    """迷你趋势线：一行指标一个，几乎不占宽度，但趋势一眼可见。"""
-    vals = [v for v in values if v is not None]
-    if len(vals) < 2:
-        return '<span class="na">—</span>'
-    lo, hi = min(vals), max(vals)
-    step = width / (len(vals) - 1)
-    # 幅度小于 1% 就画水平线：分红率常年 30.0~30.2%，归一化后会变成一条满幅斜线，
-    # 看起来像"分红率在大幅上升"，这是纯粹的视觉欺骗。
-    if hi == lo or (hi - lo) <= abs(hi) * 0.01:
-        pts = " ".join(f"{i * step:.1f},{height / 2:.1f}" for i in range(len(vals)))
-    else:
-        pts = " ".join(f"{i * step:.1f},{height - (v - lo) / (hi - lo) * height:.1f}"
-                       for i, v in enumerate(vals))
-    tip = f"{vals[0]:.2f} → {vals[-1]:.2f}"
-    return (f'<svg class="sp" width="{width}" height="{height}" '
-            f'viewBox="0 0 {width} {height}"><polyline points="{pts}" fill="none" '
-            f'stroke="{color}" stroke-width="1.4" stroke-linejoin="round" '
-            f'stroke-linecap="round"/><title>{tip}</title></svg>')
-
-
-def range_bar(label, cur, lo, hi, pct, fmt="{:.2f}"):
-    """一条横轴 + 游标：一眼看出当前值在历史区间的位置。"""
-    if cur is None or lo is None or hi is None or hi <= lo:
-        return ""
-    pos = max(0.0, min(100.0, (cur - lo) / (hi - lo) * 100))
-    pct_txt = f"分位 {pct:.0f}%" if pct is not None else ""
-    return (f'<div class="rb"><span class="rl">{label}</span>'
-            f'<span class="rv">{fmt.format(cur)}</span>'
-            f'<span class="rt"><i style="left:{pos:.1f}%"></i>'
-            f'<em class="rlo">{fmt.format(lo)}</em><em class="rhi">{fmt.format(hi)}</em></span>'
-            f'<span class="rp">{pct_txt}</span></div>')
 
 
 def bar_chart(labels, series, height=230, unit="亿", width=780, legend=None,
@@ -257,56 +181,6 @@ def bar_chart(labels, series, height=230, unit="亿", width=780, legend=None,
                        f'<title>{html.escape(lab)} {name}: {_fmt(v)} {unit}</title></rect>')
         if n <= 14 or i % 2 == 0:
             out.append(f'<text x="{cx + slot / 2:.1f}" y="{height - 12}" font-size="9.5" '
-                       f'fill="#9aa3b5" text-anchor="middle">{html.escape(lab)}</text>')
-    if legend:
-        lx = width - pad_r
-        for name, color in reversed(legend):
-            w_ = 20 + len(name) * 10
-            lx -= w_
-            out.append(f'<rect x="{lx}" y="6" width="8" height="8" fill="{color}" rx="1.5"/>')
-            out.append(f'<text x="{lx + 12}" y="13.5" font-size="10" fill="#7a8397">'
-                       f'{html.escape(name)}</text>')
-    out.append("</svg>")
-    return "".join(out)
-
-
-def line_chart(labels, series, height=210, unit="%", width=780, zero_line=True, legend=None):
-    """折线图。series = [(名字, 颜色, [值...]), ...]"""
-    pad_l, pad_r, pad_t, pad_b = 52, 12, 14, 34
-    pw, ph = width - pad_l - pad_r, height - pad_t - pad_b
-    vals = [v for _, _, arr in series for v in arr if v is not None]
-    if not vals:
-        return '<p class="note">（无数据）</p>'
-    lo, hi = min(vals), max(vals)
-    if zero_line:
-        lo, hi = min(0, lo), max(0, hi)
-    ticks = _nice_ticks(lo, hi if hi > lo else lo + 1, 4)
-    lo, hi = min(ticks), max(ticks)
-    n = len(labels)
-    step = pw / max(n - 1, 1)
-    out = [f'<svg viewBox="0 0 {width} {height}" width="100%" role="img">']
-    for t in ticks:
-        y = pad_t + ph - (t - lo) / (hi - lo) * ph
-        out.append(f'<line x1="{pad_l}" y1="{y:.1f}" x2="{width - pad_r}" y2="{y:.1f}" '
-                   f'stroke="#eef1f6"/>')
-        out.append(f'<text x="{pad_l - 6}" y="{y + 3.5:.1f}" font-size="10" fill="#9aa3b5" '
-                   f'text-anchor="end">{t:g}</text>')
-    for name, color, arr in series:
-        pts = [(pad_l + step * i, pad_t + ph - (v - lo) / (hi - lo) * ph)
-               for i, v in enumerate(arr) if v is not None]
-        if len(pts) > 1:
-            d = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts)
-            out.append(f'<path d="{d}" fill="none" stroke="{color}" stroke-width="1.8"/>')
-        for i, v in enumerate(arr):
-            if v is None:
-                continue
-            x, y = pad_l + step * i, pad_t + ph - (v - lo) / (hi - lo) * ph
-            out.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.4" fill="{color}">'
-                       f'<title>{html.escape(labels[i])} {name}: {v:.2f}{unit}</title></circle>')
-    lab_step = max(1, -(-n // 8))     # 最多 8 个 x 轴标签，避免挤成一团
-    for i, lab in enumerate(labels):
-        if i % lab_step == 0:
-            out.append(f'<text x="{pad_l + step * i:.1f}" y="{height - 12}" font-size="9.5" '
                        f'fill="#9aa3b5" text-anchor="middle">{html.escape(lab)}</text>')
     if legend:
         lx = width - pad_r
@@ -813,174 +687,46 @@ def main(argv=None, payload=None):
         h.append('<div class="fn">这四项都是<b>位置描述</b>，不是预测。'
                  '独立回测显示这类技术信号对未来收益无预测力，请只当作"现在处在什么位置"来看。</div>')
 
-    # ── 当前位置：把技术面（日J/周J/月J/均线/量比）和估值放在一起 ──
-    # 数据全部来自仓库的 metrics CSV，不需要额外抓取 —— 这就是「和现有系统联动」。
-    J_MIN, J_MAX = -20.0, 120.0     # J 没有上下界（工行周 J 曾到 -16.8、月 J 到 113）
+    # ── 技术面 / TTM：各一行，不再占独立区块 ──
+    # 技术面本来就每天更新、财务是季报节奏，两者必须分开标日期，
+    # 否则读者会以为整页是同一天的数据。
+    _bits = []
+    if jd is not None:
+        _bits.append(f'日J {jd:.0f}')
+    if jw is not None:
+        _bits.append(f'周J {jw:.0f}')
+    if jm is not None:
+        _bits.append(f'月J {jm:.0f}')
+    if _pp is not None:
+        _bits.append(f'PE 分位 {_pp:.1f}%')
+    if _pbp is not None:
+        _bits.append(f'PB 分位 {_pbp:.1f}%')
+    _ma = _f("MA20")
+    if _ma is not None:
+        _bits.append(f'MA20 {_ma:.2f}')
+    _vr = _f("量比")
+    if _vr is not None:
+        _bits.append(f'量比 {_vr:.2f}')
+    _md = (meta.get("数据日期") or "")[:10]
+    if _bits:
+        h.append(f'<p class="strip"><span class="strip-k">技术面</span>'
+                 f'{"　·　".join(_bits)}'
+                 + (f'<span class="strip-d">{_md}</span>' if _md else '') + '</p>')
 
-    def jbar(label, j):
-        if j is None:
-            return ""
-        pos = (max(J_MIN, min(J_MAX, j)) - J_MIN) / (J_MAX - J_MIN) * 100
-        if j < 20:
-            state = "超卖"
-        elif j > 80:
-            state = "超买"
-        else:
-            state = "中性"
-        return (f'<div class="jrow"><span class="jl">{label}</span>'
-                f'<span class="jv">{j:.1f}</span>'
-                f'<span class="jt"><i style="left:{pos:.1f}%"></i></span>'
-                f'<span class="js">{state}</span></div>')
-
-    if any(v is not None for v in (jd, jw, jm)):
-        _md = (meta.get("数据日期") or "")[:10]
-        h.append(f'<h2>当前位置<span class="unit">'
-                 f'{"技术面截至 " + _md + "（每日更新）" if _md else "技术面数据来自每日 metrics CSV"}'
-                 f'　·　财务截至 {latest["statDate"] if latest else "—"}（季报更新）'
-                 f'</span></h2>')
-        h.append('<div class="jrow" style="padding-bottom:2px"><span class="jl"></span>'
-                 '<span class="jv"></span><span class="jt" style="height:0;background:none">'
-                 '<i style="left:20%;background:none"></i></span>'
-                 '<span class="js"></span></div>')
-        h.append(jbar("日线 J", jd))
-        h.append(jbar("周线 J", jw))
-        h.append(jbar("月线 J", jm))
-        h.append('<div class="fn">刻度 −20 ~ 120。浅蓝 = 超卖（J&lt;20），浅红 = 超买（J&gt;80）。J 没有上下界，超出会被夹在端点。</div>')
-
-        ma20, gap20, bull = _f("MA20"), _f("价距MA20%"), meta.get("双均线多头")
-        vr, vr30 = _f("量比"), _f("量比30")
-        h.append('<div class="nowbox" style="margin-top:12px">')
-        h.append('<div class="col"><div class="cap">均线 / 量能</div>')
-        if ma20 is not None:
-            h.append(f'<div class="kv"><span>MA20</span><b>{ma20:.2f}</b></div>')
-        if gap20 is not None:
-            h.append(f'<div class="kv"><span>价距 MA20</span>'
-                     f'<b class="{"up" if gap20 > 0 else "down"}">{gap20:+.2f}%</b></div>')
-        if bull not in (None, ""):
-            txt = {"1": "是", "1.0": "是", "True": "是", "true": "是",
-                   "0": "否", "0.0": "否", "False": "否", "false": "否"}.get(
-                       str(bull).strip(), str(bull))
-            h.append(f'<div class="kv"><span>双均线多头</span><b>{txt}</b></div>')
-        if vr is not None:
-            h.append(f'<div class="kv"><span>量比</span><b>{vr:.2f}</b></div>')
-        if vr30 is not None:
-            h.append(f'<div class="kv"><span>30 日量比</span><b>{vr30:.2f}</b></div>')
-        h.append('</div><div class="col"><div class="cap">估值 / 位置</div>')
-        if pe_now is not None:
-            h.append(f'<div class="kv"><span>PE_TTM</span><b>{pe_now:.2f}</b></div>')
-        if _pct(pe_pct) is not None:
-            h.append(f'<div class="kv"><span>PE 分位</span><b>{_pct(pe_pct):.0f}%</b></div>')
-        if pb_now is not None:
-            h.append(f'<div class="kv"><span>PB</span><b>{pb_now:.2f}</b></div>')
-        if _pct(pb_pct) is not None:
-            h.append(f'<div class="kv"><span>PB 分位</span><b>{_pct(pb_pct):.0f}%</b></div>')
-        h.append('</div></div>')
-
-        # 联动：指向当天的技术面报告
-        _day = ""
-        if args.metrics:
-            import re as _re
-            mt = _re.search(r"(\d{4}-\d{2}-\d{2})", os.path.basename(args.metrics))
-            _day = mt.group(1) if mt else ""
-        if _day:
-            h.append(f'<a class="link" href="https://logic77lhl.github.io/daily-stock-metrics/'
-                     f'{_day}/a.html">查看 {_day} 的完整技术面报告 →</a>')
-
-    # ── 估值位置：当前值落在历史区间的哪里 ──
-    h.append('<h2>估值位置<span class="unit">区间 = 有数据以来最低~最高</span></h2>')
-    h.append('<div class="valbox">')
-    h.append(range_bar("PE", pe_now, pe_lo, pe_hi, _pct(pe_pct)))
-    h.append(range_bar("PB", pb_now, pb_lo, pb_hi, _pct(pb_pct)))
-    h.append('</div>')
-
-    # ── 主表：行=指标，列=期间 ──
-    h.append('<h2>核心指标<span class="unit">单位：亿元 / %</span></h2>')
-    h.append('<div class="scroll"><table><thead><tr><th class="k">指标</th>'
-             '<th class="ttmh">TTM</th>')
-    for kind, y, q in periods:
-        lab = f"{y}中报" if (kind == "latest" and q == 2) else (
-            f"{y}Q{q}" if kind == "latest" else f"{y}年报")
-        h.append(f'<th>{lab}</th>')
-    h.append('<th class="trendh">趋势</th>')
-    h.append('</tr><tr class="sub"><th class="k"></th><th>近 12 月</th>')
-    for kind, y, q in periods:
-        node = qof(y, q)
-        h.append(f'<th>{node["pubDate"][5:] if node and node.get("pubDate") else "—"}</th>')
-    h.append('<th></th></tr></thead><tbody>')
-
-    # 趋势线的数据点：只用完整年度，按时间正序（左旧右新）
-
-    def metric(label, getter, fmt="{:.0f}", gap=False, ttm=None, tip=None):
-        lab = (f'<abbr title="{html.escape(tip)}">{label}<i class="q">?</i></abbr>'
-               if tip else label)
-        h.append(f'<tr class="{"main gap" if gap else "main"}"><td class="k">{lab}</td>')
-        h.append(f'<td class="ttm">{fmt.format(ttm)}</td>' if ttm is not None
-                 else '<td class="na">—</td>')
-        for kind, y, q in periods:
-            v = getter(qof(y, q), kind, y)
-            h.append(f'<td>{fmt.format(v)}</td>' if v is not None
-                     else '<td class="na">—</td>')
-        series = [getter(qof(y, 4), "annual", y) for y in annual_chrono]
-        h.append(f'<td class="trend">{sparkline(series)}</td>')
-        h.append('</tr>')
-
-    def yoy_row(key, label="同比"):
-        h.append(f'<tr class="subrow"><td class="k">{label}</td><td></td>')
-        for kind, y, q in periods:
-            v = (qof(y, q) or {}).get(key)
-            h.append(f'<td class="{"up" if (v or 0) > 0 else "down"}">{v:+.1f}%</td>'
-                     if v is not None else '<td class="na">—</td>')
-        h.append('<td></td></tr>')
-
-    def yi(x, key):
-        v = (x or {}).get(key)
-        return v / 1e8 if v else None
-
-    metric("营业收入", lambda x, k, y: yi(x, "revenue"), "{:,.0f}",
-           ttm=(ttm_rev / 1e8 if ttm_rev else None),
-           tip="利润表「营业收入」，年内累计。数据源：东财 RPT_F10_FINANCE_MAINFINADATA / TOTALOPERATEREVE")
-    yoy_row("yoyRev")
-    metric("归母净利", lambda x, k, y: yi(x, "netProfit"), "{:,.0f}",
-           ttm=(ttm_np / 1e8 if ttm_np else None),
-           tip="归属于母公司股东的净利润，年内累计。字段 PARENTNETPROFIT（不含少数股东损益）")
-    yoy_row("yoyNi")
-    metric("ROE（加权）",
-           lambda x, k, y: ((x or {}).get("roe") or 0) * 100
-           if (x or {}).get("roe") is not None else None, "{:.2f}%", gap=True,
-           ttm=ttm_roe,
-           tip="归母净利 ÷ 加权平均净资产（官方披露口径 ROEJQ）。TTM 列为年化值")
-    # 净利率统一用**归母净利 ÷ 营收**。数据源的 XSJLL 是「全部净利 ÷ 营收」
-    # （含少数股东损益），与上面的「归母净利」行不同口径 —— 工行 2026 中报
-    # 1737/4659 = 37.3%，而 XSJLL 给 37.9%，读者一除就会发现对不上。
-    def _margin(x, k, y):
-        rv, npf = (x or {}).get("revenue"), (x or {}).get("netProfit")
-        return npf / rv * 100 if (rv and npf) else None
-
-    metric("净利率", _margin, "{:.1f}%", ttm=ttm_margin,
-           tip="归母净利 ÷ 营业收入。注意：数据源自带的 XSJLL 是「全部净利 ÷ 营收」（含少数股东），本表不用它")
-    metric("每股分红", lambda x, k, y: div_by_year.get(str(y)) if k == "annual" else None,
-           "{:.4f}", gap=True,
-           tip="该财务年度的每股现金分红合计（税前）。一年两次分红的年份会把中报+年报两笔相加")
-    metric("分红率",
-           lambda x, k, y: (div_by_year.get(str(y)) * share
-                            / (qof(y, 4) or {}).get("netProfit") * 100)
-           if (k == "annual" and div_by_year.get(str(y)) and share
-               and (qof(y, 4) or {}).get("netProfit")) else None, "{:.0f}%",
-           tip="每股分红 × 总股本 ÷ 归母净利。>100% 说明分红超过当年利润，不可持续")
-
-
-    metric("股息率", _yield, "{:.2f}%",
-           tip="每股分红 ÷ 当年**日均价**（不是年末价）。一年内股价有高低，所以这是个代表值，实际在区间内浮动")
-    h.append('</tbody></table></div>')
-    h.append('<div class="fn">年报为全年累计；<b>TTM = 最近 12 个月</b>'
-             '（最新累计 + 上年全年 − 上年同期累计），因此与年报天然可比 —— '
-             '这也是主表不放「中报」列的原因：半年 vs 全年并排，营收和 ROE 会看起来像断崖。'
-             '净利率 = <b>归母净利 ÷ 营业收入</b>。<br>'
-             '<b>股息率有三种算法，本表用第二种</b>：① 按年末价（年末那天只是个抽样点，'
-             '偏高或偏低）；② <b>按当年日均价</b>（本表，代表那年的典型买入成本）；'
-             '③ 按当前价（表头那个数，代表「现在买能拿多少」）。'
-             '一年之内股价有高低，实际股息率会在区间内浮动 —— 所以这是一个代表值，不是唯一值。'
-             '分红均为税前，未扣红利税。</div>')
+    _tb = []
+    if ttm_rev:
+        _tb.append(f'营收 {ttm_rev / 1e8:,.0f} 亿')
+    if ttm_np:
+        _tb.append(f'归母净利 {ttm_np / 1e8:,.0f} 亿')
+    if ttm_margin is not None:
+        _tb.append(f'净利率 {ttm_margin:.1f}%')
+    if ttm_roe is not None:
+        _tb.append(f'ROE(年化) {ttm_roe:.2f}%')
+    if _tb:
+        h.append(f'<p class="strip"><span class="strip-k">TTM</span>'
+                 f'{"　·　".join(_tb)}'
+                 + (f'<span class="strip-d">财务截至 '
+                    f'{latest["statDate"] if latest else "—"}</span>') + '</p>')
 
     # ── 年度串联：业绩 ↔ 分红 ↔ 回购 ──
     _ar = annual_rows(d, years=10)
@@ -1044,44 +790,14 @@ def main(argv=None, payload=None):
                  '更早年份显示「—」<b>不代表当年没有回购</b>。'
                  '* 该年度未走完，分红率与股息率不计算。</div>')
 
-    # ── 同业对比：孤立的数字没有参照，横着比才有意义 ──
-    peers = d.get("peers") or []
-    if peers:
-        fy_year2, fy_amt2 = full_year_dividend(div_by_year)
-        yld_self = (fy_amt2 / float(last_px) * 100) if (fy_amt2 and last_px) else None
-        cols = [("ROE", (latest or {}).get("roe") and (latest["roe"] * 100), "{:.2f}%"),
-                ("净利率", (latest or {}).get("npMargin") and (latest["npMargin"] * 100), "{:.1f}%"),
-                ("股息率", yld_self, "{:.2f}%"),
-                ("PB", _pct(meta.get("PB_MRQ")), "{:.2f}"),
-                ("PE", _pct(meta.get("PE_TTM")), "{:.1f}")]
-        peer_cols = {"ROE": "roe", "净利率": "margin", "股息率": "yld", "PB": "pb", "PE": "pe"}
-        h.append('<h2>同业对比<span class="unit">2026 中报同期 / 最新价</span></h2>')
-        h.append('<table class="peer"><thead><tr><th class="k"></th>')
-        h.append(f'<th class="me">{html.escape(name)}</th>')
-        for pr in peers:
-            h.append(f'<th>{html.escape(str(pr.get("name") or pr.get("code")))}</th>')
-        h.append('</tr></thead><tbody>')
-        for label, self_v, fmt in cols:
-            h.append(f'<tr><td class="k">{label}</td>')
-            h.append(f'<td class="me">{fmt.format(self_v)}</td>' if self_v is not None
-                     else '<td class="na">—</td>')
-            for pr in peers:
-                v = pr.get(peer_cols[label])
-                h.append(f'<td>{fmt.format(v)}</td>' if v is not None
-                         else '<td class="na">—</td>')
-            h.append('</tr>')
-        h.append('</tbody></table>')
-        h.append('<div class="fn">招行的 ROE 明显高于四大行、股息率也更高 —— '
-                 '这种差距只有横着比才看得出来。</div>')
-
-    # ── 季度表：行=年，列=Q1~Q4 ──
-    h.append('<h2>单季净利<span class="unit">单位：亿元</span></h2>')
+    # ── 季度表（折叠：需要的人再展开，不占首屏）──
+    h.append('<details><summary>展开单季净利（按年 × 季度）</summary>')
     h.append('<table><thead><tr><th class="k">年度</th><th>Q1</th><th>Q2</th><th>Q3</th>'
              '<th>Q4</th><th>全年</th><th>同比</th></tr></thead><tbody>')
     for y in reversed(years_all[-8:]):
         rowq = [q for q in qs if q["year"] == y]
         lq = max(x["quarter"] for x in rowq) if rowq else None
-        h.append(f'<tr class="main"><td class="k">{y}</td>')
+        h.append(f'<tr><td class="k">{y}</td>')
         for k in (1, 2, 3, 4):
             node = next((x for x in rowq if x["quarter"] == k), None)
             v = node.get("qNetProfit") if node else None
@@ -1090,12 +806,13 @@ def main(argv=None, payload=None):
         pcum = next((x["netProfit"] for x in qs if x["year"] == y - 1
                      and x["quarter"] == lq), None)
         mark = "*" if lq != 4 else ""
-        h.append(f'<td><b>{cum / 1e8:,.0f}{mark}</b></td>' if cum else '<td class="na">—</td>')
+        h.append(f'<td><b>{cum / 1e8:,.0f}{mark}</b></td>' if cum
+                 else '<td class="na">—</td>')
         h.append(yoy_cell(cum, pcum))
         h.append('</tr>')
     h.append('</tbody></table>')
     h.append('<div class="fn">单季 = 累计差分。* 该年度未走完，为已披露累计值；'
-             '同比为同期累计口径。</div>')
+             '同比为同期累计口径。</div></details>')
 
     # ── 折叠：全部历史季度（想深挖的人再展开，默认不占地方）──
     h.append(f'<details><summary>展开全部 {len(qs)} 个季度的明细</summary>')
@@ -1110,36 +827,15 @@ def main(argv=None, payload=None):
                  f'<td>{(q.get("roe") or 0) * 100:.2f}%</td></tr>')
     h.append('</tbody></table></details>')
 
-    # ── 图：只留一张，细柱无网格 ──
+    # ── 趋势图（折叠）──
     cq = qs[-20:]
     labels = [quarter_label(q) for q in cq]
-    h.append('<h2>单季净利趋势<span class="unit">近 20 季</span></h2>')
+    h.append('<details><summary>展开单季净利趋势（近 20 季）</summary>')
     h.append(bar_chart(labels, [("单季净利", "#2d4a6e",
-                                 [(q.get("qNetProfit") or 0) / 1e8 if q.get("qNetProfit")
-                                  else None for q in cq])], height=180, unit="亿"))
-
-    # ── 结论 ──
-    last_payout = next((v for v in reversed(payout) if v is not None), None)
-    bad = [f[1] for f in flags if f[0] in ("bad", "warn")]
-    kv = []
-    if last_payout:
-        kv.append(f"分红率 {last_payout:.0f}%")
-    _bk = d.get("buybacks") or []
-    if _bk:
-        _n_cancel = sum(1 for x in _bk if x.get("kind") == "注销")
-        kv.append(f"回购 {len(_bk)} 条公告"
-                  + (f"（注销式 {_n_cancel} 条）" if _n_cancel else "（激励式，股本不变）"))
-    elif d.get("code"):
-        kv.append("回购：无")
-    if latest and latest.get("nim") is not None:
-        kv.append(f"净息差 {latest['nim']:.2f}%")
-    if latest and latest.get("provision") is not None:
-        kv.append(f"拨贷比 {latest['provision']:.2f}%")
-    h.append(f'<div class="verdict {"warn" if bad else "ok"}">'
-             f'<b>{"! 需留意：" + "、".join(bad) if bad else "✓ 无明显风险信号"}</b>')
-    if kv:
-        h.append(f'<div class="kv">{"　·　".join(kv)}</div>')
-    h.append('</div>')
+                                 [(q.get("qNetProfit") or 0) / 1e8
+                                  if q.get("qNetProfit") else None for q in cq])],
+                       height=180, unit="亿"))
+    h.append('</details>')
 
     # ── 公式说明：每个数字怎么来的，可逐条核对 ──
     FORMULAS = [
@@ -1346,55 +1042,6 @@ def build_all_simple(metrics=None, out_dir=None) -> int:
     return build_all(ns)
 
 
-def _peer_of(code, ind, meta_by_code, payloads, limit=4):
-    """同行业其他股 —— 从池子里自动找，不再硬编码。
-
-    原来 peers 写在单只的 JSON 里（4 家大行），换成 CSV 缓存后没人填，
-    整个「同业对比」区块就静默消失了。改成按行业反聚合，零额外请求，
-    而且任何行业都适用。
-    """
-    if not ind or ind == "—":
-        return []
-    import math
-    me = payloads.get(code) or {}
-    mq = (me.get("quarters") or [{}])[-1]
-    my_np = mq.get("netProfit") or 0
-
-    out = []
-    for other, m in meta_by_code.items():
-        if other == code or (m.get("行业") or "") != ind:
-            continue
-        pl = payloads.get(other)
-        if not pl:
-            continue
-        qs = pl.get("quarters") or []
-        latest = qs[-1] if qs else {}
-        div_by_year = yearly_dividends(pl.get("dividends") or [])
-        _, fy = full_year_dividend(div_by_year)
-        px = _num(m.get("最新价"))
-        roe = latest.get("roe")
-        margin = latest.get("npMargin")
-        out.append(dict(
-            code=other, name=m.get("名称") or other,
-            roe=(roe * 100) if roe is not None else None,
-            margin=(margin * 100) if margin is not None else None,
-            yld=(fy / px * 100) if (fy and px) else None,
-            pb=_num(m.get("PB_MRQ")), pe=_num(m.get("PE_TTM")),
-            _np=(latest.get("netProfit") or 0)))
-    # 按**规模**（归母净利）挑最接近的同行，而不是按股息率 ——
-    # 同业对比的意义是「和我可比的公司」，不是「高股息榜」。
-    # 用对数差是为了让 100 亿和 1000 亿的差距与 1000 亿和 1 万亿一样对待。
-    if my_np > 0:
-        def _dist(z):
-            return abs(math.log10(max(z["_np"], 1)) - math.log10(max(my_np, 1)))
-        out.sort(key=_dist)
-    else:
-        out.sort(key=lambda z: -(z["_np"] or 0))
-    for z in out:
-        z.pop("_np", None)
-    return out[:limit]
-
-
 def build_all(args) -> int:
     """池子里每只一页 + 索引页。"""
     cache_dir = os.path.join(BASE_DIR, "_fin_cache")
@@ -1433,9 +1080,6 @@ def build_all(args) -> int:
         pl = payloads[code]
         pl["_meta"] = meta_by_code[code]
         pl["_out"] = os.path.join(out_dir, f"{code}.html")
-        if not pl.get("peers"):
-            pl["peers"] = _peer_of(code, meta_by_code[code].get("行业"),
-                                   meta_by_code, payloads)
         try:
             main(["--quiet"], payload=pl)
             ok += 1
