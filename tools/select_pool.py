@@ -48,7 +48,8 @@ import http_util  # noqa: E402
 DC = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 PUSH = "https://push2.eastmoney.com/api/qt/clist/get"
 A_FS = "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048"
-HK_FS = "b:MK0144"
+HK_FS = "b:MK0144"          # 港股通（667）
+HK_FS_FULL = "m:116+t:3"    # 港股主板全部（2614，排除人民币柜台）
 FIELDS = "f12,f14,f2,f9,f20,f23,f37,f41,f45,f46,f49,f100"
 OUT_DIR = os.path.join(BASE_DIR, "_pool_cache")
 
@@ -96,17 +97,34 @@ def universe(session, fs, pages):
 
 
 def cheap(rows, min_mv, min_roe, min_gp, need_gp=True, code_len=6,
-          need_np=True, need_roe=True):
+          need_np=True, need_roe=True, fin_min_mv=None, fin_min_roe=6.0):
     """零请求初筛。刻意保守 —— 宁可多留，深抓阶段再细看。
 
     code_len：A 股 6 位（600519），港股 5 位（00700）—— 一开始统一按 6 位校验，
     结果港股 667 只全被当成坏行丢掉，初筛 0 只。
+
+    fin_min_mv：金融业（银行/保险/券商）单独通道。它们没有毛利率，
+    按「毛利率≥15%」筛会把整个金融板块排除掉 —— 第一版 A 股 300 只里
+    只剩 4 只金融股，就是这么来的。给了这个参数后，金融股跳过毛利率，
+    改用「市值≥fin_min_mv + ROE≥fin_min_roe」。
     """
     out = []
     for r in rows:
         if not r["code"] or len(r["code"]) != code_len:
             continue
         if "ST" in r["name"] or "退" in r["name"]:
+            continue
+        # 港股人民币柜台代码是 8xxxx（如 80883 中国海洋石油-R），
+        # 与港币柜台（00883）是同一家公司。不排除会在榜上出现两个同名标的。
+        if code_len == 5 and r["code"][0] == "8":
+            continue
+        is_fin = _fin(r["ind"])
+        if is_fin and fin_min_mv is not None:
+            if (r["mv"] or 0) < fin_min_mv:
+                continue
+            if need_roe and (r["roe"] or -99) < fin_min_roe:
+                continue
+            out.append(r)
             continue
         if (r["mv"] or 0) < min_mv:
             continue
@@ -229,12 +247,18 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="选股：A 股 + 港股")
     ap.add_argument("--n-a", type=int, default=300)
     ap.add_argument("--n-hk", type=int, default=100)
-    ap.add_argument("--pages-a", type=int, default=14, help="A 股翻几页（100/页）")
-    ap.add_argument("--pages-hk", type=int, default=8)
-    ap.add_argument("--min-mv-a", type=float, default=100)
-    ap.add_argument("--min-roe-a", type=float, default=8)
-    ap.add_argument("--min-gp-a", type=float, default=15)
-    ap.add_argument("--min-mv-hk", type=float, default=50)
+    ap.add_argument("--pages-a", type=int, default=60, help="A 股翻几页（100/页，60=全市场）")
+    ap.add_argument("--pages-hk", type=int, default=27, help="港股翻几页（27=主板全部）")
+    ap.add_argument("--hk-full", action="store_true", default=True,
+                    help="港股用主板全部而非仅港股通")
+    ap.add_argument("--hk-southbound", action="store_true",
+                    help="只取港股通（667 只）")
+    ap.add_argument("--fin-min-mv", type=float, default=100,
+                    help="金融业市值门槛（亿），0 表示不启用金融通道")
+    ap.add_argument("--min-mv-a", type=float, default=50)
+    ap.add_argument("--min-roe-a", type=float, default=6)
+    ap.add_argument("--min-gp-a", type=float, default=12)
+    ap.add_argument("--min-mv-hk", type=float, default=30)
     ap.add_argument("--no-deep", action="store_true", help="只跑初筛，不深抓")
     ap.add_argument("--refetch", action="store_true", help="忽略深抓缓存，重新抓")
     args = ap.parse_args(argv)
@@ -244,12 +268,15 @@ def main(argv=None):
 
     print("① 取候选池")
     a_all, a_total = universe(session, A_FS, args.pages_a)
-    hk_all, hk_total = universe(session, HK_FS, args.pages_hk)
+    hk_fs = HK_FS if args.hk_southbound else HK_FS_FULL
+    hk_all, hk_total = universe(session, hk_fs, args.pages_hk)
     print(f"   A 股 {len(a_all)}/{a_total} 只　港股通 {len(hk_all)}/{hk_total} 只")
 
-    a_c = cheap(a_all, args.min_mv_a, args.min_roe_a, args.min_gp_a)
+    a_c = cheap(a_all, args.min_mv_a, args.min_roe_a, args.min_gp_a,
+                fin_min_mv=(args.fin_min_mv or None))
     hk_c = cheap(hk_all, args.min_mv_hk, 0, 0, need_gp=False, code_len=5,
-                 need_np=False, need_roe=False)
+                 need_np=False, need_roe=False,
+                 fin_min_mv=(args.fin_min_mv or None))
     print(f"   初筛后：A 股 {len(a_c)} 只　港股 {len(hk_c)} 只")
 
     if args.no_deep:
@@ -327,6 +354,19 @@ def main(argv=None):
             print(f"   [{i}/{len(hk_c)}] …")
 
     # ── 选 ──
+    def _dedup(rows):
+        """同名只留得分最高的一个。港股同名柜台（A/H、港币/人民币）会重复。"""
+        seen, out = {}, []
+        for r in sorted(rows, key=lambda x: -x["score"]):
+            key = r["name"].replace("-R", "").strip()
+            if key in seen:
+                continue
+            seen[key] = True
+            out.append(r)
+        return out
+
+    a_rec = _dedup(a_rec)
+    hk_rec = _dedup(hk_rec)
     a_rec.sort(key=lambda x: -x["score"])
     hk_rec.sort(key=lambda x: -x["score"])
     sel_a, sel_hk = a_rec[:args.n_a], hk_rec[:args.n_hk]
