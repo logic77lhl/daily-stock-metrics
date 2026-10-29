@@ -734,9 +734,9 @@ def main(argv=None, payload=None):
         h.append('<h2>年度：业绩 ↔ 分红 ↔ 回购'
                  '<span class="unit">同一财务年度一行</span></h2>')
         h.append('<table><thead><tr><th class="k">年度</th><th>营收(亿)</th>'
-                 '<th>同比</th><th>归母净利</th><th>同比</th><th>ROE</th>'
-                 '<th>净利率</th><th>每股分红</th><th>分红率</th><th>股息率</th>'
-                 '<th>回购</th></tr></thead><tbody>')
+                 '<th>归母净利(亿)</th><th>ROE</th><th>每股分红</th>'
+                 '<th>分红率</th><th>股息率</th><th>回购</th>'
+                 '</tr></thead><tbody>')
         for x in _ar:
             mark = "" if x["complete"] else "*"
             cls = ' class="na"' if not x["complete"] else ""
@@ -755,11 +755,8 @@ def main(argv=None, payload=None):
                     f'style="color:#c92a2a;cursor:help">⚠</span>') if x.get("flag") else ""
             h.append(f'<tr><td class="k">{x["year"]}{mark} {warn}</td>')
             h.append(f'<td>{x["revenue"]:,.0f}</td>' if x["revenue"] else '<td class="na">—</td>')
-            h.append(_p(x["yoyRev"], sign=True))
             h.append(f'<td>{x["netProfit"]:,.0f}</td>' if x["netProfit"] else '<td class="na">—</td>')
-            h.append(_p(x["yoyNi"], sign=True))
             h.append(_p(x["roe"], nd=2))
-            h.append(_p(x["margin"]))
             h.append(f'<td>{x["dps"]:.4f}</td>' if x["dps"] else '<td class="na">—</td>')
             h.append(_p(x["payout"], nd=0))
             h.append(_p(x["yld"], nd=2))
@@ -781,6 +778,18 @@ def main(argv=None, payload=None):
         if _bad:
             obs.append("⚠ " + "；".join(
                 f'{x["year"]} {x["flag"]}' for x in _bad))
+        # 同比与净利率折起来：净利率与 ROE 高度相关，同比看趋势用不着每年两列
+        h.append('<details><summary>展开营收/净利同比与净利率</summary>')
+        h.append('<table><thead><tr><th class="k">年度</th><th>营收同比</th>'
+                 '<th>净利同比</th><th>净利率</th></tr></thead><tbody>')
+        for x in _ar:
+            mk = "" if x["complete"] else "*"
+            h.append(f'<tr><td class="k">{x["year"]}{mk}</td>')
+            h.append(_p(x["yoyRev"], sign=True))
+            h.append(_p(x["yoyNi"], sign=True))
+            h.append(_p(x["margin"]))
+            h.append('</tr>')
+        h.append('</tbody></table></details>')
         h.append(f'<div class="fn">{"　·　".join(obs)}<br>'
                  '业绩取年报（年内累计）。每股分红按 <b>财务年度</b> 归集（年报+中报相加），'
                  '不按除权日。分红率 = 每股分红 × 总股本 ÷ 归母净利；'

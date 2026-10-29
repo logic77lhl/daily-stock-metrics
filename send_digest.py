@@ -256,9 +256,25 @@ def build_html(iso: str, fragments, included, skipped) -> str:
         _n_ev = 0 if _first else len(_ev)
     except Exception:
         _n_ev = 0
+    # 降级市场数：名单来自历史池时，行业/成交额等列可能整列为空
+    _deg = []
+    try:
+        import quality
+        for key, spec in reports.MARKET_SPECS.items():
+            if spec["label"] not in included:
+                continue
+            done = os.path.join(BASE_DIR, spec["out_dir"], iso, "DONE")
+            if os.path.exists(done):
+                info = quality.read_done(done)
+                if str(info.get("degraded", "")).lower() == "true":
+                    _deg.append(spec["label"])
+    except Exception:
+        pass
     _head = (f'今天：{len(included)} 个市场 ｜ '
              + (f'<b style="color:#c92a2a">{_n_ev} 条基本面变化</b>' if _n_ev
-                else '无基本面变化'))
+                else '无基本面变化')
+             + (f' ｜ <b style="color:#f0c36d">{len(_deg)} 个市场名单降级</b>'
+                if _deg else ''))
     return (
         '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
@@ -321,11 +337,14 @@ def main(argv=None) -> int:
           + (f"；跳过 {'、'.join(skipped)}" if skipped else "")
           + f"；正文 {len(html) / 1024:.0f}KB，附件 {len(attachments)} 个")
 
-    if args.dry_run:
+    # DSM_NO_SEND=1：只生成预览、不发送。给「先别发」这种阶段性要求用 ——
+    # 比删掉步骤好：代码路径仍然每天跑一遍，出问题当场能看到。
+    if args.dry_run or os.environ.get("DSM_NO_SEND") == "1":
         out = args.out or os.path.join(BASE_DIR, f"_digest_preview_{iso}.html")
         with open(out, "w", encoding="utf-8") as fh:
             fh.write(html)
-        print(f"[邮件] dry-run，已写入 {out}")
+        why = "dry-run" if args.dry_run else "DSM_NO_SEND=1（暂停发信）"
+        print(f"[邮件] {why}，已写入 {out}（未发送）")
         return 0
 
     import send_email

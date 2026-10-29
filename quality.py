@@ -83,6 +83,29 @@ def assess(metrics_csv, expected_rows: int, fetch_stats: dict | None = None,
     return QualityReport(ok, checks, rows, ok_ratio, fill)
 
 
+def missing_fields(metrics_csv, threshold: float = 0.5, ignore=()) -> list:
+    """哪些列基本是空的。降级时用来留痕。
+
+    质量门只看 KEY_COLS（日线J/最新价/涨跌幅），所以「行业」「成交额」整列为空
+    它照样判通过。这个函数补上那个盲区 —— 不是用来卡门，是用来**记录**。
+    """
+    try:
+        import pandas as pd
+        df = pd.read_csv(metrics_csv, dtype=str)
+    except Exception:
+        return []
+    out = []
+    for col in df.columns:
+        if col in ignore:
+            continue
+        try:
+            if float(df[col].notna().mean()) < threshold:
+                out.append(str(col))
+        except Exception:
+            continue
+    return out
+
+
 def write_done(day_dir, market: str, today: str, report: QualityReport,
                extra: dict | None = None) -> Path:
     """只在质量门通过时调用。内容即体检报告，工作流会读它。"""

@@ -255,6 +255,17 @@ def run(spec: MarketSpec) -> int:
             return quality.fail(day_dir, spec.label, report)
 
         extra = {"universe": universe}
+        # 降级必须留痕。DONE 里一直有 universe=pool-fallback，但没人读，
+        # 于是连续两天降级而站点/邮件都像正常的一天。
+        if universe == "pool-fallback":
+            extra["degraded"] = "true"
+            miss = quality.missing_fields(metrics_csv)
+            if miss:
+                extra["missing_fields"] = ",".join(miss)
+            print(f"::warning::{spec.label} 名单降级为观察池历史"
+                  f"（缺失列：{','.join(miss) if miss else '无'}）")
+        else:
+            extra["degraded"] = "false"
         if spec.rich:
             extra["stats_success_ratio"] = f"{stats['success_ratio']:.4f}"
         quality.succeed(day_dir, spec.label, iso, report, extra=extra)

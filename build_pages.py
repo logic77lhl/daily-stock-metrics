@@ -163,6 +163,43 @@ def stale_market_warnings():
         if not os.path.exists(done):
             out.append(f"{label}：最近一个已收盘交易日 {target.isoformat()} 没有数据"
                        f"（数据源故障，或采集被跳过）")
+            continue
+    return out
+
+
+def degraded_market_warnings():
+    """名单降级（数据是当天的，但股票名单来自观察池历史）。
+
+    与「数据过期」是两件事，措辞必须分开：过期是「展示的是旧数据」，
+    降级是「数据是今天的，但名单成分可能滞后、个别列可能为空」。
+    混成一句「数据已过期」会让读者以为今天没数据。
+    """
+    try:
+        import trading_calendar
+        import quality
+    except Exception:
+        return []
+    out = []
+    for label, out_dir, market in (("A股", "output", "A"),
+                                   ("ETF", "output_etf", "A"),
+                                   ("港股通", "output_hk", "HK")):
+        try:
+            target = trading_calendar.latest_closed_trading_day(market=market)
+        except Exception:
+            continue
+        if target is None:
+            continue
+        done = os.path.join(BASE_DIR, out_dir, target.isoformat(), "DONE")
+        if not os.path.exists(done):
+            continue
+        try:
+            info = quality.read_done(done)
+        except Exception:
+            continue
+        if str(info.get("degraded", "")).lower() == "true":
+            miss = info.get("missing_fields") or ""
+            out.append(f"{label}（{target.isoformat()}）"
+                       + (f" 缺失列：{miss}" if miss else ""))
     return out
 
 
@@ -918,6 +955,20 @@ def build_index(dates, extras, ctx):
     # 数据落后于最近一个已收盘交易日 —— 单独一条醒目的红条。
     # 不这样做的代价已经付过：站点整整三周停在 2026-09-18，而页面上
     # 没有任何提示，Actions 也全绿。
+    # 名单降级 —— 黄色，措辞与「过期」严格区分
+    degraded = ctx.get("degraded") or []
+    degraded_html = ""
+    if degraded:
+        items = "".join(f"<li>{html.escape(str(d))}</li>" for d in degraded)
+        degraded_html = (
+            '<div class="banner" style="max-width:1200px;margin:12px auto;padding:10px 14px;'
+            'border:1px solid #f0c36d;background:#fff8e6;border-radius:8px;'
+            'font-size:13px;line-height:1.7;color:#7a4b00">'
+            '⚠ <b>名单降级</b> —— 名单接口不可用，已改用观察池历史名单。'
+            '<b>指标仍是当日实抓</b>，但名单成分可能滞后、下列列可能为空：'
+            f'<ul style="margin:6px 0 0;padding-left:20px">{items}</ul></div>'
+        )
+
     stale = ctx.get("stale") or []
     stale_html = ""
     if stale:
@@ -1070,6 +1121,7 @@ footer{{text-align:center;color:#98a1b3;font-size:11.5px;padding:16px 12px 28px;
 {banner_html}
 </div></header>
 <main>
+{degraded_html}
 {stale_html}
 <div class="kpi-row">{ctx.get("kpi_chips", "")}</div>
 {breadth_card}
@@ -1132,9 +1184,12 @@ def main():
     ctx = build_dashboard_ctx(latest)
     # 数据新鲜度检查：站点内容落后于「最近一个已收盘交易日」时必须在页面上可见
     ctx["stale"] = stale_market_warnings()
+    ctx["degraded"] = degraded_market_warnings()
     for warning in ctx.get("warnings", []):
         # 让 workflow 日志里也能直接看到，而不是只有翻 HTML 才发现
         print(f"::warning::站点缺块：{warning}")
+    for warning in ctx.get("degraded") or []:
+        print(f"::warning::名单降级：{warning}")
     for warning in ctx["stale"]:
         print(f"::warning::数据过期：{warning}")
     with open(os.path.join(DOCS_DIR, "index.html"), "w", encoding="utf-8") as f:
