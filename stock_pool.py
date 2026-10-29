@@ -30,8 +30,14 @@ def load(path):
 
 
 def _prune(pool, today):
+    """按 KEEP_DAYS 淘汰长期没出现的标的。
+
+    **`curated: true` 的永不淘汰** —— 它们是 `tools/select_pool.py` 主动选定的策展池，
+    不是「最近出现过」的滚动追踪池。混在一起会让策展标的在一年后静默消失。
+    """
     cutoff = (pd.Timestamp(today) - pd.Timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
-    return {c: e for c, e in pool.items() if str(e.get("最近", "")) >= cutoff}
+    return {c: e for c, e in pool.items()
+            if e.get("curated") or str(e.get("最近", "")) >= cutoff}
 
 
 def merge(path, list_df, today):

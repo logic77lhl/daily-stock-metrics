@@ -72,7 +72,15 @@ def secucode(code: str) -> str:
     return f"{code}.{'SH' if code[0] == '6' else 'SZ'}"
 
 
-def _fetch(session, report, filt, size=500, sort="REPORT_DATE", asc=True):
+def _fetch(session, report, filt, size=500, sort="REPORT_DATE", asc=True,
+           max_pages=None):
+    """翻页取数。max_pages 限制最多翻几页 —— 只想要「最新一行」时必须传 1。
+
+    踩过的坑：`fetch_one` 查名称/行业用 `size=1` 想要最新一条，
+    但服务端按「总条数 ÷ 1」算出 `pages=120`，于是**为了拿 1 行翻了 120 页**，
+    实测每只股票因此多花 **12~15 秒**（其余请求只要 0.1~0.9 秒）。
+    116 只的日更会白花约 23 分钟。
+    """
     out, page = [], 1
     while True:
         params = {"reportName": report, "columns": "ALL", "pageNumber": str(page),
@@ -84,6 +92,8 @@ def _fetch(session, report, filt, size=500, sort="REPORT_DATE", asc=True):
         res = (r.json().get("result") or {})
         data = res.get("data") or []
         out.extend(data)
+        if max_pages and page >= max_pages:
+            break
         if page >= (res.get("pages") or 1) or not data:
             break
         page += 1
@@ -145,7 +155,7 @@ def fetch_one(session, code: str) -> tuple:
     info = {}
     try:
         lico = _fetch(session, "RPT_LICO_FN_CPD", f'(SECUCODE="{sc}")', size=1,
-                      sort="REPORTDATE", asc=False)
+                      sort="REPORTDATE", asc=False, max_pages=1)
         if lico:
             info = dict(name=lico[0].get("SECURITY_NAME_ABBR"),
                         industry=lico[0].get("BOARD_NAME") or lico[0].get("PUBLISHNAME"))
@@ -308,9 +318,25 @@ def upsert(q, d, p, rows, divs, preds):
 
 
 # ─────────────────────────── 池子 / 最新报告期 ───────────────────────────
+def _curated(market="A") -> list:
+    """策展池：`tools/select_pool.py` 选出来的标的。
+
+    与 watchlist.json 分开是刻意的 —— 那个是**滚动追踪池**（每天按市值取前 100，
+    365 天没出现就淘汰），策展池是**主动选定**的，不该被淘汰机制清掉。
+    """
+    p = os.path.join(BASE_DIR, "_pool_cache", "universe.json")
+    if not os.path.exists(p):
+        return []
+    try:
+        with open(p, encoding="utf-8") as fh:
+            return list((json.load(fh) or {}).get(market) or [])
+    except Exception:
+        return []
+
+
 def pool_codes() -> list:
-    """观察池 = 各市场 watchlist.json 的并集，只取 A 股 6 位数字代码。"""
-    codes = []
+    """观察池 = 滚动追踪池 ∪ 策展池，只取 A 股 6 位数字代码。"""
+    codes = list(_curated("A"))
     for sub in ("output", "output_etf", "output_hk"):
         f = os.path.join(BASE_DIR, sub, "watchlist.json")
         if os.path.exists(f):
@@ -324,6 +350,12 @@ def pool_codes() -> list:
     return sorted({str(c) for c in codes
                    if len(str(c)) == 6 and str(c).isdigit()
                    and not str(c).startswith(ETF_PREFIX)})
+
+
+def hk_pool_codes() -> list:
+    """港股策展池（5 位代码）。港股通/主板的滚动池不并进来 ——
+    港股财务走的是另一套报表（RPT_HKF10_FN_MAININDICATOR）。"""
+    return [str(c).zfill(5) for c in _curated("HK")]
 
 
 def codes_with_report(session, report_date):

@@ -422,7 +422,9 @@ def annual_rows(d, years=10):
             roe=(a.get("roe") or 0) * 100 if a.get("roe") is not None else None,
             margin=(npf / rev * 100) if (rev and npf) else None,
             dps=dv,
-            payout=(dv * share / npf * 100) if (dv and share and npf) else None,
+            # 港股没有每股分红，只有源给的派息率（DIVI_RATIO）—— 优先用它
+            payout=((a.get("payout") or 0) * 100) if a.get("payout") is not None
+            else ((dv * share / npf * 100) if (dv and share and npf) else None),
             yld=(dv / yr_avg[str(y)] * 100) if (dv and yr_avg.get(str(y))) else None,
             bk_cancel=bk.get(y, {}).get("注销", 0),
             bk_prog=bk.get(y, {}).get("进展", 0)))
@@ -491,7 +493,12 @@ def main(argv=None, payload=None):
 
     name = meta.get("名称") or code
     ind = meta.get("行业") or "—"
-    last_px = meta.get("最新价") or (d["prices"]["close"][-1] if d["prices"]["close"] else None)
+    # 三档兜底：metrics 的「最新价」→ 单只 JSON 的日线末值 → None。
+    # 第三档是必须的：策展池里还没纳入日更的股票两者都没有，
+    # 直接 d["prices"] 会 KeyError，263 只页面全渲染失败。
+    _px_src = d.get("prices") or {}
+    _px_close = _px_src.get("close") or []
+    last_px = meta.get("最新价") or (_px_close[-1] if _px_close else None)
     pe_pct = f'{meta["PE历史分位%"]}%' if meta.get("PE历史分位%") else "—"
     pb_pct = f'{meta["PB历史分位%"]}%' if meta.get("PB历史分位%") else "—"
     latest = qs[-1] if qs else None
@@ -711,6 +718,8 @@ def main(argv=None, payload=None):
     # 用**完整年度**分红 ÷ 现价，不用滚动 12 个月：一年两次分红的过渡期里，
     # 滚动窗口会挤进三次派息（0.1414+0.1689+0.1511=0.4614 → 5.43%，高估）。
     yld_now = (_fy_a / float(last_px) * 100) if (_fy_a and last_px) else None
+    if yld_now is None and d.get("yld_now"):
+        yld_now = d["yld_now"]          # 港股：源直接给当前股息率
     h.append(f'<span class="meta">'
              + (f'股息率 <b style="color:#101828">{yld_now:.2f}%</b>'
                 f'<span style="color:#98a2b3">（{_fy_y} 年度 ÷ 现价）</span> ｜ '
@@ -807,6 +816,11 @@ def main(argv=None, payload=None):
     if _vr is not None:
         _bits.append(f'量比 {_vr:.2f}')
     _md = (meta.get("数据日期") or "")[:10]
+    if meta.get("_no_metrics"):
+        h.append('<p class="strip"><span class="strip-k">技术面</span>'
+                 '<span style="color:#8a93a5">未纳入日更采集 —— '
+                 '本页只有财务数据（年度串联、ROE 趋势完整可用），'
+                 '估值分位与技术位置待当日行情补齐</span></p>')
     if _bits:
         h.append(f'<p class="strip"><span class="strip-k">技术面</span>'
                  f'{"　·　".join(_bits)}'
@@ -910,7 +924,14 @@ def main(argv=None, payload=None):
             h.append(_p(x["margin"]))
             h.append('</tr>')
         h.append('</tbody></table></details>')
-        h.append(f'<div class="fn">{"　·　".join(obs)}<br>'
+        _hk_note = (
+            '⚠ <b>港股的分红历史源不提供可靠序列</b>：`DPS_HKD` 与 `DIVIDEND_RATE` '
+            '在所有报告期都是同一个快照值，`DIVI_RATIO` 在不同股票上含义不一致'
+            '（新华保险 2017 给 1.63、南山铝业 2021 给 21390519）。'
+            '所以「每股分红 / 分红率 / 股息率」三列对港股一律显示「—」，'
+            '这是拿不到，不是没有。当前股息率见页头。<br>'
+            if d.get("market") == "HK" else '')
+        h.append(f'<div class="fn">{"　·　".join(obs)}<br>' + _hk_note +
                  '业绩取年报（年内累计）。每股分红按 <b>财务年度</b> 归集（年报+中报相加），'
                  '不按除权日。分红率 = 每股分红 × 总股本 ÷ 归母净利；'
                  '股息率 = 每股分红 ÷ 当年日均价。回购按公告日年份归集，'
@@ -1202,6 +1223,49 @@ def build_all(args) -> int:
 
     out_dir = args.out or os.path.join(BASE_DIR, "docs", "基本面")
     os.makedirs(out_dir, exist_ok=True)
+
+    # ── 港股：从 hk_fundamentals.csv 适配成同一形状（字段映射在 hk_payload.py）──
+    try:
+        import hk_payload
+        hk = hk_payload.load_hk_payloads(cache_dir)
+        if hk:
+            payloads.update(hk)
+            print(f"  港股 payload {len(hk)} 只")
+    except Exception as exc:
+        print(f"[warn] 港股 payload 加载失败：{type(exc).__name__}: {exc}")
+
+    # ── 没有当日 metrics 的股票：用选股缓存兜底 ──
+    # 策展池扩到 300 只后，日更还没覆盖到它们（run_daily 只抓 watchlist 展开清单，
+    # 且盘中会拒绝采集）。这些股票先建「只有财务数据」的页面 ——
+    # 年度串联表和 ROE 趋势是完整可用的，只是缺技术面与估值分位。
+    # 页面会明确标注，不假装数据齐全。
+    fallback = {}
+    sel = os.path.join(BASE_DIR, "_pool_cache", "selected_a.csv")
+    if os.path.exists(sel):
+        for r in _read_csv(sel):
+            c = str(r.get("code", "")).zfill(6)
+            fallback[c] = {"代码": c, "名称": (r.get("name") or "").strip(),
+                           "行业": (r.get("ind") or "").strip(),
+                           "PE_TTM": r.get("pe"), "PB_MRQ": r.get("pb"),
+                           "_no_metrics": True}
+    # 港股：代码 5 位，不在 A 股 metrics 里 —— 用选股缓存 + payload 自身的 PE/PB 兜底
+    sel_hk = os.path.join(BASE_DIR, "_pool_cache", "selected_hk.csv")
+    if os.path.exists(sel_hk):
+        for r in _read_csv(sel_hk):
+            c = str(r.get("code", "")).zfill(5)
+            if c in payloads and c not in meta_by_code:
+                meta_by_code[c] = {"代码": c, "名称": (r.get("name") or "").strip(),
+                                   "行业": (r.get("ind") or "").strip(),
+                                   "PE_TTM": r.get("pe"), "PB_MRQ": r.get("pb"),
+                                   "市场": "港股", "_no_metrics": True}
+
+    filled = 0
+    for c, m in fallback.items():
+        if c in payloads and c not in meta_by_code:
+            meta_by_code[c] = m
+            filled += 1
+    if filled:
+        print(f"  {filled} 只无当日 metrics，用选股缓存兜底（页面会标注）")
 
     codes = sorted(c for c in meta_by_code if c in payloads)
     summary, ok, fail = [], 0, 0
