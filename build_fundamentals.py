@@ -1186,6 +1186,19 @@ def _write_index(out_dir, rows, metrics):
          f'<header><div class="title">基本面榜单<span class="code">{len(rows)} 只</span></div>'
          f'<div class="prow"><span class="meta">财务 _fin_cache ｜ 技术面与估值分位 {date}'
          f' ｜ 点名字进个股页</span></div></header>',
+         # 站内导航 —— 之前没有入口，用户只能靠记住文件名
+         '<div class="nav" style="margin:18px 0 4px;display:flex;gap:10px;flex-wrap:wrap">'
+         '<a href="榜单.html" style="font-size:12.5px;color:#175cd3;text-decoration:none;'
+         'border:1px solid #d0d5dd;border-radius:999px;padding:5px 13px">四信号分组榜单</a>'
+         '<a href="格雷厄姆.html" style="font-size:12.5px;color:#175cd3;text-decoration:none;'
+         'border:1px solid #d0d5dd;border-radius:999px;padding:5px 13px">格雷厄姆七条</a>'
+         '<a href="AH比价.html" style="font-size:12.5px;color:#175cd3;text-decoration:none;'
+         'border:1px solid #d0d5dd;border-radius:999px;padding:5px 13px">A/H 比价</a>'
+         '<a href="定投回测.html" style="font-size:12.5px;color:#175cd3;text-decoration:none;'
+         'border:1px solid #d0d5dd;border-radius:999px;padding:5px 13px">定投回测</a>'
+         '<a href="港股名单.html" style="font-size:12.5px;color:#175cd3;text-decoration:none;'
+         'border:1px solid #d0d5dd;border-radius:999px;padding:5px 13px">港股 100 只</a>'
+         '</div>',
          '<h2>按红灯数排序<span class="unit">红 = 估值偏高 / ROE 走弱 / 周J 超买</span></h2>',
          '<div class="scroll"><table><thead><tr><th class="k">标的</th><th>行业</th>'
          '<th>最新价</th><th>PE分位</th><th>PB分位</th><th>股息率</th><th>ROE</th>'

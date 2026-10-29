@@ -94,6 +94,8 @@ STEPS: tuple[Step, ...] = (
     Step("合并摘要邮件", ("send_digest.py",), 300, True, group=4),
     Step("回测", ("backtest.py",), 900, True, group=4),
     Step("价值标的", ("build_value.py",), 600, True, group=4),
+    # A/H 比价：只读 _pool_cache/selected_*.csv，不发网络请求，几毫秒
+    Step("A/H比价", ("tools/ah_compare.py",), 120, True, group=4),
     # ── 第 5 组：裁剪（必须独占）───────────────────────────────────────
     # 裁剪会 `git rm` 掉过期日期目录，而**建站按最终存在的目录生成归档页** ——
     # 两者并行就会产出指向「已被裁掉的报告」的死链。

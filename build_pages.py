@@ -1219,6 +1219,12 @@ def main():
             _sys.path.insert(0, _tools)
         import verdict_board
         verdict_board.main([])
+
+        # 补充页：格雷厄姆七条汇总 / A/H 比价 / 定投回测。
+        # 这些数据早就算好了（graham.py / tools/ah_compare.py / tools/dca_batch.py），
+        # 但之前只有命令行工具自己读，页面上一个入口都没有 —— 算完就丢了。
+        import extra_pages
+        extra_pages.main()
     except Exception as e:
         print(f"[warn] 分组榜单构建失败: {type(e).__name__}: {e}")
 
