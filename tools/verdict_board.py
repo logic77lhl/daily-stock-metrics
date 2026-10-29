@@ -47,6 +47,15 @@ h2{margin:44px 0 0;padding-top:16px;border-top:1px solid #e6e8eb;
   font-size:14px;font-weight:660}
 h2 .cnt{font-weight:400;color:#8b919b;font-size:12.5px;margin-left:10px}
 h2 .hint{font-weight:400;color:#8b919b;font-size:12px;margin-left:10px}
+h3{margin:26px 0 0;font-size:13px;font-weight:620;color:#3d4450}
+h3 .cnt{font-weight:400;color:#9aa0aa;font-size:11.5px;margin-left:8px}
+details{margin-top:18px}
+summary{cursor:pointer;font-size:13px;color:#24425c;list-style:none;
+  padding:6px 0;display:inline-flex;align-items:center;gap:7px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"";width:5px;height:5px;border-right:1px solid currentColor;
+  border-bottom:1px solid currentColor;transform:rotate(45deg)}
+details[open] summary::after{transform:rotate(-135deg)}
 table{width:100%;border-collapse:collapse;margin-top:14px;
   font-size:13.5px;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
 th,td{padding:9px 10px;text-align:right;border-bottom:1px solid #eff1f4;white-space:nowrap}
@@ -210,47 +219,95 @@ def main(argv=None):
          '<meta name="viewport" content="width=device-width,initial-scale=1">',
          '<title>全池分组榜单</title>', f'<style>{CSS}</style></head><body>',
          '<div class="wrap">']
+    _day = os.path.basename(metrics).replace("metrics_", "").replace(".csv", "")
     h.append('<h1>全池分组榜单<small>按四信号分组</small></h1>')
-    h.append(f'<div class="meta">技术面 {os.path.basename(metrics).replace("metrics_","").replace(".csv","")}'
-             f' ｜ 财务取最近年报 ｜ 共 {len(rows)} 只</div>')
-    if prev_day and any(moves.values()):
-        _mv = "　".join(f'{k} <span class="n">{len(v)}</span> 只'
-                        for k, v in moves.items() if v)
-        h.append(f'<p class="note" style="margin-top:10px">与 {prev_day} 相比：{_mv}</p>')
-    h.append(f'<p class="lede">今天有 <span class="n">{cnt.get("值得看",0)}</span> 只值得看、'
-             f'<span class="n">{cnt.get("高位",0)}</span> 只在高位、'
-             f'<span class="n">{cnt.get("中性",0)}</span> 只中性。'
-             f'分组规则：估值（PE 分位）、盈利（ROE 近 5 年变化）、'
-             f'现金回报（股息率 vs 自身历史中位）、技术位置（三周期 J）。</p>')
-    for g, hint in GROUPS:
-        grp = [r for r in rows if r["verdict"] == g]
-        h.append(f'<h2>{g}<span class="cnt">{len(grp)} 只</span>'
-                 f'<span class="hint">{hint}</span></h2>')
-        if not grp:
-            h.append('<p class="note">（空）</p>')
-            continue
-        h.append('<table><thead><tr><th>标的</th><th>行业</th><th>PE分位</th>'
-                 '<th>股息率</th><th>历史中位</th><th>ROE变化</th><th>周J</th>'
-                 '<th>理由</th></tr></thead><tbody>')
-        for r in grp:
+    h.append(f'<div class="meta">技术面 {_day} ｜ 财务取最近年报 ｜ 共 {len(rows)} 只</div>')
+
+    # ── 首屏：只讲迁移 ──
+    _moved = [r for r in rows if r.get("move")]
+    h.append('<h2>今日迁移<span class="cnt">'
+             + (f'{len(_moved)} 只换了位置' if _moved else '无')
+             + '</span><span class="hint">与上一个交易日相比</span></h2>')
+    if _moved:
+        h.append('<table><thead><tr><th>标的</th><th>变化</th><th>行业</th>'
+                 '<th>PE分位</th><th>股息率</th><th>ROE变化</th><th>周J</th>'
+                 '</tr></thead><tbody>')
+        for r in _moved:
+            mv = r["move"]
+            up = mv.startswith("新进")
+            col = "#24425c" if mv in ("新进值得看", "跌出高位") else "#9aa0aa"
+            arrow = "↑" if up else "↓"
             pe = f'{r["pe_pct"]:.1f}%' if r.get("pe_pct") is not None else "—"
             yl = f'{r["yld"]:.2f}%' if r.get("yld") else "—"
-            ym = f'{r["yld_med"]:.2f}%' if r.get("yld_med") else "—"
             rd = f'{r["roe_delta"]:+.1f}pp' if r.get("roe_delta") is not None else "—"
             jw = f'{r["jw"]:.0f}' if r.get("jw") is not None else "—"
-            cls = "pos" if (r.get("roe_delta") or 0) > 0 else "neg"
-            mv = r.get("move") or ""
-            tag = (f'<span style="color:#24425c;font-size:11px;margin-left:6px">'
-                   f'{"↑ " if mv.startswith("新进") else "↓ "}{mv}</span>') if mv else ""
             h.append(f'<tr><td><a href="{r["code"]}.html">{r["name"]}</a>'
-                     f'<span class="mut"> {r["code"]}</span>{tag}</td>'
-                     f'<td class="ind">{r["ind"]}</td><td>{pe}</td>'
-                     f'<td>{yl}</td><td class="mut">{ym}</td>'
-                     f'<td class="{cls}">{rd}</td><td>{jw}</td>'
-                     f'<td class="ind">{r["reason"]}</td></tr>')
+                     f'<span class="mut"> {r["code"]}</span></td>'
+                     f'<td style="color:{col};font-weight:620">{arrow} {mv}</td>'
+                     f'<td class="ind">{r["ind"]}</td><td>{pe}</td><td>{yl}</td>'
+                     f'<td>{rd}</td><td>{jw}</td></tr>')
         h.append('</tbody></table>')
+    else:
+        h.append('<p class="note">今天没有标的在分组之间移动。'
+                 '迁移才是信号 —— 一只票从高位掉进「值得看」的那一天，比它'
+                 '一直待在「值得看」更值得看。</p>')
+
+    h.append(f'<p class="lede">当前分布：'
+             f'<span class="n">{cnt.get("值得看",0)}</span> 只值得看、'
+             f'<span class="n">{cnt.get("高位",0)}</span> 只高位、'
+             f'<span class="n">{cnt.get("中性",0)}</span> 只中性。</p>')
+
+    # ── 值得看：按行业分组，每组最多 3 只 ──
+    def _row_html(r):
+        pe = f'{r["pe_pct"]:.1f}%' if r.get("pe_pct") is not None else "—"
+        yl = f'{r["yld"]:.2f}%' if r.get("yld") else "—"
+        ym = f'{r["yld_med"]:.2f}%' if r.get("yld_med") else "—"
+        rd = f'{r["roe_delta"]:+.1f}pp' if r.get("roe_delta") is not None else "—"
+        jw = f'{r["jw"]:.0f}' if r.get("jw") is not None else "—"
+        cls = "pos" if (r.get("roe_delta") or 0) > 0 else "neg"
+        mv = r.get("move") or ""
+        tag = (f'<span style="color:#24425c;font-size:11px;margin-left:6px">'
+               f'{"↑" if mv.startswith("新进") else "↓"} {mv}</span>') if mv else ""
+        return (f'<tr><td><a href="{r["code"]}.html">{r["name"]}</a>'
+                f'<span class="mut"> {r["code"]}</span>{tag}</td>'
+                f'<td class="ind">{r["ind"]}</td><td>{pe}</td><td>{yl}</td>'
+                f'<td class="mut">{ym}</td><td class="{cls}">{rd}</td>'
+                f'<td>{jw}</td><td class="ind">{r["reason"]}</td></tr>')
+
+    def _table(rs):
+        out = ['<table><thead><tr><th>标的</th><th>行业</th><th>PE分位</th>'
+               '<th>股息率</th><th>历史中位</th><th>ROE变化</th><th>周J</th>'
+               '<th>理由</th></tr></thead><tbody>']
+        out.extend(_row_html(r) for r in rs)
+        out.append('</tbody></table>')
+        return "".join(out)
+
+    grp = [r for r in rows if r["verdict"] == "值得看"]
+    h.append(f'<h2>值得看<span class="cnt">{len(grp)} 只</span>'
+             f'<span class="hint">≥2 项正向且无负面 · 按行业分组，每组最多 3 只</span></h2>')
+    by_ind = {}
+    for r in grp:
+        by_ind.setdefault(r["ind"], []).append(r)
+    for ind in sorted(by_ind, key=lambda k: -len(by_ind[k])):
+        rs = by_ind[ind]
+        h.append(f'<h3>{ind}<span class="cnt">{len(rs)} 只</span></h3>')
+        h.append(_table(rs[:3]))
+        if len(rs) > 3:
+            h.append(f'<details><summary>展开该行业其余 {len(rs)-3} 只</summary>')
+            h.append(_table(rs[3:]))
+            h.append('</details>')
+
+    # ── 高位 / 中性：整体折叠 ──
+    for g, hint in (("高位", "≥2 项负面 —— 偏贵 / 盈利走弱 / 技术超买"),
+                    ("中性", "信号混合，没有明显方向")):
+        gs = [r for r in rows if r["verdict"] == g]
+        h.append(f'<details><summary>{g} {len(gs)} 只 —— {hint}</summary>')
+        h.append(_table(gs))
+        h.append('</details>')
+
     h.append('<p class="note">「值得看」不等于「该买」—— 它只说明四项位置里有两项以上偏正面。'
-             '反过来，「高位」也不等于「该卖」，只是位置差。判断要结合你自己的成本与期限。</p>')
+             '反过来，「高位」也不等于「该卖」，只是位置差。'
+             '要看真决策，点进个股页确认那张年度串联表：业绩有没有在恶化。</p>')
     h.append(f'<div class="ft">数据：东财（季频指标/分红/回购）+ 本地估值序列 ｜ '
              f'生成于 {date.today():%Y-%m-%d}<br>仅为位置描述，不构成投资建议。</div>')
     h.append('</div></body></html>')
