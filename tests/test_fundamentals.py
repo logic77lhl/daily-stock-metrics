@@ -172,6 +172,66 @@ def test_golden_icbc_from_cache():
               f"营收 {r2025['revenue']:.0f} 净利 {r2025['netProfit']:.0f}")
 
 
+
+def test_state_file_is_line_based_and_union_safe():
+    """状态文件必须是行式文本，且 union 合并（两份拼一起）后读取仍正确。
+
+    背景：`_seen.json` 每天提交，CI 与本地同时跑会冲突。JSON 不能自动合并，
+    行式可以 —— 重复行由读取时的 set() 去掉。这条测试就是守这个前提。
+    """
+    import tempfile
+    import fundamentals_changes as fc
+
+    with tempfile.TemporaryDirectory() as td:
+        old_txt, old_cache = fc.STATE_TXT, fc.CACHE
+        fc.CACHE = td
+        fc.STATE_TXT = os.path.join(td, "_seen.txt")
+        try:
+            cur = dict(reports={"601398": "2026-06-30"},
+                       dividends=["601398|2025-12-31|2026-05-13"],
+                       buybacks=["000333|2026-10-23|关于回购…"])
+            fc._save_state(cur, "2026-10-28")
+            got = fc._load_state()
+            check("状态文件：写入后读回一致",
+                  got["reports"] == cur["reports"]
+                  and set(got["dividends"]) == set(cur["dividends"])
+                  and set(got["buybacks"]) == set(cur["buybacks"])
+                  and got["last_run"] == "2026-10-28",
+                  f"读回 {got['last_run']}")
+
+            # 模拟 git union 合并：另一台机器写了新的一行，两份拼在一起
+            with open(fc.STATE_TXT, "a", encoding="utf-8") as fh:
+                fh.write("R|000333|2026-06-30\nM|2026-10-29\n")
+            merged = fc._load_state()
+            check("状态文件：union 合并后仍可解析且取并集",
+                  merged["reports"].get("000333") == "2026-06-30"
+                  and merged["reports"].get("601398") == "2026-06-30"
+                  and merged["last_run"] == "2026-10-29",
+                  f"reports={len(merged['reports'])} last={merged['last_run']}")
+        finally:
+            fc.CACHE, fc.STATE_TXT = old_cache, old_txt
+
+
+def test_annual_join_tool_golden():
+    """tools/annual_join.py 的口径与个股页一致（同一份缓存，两条实现）。"""
+    cache = os.path.join(BASE, "_fin_cache")
+    if not os.path.exists(os.path.join(cache, "fundamentals.csv")):
+        print("  [SKIP] annual_join 金样例：_fin_cache 不存在")
+        return
+    import annual_join
+    rows = {r["year"]: r for r in annual_join.build_rows("601398")}
+    r = rows.get(2025)
+    if not r:
+        print("  [SKIP] annual_join 金样例：缓存里没有 2025")
+        return
+    check("annual_join：工行 2025 分红 0.3103 / 分红率 30%",
+          abs(r["dps"] - 0.3103) < 1e-6 and abs(r["payout"] - 30.0) < 0.5,
+          f"dps={r['dps']} payout={r['payout']:.2f}%")
+    check("annual_join：工行 2025 无回购（银行不回购）",
+          r["bk_cancel"] == 0 and r["bk_prog"] == 0,
+          f"{r['bk_cancel']}/{r['bk_prog']}")
+
+
 def main():
     print("=" * 68)
     print("基本面 / 定投 / 分组 口径自检")
@@ -179,7 +239,9 @@ def main():
     for fn in (test_net_margin_uses_parent_profit, test_payout_formula,
                test_dividend_grouped_by_fiscal_year, test_twr_strips_contributions,
                test_xirr_matches_hand_calc, test_xirr_rejects_degenerate,
-               test_verdict_grouping, test_golden_icbc_from_cache):
+               test_verdict_grouping, test_golden_icbc_from_cache,
+               test_state_file_is_line_based_and_union_safe,
+               test_annual_join_tool_golden):
         try:
             fn()
         except Exception as exc:

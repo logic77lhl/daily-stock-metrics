@@ -1,0 +1,4 @@
+# 状态文件用行式格式（每行一个事件键），让 git 自动 union 合并。
+# 背景：这些文件每天提交，CI 与本地同时跑就会冲突；JSON 无法自动合并
+# （union 会破坏结构），行式文本可以 —— 重复行由读取时的 set() 去掉。
+_fin_cache/_seen.txt merge=union

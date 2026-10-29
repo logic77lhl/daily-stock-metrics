@@ -23,7 +23,8 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(BASE_DIR, "_fin_cache")
-STATE = os.path.join(CACHE, "_seen.json")
+STATE = os.path.join(CACHE, "_seen.json")          # 旧格式，仅用于迁移
+STATE_TXT = os.path.join(CACHE, "_seen.txt")        # 行式，merge=union 安全
 
 
 def _read(name):
@@ -40,19 +41,55 @@ def _names():
 
 
 def _load_state():
-    if not os.path.exists(STATE):
+    """读行式状态。返回 dict 或 None（从未跑过）。"""
+    if not os.path.exists(STATE_TXT):
         return None
+    reports, divs, bks, last = {}, set(), set(), ""
+    with open(STATE_TXT, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            parts = line.split("|")
+            k = parts[0]
+            if k == "R" and len(parts) >= 3:
+                if parts[2] > reports.get(parts[1], ""):
+                    reports[parts[1]] = parts[2]
+            elif k == "D" and len(parts) >= 4:
+                divs.add("|".join(parts[1:4]))
+            elif k == "B" and len(parts) >= 4:
+                bks.add("|".join(parts[1:4]))
+            elif k == "M" and len(parts) >= 2:
+                last = max(last, parts[1])
+    return dict(reports=reports, dividends=divs, buybacks=bks, last_run=last)
+
+
+def _save_state(cur, today):
+    """写行式状态。排序 + 去重 —— 这样 union 合并后只是多几行重复，读取时自然消掉。"""
+    lines = [f"R|{c}|{d}" for c, d in cur["reports"].items()]
+    lines += [f"D|{k}" for k in cur["dividends"]]
+    lines += [f"B|{k}" for k in cur["buybacks"]]
+    lines.append(f"M|{today}")
+    os.makedirs(CACHE, exist_ok=True)
+    with open(STATE_TXT, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(sorted(set(lines))) + "\n")
+
+
+def _migrate_from_json():
+    """老的 _seen.json 迁移一次，避免上线后第一天把全池重报一遍。"""
+    if os.path.exists(STATE_TXT) or not os.path.exists(STATE):
+        return
     try:
         with open(STATE, encoding="utf-8") as fh:
-            return json.load(fh)
+            old = json.load(fh)
     except Exception:
-        return None
-
-
-def _save_state(state):
-    os.makedirs(CACHE, exist_ok=True)
-    with open(STATE, "w", encoding="utf-8") as fh:
-        json.dump(state, fh, ensure_ascii=False, indent=1, sort_keys=True)
+        return
+    cur = dict(reports=old.get("reports") or {},
+               dividends=old.get("dividends") or [],
+               buybacks=old.get("buybacks") or [])
+    _save_state(cur, old.get("last_run") or "")
+    os.rename(STATE, STATE + ".migrated")
+    print(f"[info] _seen.json 已迁移为行式文本（旧文件留作 .migrated）")
 
 
 def _current_state():
@@ -66,7 +103,8 @@ def _current_state():
     divs = {f'{str(r["code"]).zfill(6)}|{(r.get("reportDate") or "")[:10]}|'
             f'{(r.get("exDate") or "")[:10]}' for r in _read("dividends.csv")}
     bks = {f'{str(r["code"]).zfill(6)}|{(r.get("date") or "")[:10]}|'
-           f'{(r.get("title") or "")[:40]}' for r in _read("buybacks.csv")}
+           f'{(r.get("title") or "").replace("|", "/")[:40]}'
+           for r in _read("buybacks.csv")}
     return dict(reports=reports, dividends=sorted(divs), buybacks=sorted(bks))
 
 
@@ -117,12 +155,13 @@ def _pct_crossings(out_dir, today_iso, names, limit=6):
 
 def detect(today_iso, out_dir=None, limit=8):
     """返回 (事件列表, 是否是首次建基线)。"""
+    _migrate_from_json()
     cur = _current_state()
     prev = _load_state()
     names = _names()
 
     if prev is None:
-        _save_state(dict(cur, last_run=today_iso))
+        _save_state(cur, today_iso)
         return [], True
 
     events = []
@@ -162,7 +201,7 @@ def detect(today_iso, out_dir=None, limit=8):
         seen.add(k)
         uniq.append(e)
 
-    _save_state(dict(cur, last_run=today_iso))
+    _save_state(cur, today_iso)
     return uniq[:limit], False
 
 
