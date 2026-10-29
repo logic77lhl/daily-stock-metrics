@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import csv
 import os
 import sys
 import time
@@ -115,6 +116,91 @@ def _collect(iso: str):
     return fragments, attachments, included, skipped
 
 
+def _moves_block(iso: str) -> str:
+    """值得看迁移（最多 3 只）。与 board_history 的上一份快照比。
+
+    在邮件里自己算一遍，而不是读榜单页 —— 因为榜单由 build_pages（第 5 组）
+    生成，而邮件是第 3 组，跑在它前面。自己算保证「今天的迁移」是真的今天。
+    """
+    try:
+        import build_fundamentals as bf
+        import verdict
+        cache = os.path.join(BASE_DIR, "_fin_cache")
+        hist_path = os.path.join(cache, "board_history.json")
+        if not os.path.exists(hist_path):
+            return ""
+        with open(hist_path, encoding="utf-8") as fh:
+            hist = json.load(fh)
+        prev_days = sorted(d for d in hist if d < iso)
+        if not prev_days:
+            return ""
+        prev = hist[prev_days[-1]]
+
+        payloads = bf.load_cache_payloads(cache)
+        metrics = bf.latest_metrics_path()
+        if not metrics:
+            return ""
+        meta = {}
+        with open(metrics, encoding="utf-8-sig") as fh:
+            for r in csv.DictReader(fh):
+                meta[str(r.get("代码", "")).zfill(6)] = r
+
+        moved = []
+        for code, pl in payloads.items():
+            m = meta.get(code)
+            was = prev.get(code)
+            if not m or not was:
+                continue
+            div_by_year = bf.yearly_dividends(pl.get("dividends") or [])
+            sig, now, _d = verdict.decide(pl.get("quarters") or [], div_by_year,
+                                          pl.get("yr_avg") or {}, m)
+            if not sig or now == was:
+                continue
+            if now == "值得看":
+                label, good = "新进值得看", True
+            elif was == "值得看":
+                label, good = "跌出值得看", False
+            elif now == "高位":
+                label, good = "新进高位", False
+            elif was == "高位":
+                label, good = "跌出高位", True
+            else:
+                continue
+            moved.append(dict(code=code, name=m.get("名称") or code,
+                              label=label, good=good, was=was, now=now))
+        if not moved:
+            return ""
+        # 好的迁移（新进值得看 / 跌出高位）排前面
+        moved.sort(key=lambda z: (not z["good"], z["code"]))
+        rows = []
+        for z in moved[:3]:
+            col = "#1971c2" if z["good"] else "#868e96"
+            arrow = "↑" if z["label"].startswith("新进") else "↓"
+            rows.append(
+                f'<div style="padding:6px 0;border-bottom:1px solid #eef1f6;'
+                f'font-size:12.5px;line-height:1.65">'
+                f'<span style="color:{col};font-weight:600">{arrow} {z["label"]}</span>'
+                f'<a href="{SITE}/基本面/{z["code"]}.html" '
+                f'style="color:#1a1a2e;text-decoration:none;font-weight:600;'
+                f'margin-left:8px">{z["name"]}</a>'
+                f'<span style="color:#7a8397"> {z["code"]}</span>'
+                f'<span style="color:#8a93a5;margin-left:6px">'
+                f'（{z["was"]} → {z["now"]}）</span></div>')
+        more = (f'<div style="font-size:11.5px;color:#98a1b3;padding-top:6px">'
+                f'另有 {len(moved) - 3} 只未显示</div>' if len(moved) > 3 else "")
+        return (
+            '<div style="background:#fff;border-radius:10px;padding:14px 18px;'
+            'margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.06)">'
+            '<div style="font-size:14px;font-weight:700;margin-bottom:4px">'
+            '📊 值得看迁移</div>'
+            '<div style="font-size:11.5px;color:#8a93a5;margin-bottom:8px">'
+            f'与 {prev_days[-1]} 相比，分组位置有变化的标的</div>'
+            + "".join(rows) + more + '</div>')
+    except Exception as exc:
+        print(f"[warn] 值得看迁移计算失败：{type(exc).__name__}: {exc}")
+        return ""
+
+
 def _fundamentals_block(iso: str) -> str:
     """基本面变化段。没变化返回空串。"""
     try:
@@ -185,7 +271,8 @@ def build_html(iso: str, fragments, included, skipped) -> str:
         f'<div style="font-size:19px;font-weight:700">📈 每日市场指标 ｜ {iso}</div>'
         f'<div style="font-size:12.5px;color:#aab4cf;margin-top:6px">'
         f'{_head} ｜ 完整报告见附件与站点：{links}</div></div>'
-        + _fundamentals_block(iso) + "".join(fragments) + skip_html +
+        + _moves_block(iso) + _fundamentals_block(iso)
+        + "".join(fragments) + skip_html +
         '<div style="color:#98a1b3;font-size:12px;text-align:center;padding:10px 0 20px;'
         'line-height:1.8">'
         '指标为收盘后计算值；「今日速览」里的胜率已并排给出基线 —— '
