@@ -295,6 +295,60 @@ def test_em_dc_distinguishes_empty_from_failure():
           len(rows) == 1 and em_dc.STATS["ok"] == 1, f"stats={dict(em_dc.STATS)}")
 
 
+
+def test_graham_criteria():
+    """格雷厄姆七条：口径、金融业不适用、数据不足与不通过必须分开。
+
+    原文（第 14 章）：工业股「流动比 ≥ 2 且长期债务 ≤ 营运资本」；
+    「PE ≤ 过去 3 年平均利润的 15 倍」；「PB ≤ 1.5，且 PE × PB ≤ 22.5」。
+    """
+    import graham
+
+    def q(year, npf, share):
+        return dict(year=year, quarter=4, statDate=f"{year}-12-31",
+                    netProfit=npf, totalShare=share, revenue=1e10, roe=0.15)
+
+    # 10 年盈利、EPS 翻倍、分红够长
+    qs = [q(y, 1e9 + (y - 2015) * 2e8, 1e9) for y in range(2015, 2026)]
+    divs = [dict(reportDate=f"{y}-12-31", cashPs=0.5) for y in range(2000, 2026)]
+    bal = [dict(reportDate="2025-12-31", TOTAL_CURRENT_ASSETS=3e9,
+                TOTAL_CURRENT_LIAB=1e9, LONG_LOAN=1e8, BOND_PAYABLE=0,
+                NONCURRENT_LIAB_1YEAR=0)]
+    meta = dict(最新价=10, PB_MRQ=1.2, 行业="白酒Ⅱ")
+    rows, summ = graham.check(qs, divs, bal, meta)
+    by = {r["no"]: r for r in rows}
+    check("格雷厄姆：流动比 3.0 且长期债务 < 营运资本 → 第2条通过",
+          by[2]["status"] == graham.PASS, by[2]["actual"])
+    check("格雷厄姆：PE 10 / PB 1.2 → 第6、7条通过",
+          by[6]["status"] == graham.PASS and by[7]["status"] == graham.PASS,
+          f'{by[6]["actual"]} {by[7]["actual"]}')
+    check("格雷厄姆：七条全过", summ["fail"] == 0 and summ["nodata"] == 0,
+          summ["verdict"])
+
+    # 金融业：第 2 条必须判「不适用」，不是「不通过」
+    meta_fin = dict(meta, 行业="银行Ⅱ")
+    rows2, _ = graham.check(qs, divs, bal, meta_fin)
+    b2 = {r["no"]: r for r in rows2}
+    check("格雷厄姆：金融业第2条判「不适用」而非「不通过」",
+          b2[2]["status"] == graham.NA, b2[2]["note"])
+
+    # 分红记录不足 + 上市够久 → 数据不足（不是不通过）
+    # 造 26 年年报（2000~2025）但只有 11 年分红记录 —— 这才叫「上市够久、数据不足」
+    qs_long = [q(y, 1e9 + (y - 2000) * 1e8, 1e9) for y in range(2000, 2026)]
+    short_div = [dict(reportDate=f"{y}-12-31", cashPs=0.5) for y in range(2015, 2026)]
+    rows3, _ = graham.check(qs_long, short_div, bal, meta)
+    b3 = {r["no"]: r for r in rows3}
+    check("格雷厄姆：上市够久但分红数据不足 → 判「数据不足」",
+          b3[4]["status"] == graham.NODATA, b3[4]["note"])
+
+    # 上市不足 20 年 → 不适用
+    qs_short = qs[-8:]
+    rows4, _ = graham.check(qs_short, short_div, bal, meta)
+    b4 = {r["no"]: r for r in rows4}
+    check("格雷厄姆：上市不足 20 年 → 第4条判「不适用」",
+          b4[4]["status"] == graham.NA, b4[4]["note"])
+
+
 def main():
     print("=" * 68)
     print("基本面 / 定投 / 分组 口径自检")
@@ -305,7 +359,8 @@ def main():
                test_verdict_grouping, test_golden_icbc_from_cache,
                test_state_file_is_line_based_and_union_safe,
                test_annual_join_tool_golden,
-               test_em_dc_distinguishes_empty_from_failure):
+               test_em_dc_distinguishes_empty_from_failure,
+               test_graham_criteria):
         try:
             fn()
         except Exception as exc:

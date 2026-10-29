@@ -104,6 +104,14 @@ details table{margin-bottom:12px}
 .dec .ev{flex:none;display:flex;align-items:center;margin-left:auto;padding-left:14px}
 .dec .ev svg{display:block;overflow:visible}
 
+/* 格雷厄姆七条 */
+.gtab td{font-size:12.5px;padding:7px 8px}
+.gtab .gth{color:#6b7488;font-size:11.5px;text-align:left;max-width:220px}
+.gtab .gac{color:#3d4450;font-size:12px;text-align:left}
+.gtab .up{color:#0f7b4f;font-weight:600}
+.gtab .down{color:#b42318;font-weight:600}
+.gtab .gnote{display:block;color:#98a2b3;font-size:10.5px;font-weight:400;margin-top:1px}
+
 /* 年度表的趋势行 */
 .trow td{background:#f7f9fc;color:#3d4450;font-size:12px;font-weight:600;
   border-top:1px solid #dcdfe4;border-bottom:0}
@@ -939,6 +947,49 @@ def main(argv=None, payload=None):
                  '⚠ 回购列只覆盖公告接口可取到的最近约 300 条公告（通常 2~4 年），'
                  '更早年份显示「—」<b>不代表当年没有回购</b>。'
                  '* 该年度未走完，分红率与股息率不计算。</div>')
+
+    # ── 格雷厄姆「防御型投资者」7 条标准（第 14 章原文口径）──
+    try:
+        import graham as _g
+        _bal = []
+        _bp = os.path.join(BASE_DIR, "_fin_cache", "balance.csv")
+        if os.path.exists(_bp):
+            for _r in _read_csv(_bp):
+                if str(_r.get("code", "")).zfill(6) == code:
+                    _bal.append(_r)
+        _grows, _gsum = _g.check(d.get("quarters") or [], d.get("dividends") or [],
+                                 _bal, meta, meta.get("行业"))
+        if _grows:
+            h.append('<h2>格雷厄姆七条标准'
+                     '<span class="unit">《聪明的投资者》第 14 章 · '
+                     f'{_gsum["verdict"]}</span></h2>')
+            h.append('<table class="gtab"><thead><tr><th class="k">标准</th>'
+                     '<th>门槛</th><th>实际</th><th>判定</th></tr></thead><tbody>')
+            for _r in _grows:
+                _cls = {"pass": "up", "fail": "down", "na": "na",
+                        "nodata": "na"}.get(_r["status"], "")
+                _txt = _g.label(_r["status"])
+                if _r["status"] in ("na", "nodata") and _r.get("note"):
+                    _txt = f'{_txt}<span class="gnote">{_r["note"]}</span>'
+                h.append(f'<tr><td class="k">{_r["no"]}. {_r["name"]}</td>'
+                         f'<td class="gth">{_r["threshold"]}</td>'
+                         f'<td class="gac">{_r["actual"]}</td>'
+                         f'<td class="{_cls}">{_txt}</td></tr>')
+            h.append('</tbody></table>')
+            _cnt = _gsum
+            h.append('<div class="fn">'
+                     f'通过 {_cnt["pass"]} 项、不通过 {_cnt["fail"]} 项、'
+                     f'不适用 {_cnt["na"]} 项、数据不足 {_cnt["nodata"]} 项。<br>'
+                     '口径取自原书第 14 章：规模门槛按 1 亿美元 × 7.2 折人民币；'
+                     '「财务状况」对工业股要求流动比 ≥ 2 <b>且</b>长期债务 ≤ 营运资本，'
+                     '公用事业改为负债 ≤ 2 倍账面股权；'
+                     '<b>金融业该条判「不适用」</b> —— 银行没有流动资产/流动负债科目，'
+                     '格雷厄姆在《证券分析》里另有标准，把它判成「不合格」是错的。<br>'
+                     '「数据不足」与「不通过」严格区分：分红记录不足 20 年时，'
+                     '若上市也不足 20 年判不适用，若上市够久但我们的数据没回溯那么远判数据不足。'
+                     '</div>')
+    except Exception as _exc:
+        print(f"[warn] 格雷厄姆判定失败 {code}: {type(_exc).__name__}: {_exc}")
 
     # ── 季度表（折叠：需要的人再展开，不占首屏）──
     h.append('<details><summary>展开单季净利（按年 × 季度）</summary>')
