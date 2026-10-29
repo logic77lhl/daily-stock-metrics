@@ -8,6 +8,11 @@
     盈利    ROE 近 4~5 个完整年度变化 <-1pp 走弱 / >+1pp 改善 / 其余持平
     现金回报 股息率 vs 自身历史中位
     技术   日/周/月 J 均值 >80 超买 / <20 超卖 / 其余中性
+    最新季报 最新一期（非年报）单季净利同比 ≤-30% 走弱 / ≥+30% 改善 / 其余中性
+
+    「最新季报」是后补的：原来只有年报口径，实测 2026-10-29 中国平安 Q3 单季
+    净利同比 -93.7%、中国太保 -68.4%，而四信号还在用 2025 年报数据把它们
+    放进「值得看」—— 滞后了整整一个季度。
 
 分组：
     值得看  ≥2 项正向且无负面
@@ -38,6 +43,76 @@ def _f(v):
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _find(qs, y, q):
+    for x in qs:
+        if x["year"] == y and x["quarter"] == q:
+            return x
+    return None
+
+
+def _single(qs, y, q):
+    """单季净利 = 当期累计 − 上期累计（Q1 就是它自己）。"""
+    cur = _find(qs, y, q)
+    if cur is None or cur.get("netProfit") is None:
+        return None
+    if q == 1:
+        return cur["netProfit"]
+    prev = _find(qs, y, q - 1)
+    if prev is None or prev.get("netProfit") is None:
+        return None
+    return cur["netProfit"] - prev["netProfit"]
+
+
+def latest_quarter_signal(qs):
+    """最新季报的单季净利同比 —— 补上「只看年报」的滞后。
+
+    为什么必须有这一条：年报 ROE 趋势要等次年 3~4 月才更新，而 A 股 Q3 报告
+    10 月底就披露了。实测 2026-10-29：中国平安 Q3 单季净利 41 亿（上年同期 648 亿，
+    **−93.7%**）、中国太保 56 亿（上年 178 亿，**−68.4%**）——
+    而四信号当时还在用 2025 年报的 ROE 改善数据，把两只都放进了「值得看」。
+
+    只在最新一期**不是年报**时才出这条（是年报的话，年报 ROE 趋势已经覆盖了）。
+    """
+    if not qs:
+        return None
+    last = qs[-1]
+    if last["quarter"] == 4:
+        return None
+    cur = _single(qs, last["year"], last["quarter"])
+    prev = _single(qs, last["year"] - 1, last["quarter"])
+    if cur is None or prev is None or prev == 0:
+        return None
+    yoy = cur / prev - 1
+    if yoy <= -0.3:
+        st = BAD
+    elif yoy >= 0.3:
+        st = OK
+    else:
+        st = WARN
+    # 距今多久没更新 —— 季报季里这条很关键：人保/人寿 2026Q3 还没披露时，
+    # 它们凭 Q2 的漂亮数据（+103% / +850%）留在「值得看」，而两天后 Q3 一落地
+    # 结论就会翻转。把「数据截至哪天」写出来，读者才不会把旧数据当最新。
+    _age = ""
+    try:
+        from datetime import date as _d
+        _sd = (last.get("statDate") or "")[:10]
+        if _sd:
+            _n = (_d.today() - _d.fromisoformat(_sd)).days
+            _age = f' · 数据截至 {_sd}（{_n} 天前）'
+    except Exception:
+        pass
+    # 单季转亏时百分比没有意义（-194% 读起来像"跌了近两倍"），直接说亏损多少
+    if cur < 0:
+        _desc = (f'{last["year"]}Q{last["quarter"]} 单季亏损 {abs(cur) / 1e8:,.0f} 亿'
+                 f'（上年同期 {"盈利" if prev > 0 else "亏损"} {abs(prev) / 1e8:,.0f} 亿）')
+        _note = f'由盈转亏{_age}' if prev > 0 else f'继续亏损{_age}'
+    else:
+        _desc = (f'{last["year"]}Q{last["quarter"]} 单季净利 {cur / 1e8:,.0f} 亿'
+                 f'（上年同期 {prev / 1e8:,.0f} 亿）')
+        _note = f'{yoy * 100:+.0f}% 同比{_age}'
+    return ("最新季报", st, _desc, _note, yoy)
 
 
 def decide(quarters, div_by_year, yr_avg, meta):
@@ -106,6 +181,12 @@ def decide(quarters, div_by_year, yr_avg, meta):
                     "三周期都在超买区" if m > 80 else ("三周期都在超卖区" if m < 20 else "在中性区")))
         detail["j"] = m
         detail["jw"] = jw
+
+    # ⑤ 最新季报（只在最新一期不是年报时出现）
+    _lq = latest_quarter_signal(qs)
+    if _lq:
+        sig.append(_lq[:4])
+        detail["q_yoy"] = _lq[4]
 
     nbad = sum(1 for s in sig if s[1] == BAD)
     nok = sum(1 for s in sig if s[1] == OK)
