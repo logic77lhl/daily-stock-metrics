@@ -73,11 +73,28 @@ a:hover{border-bottom-color:#24425c}
 .note{font-size:12px;color:#8b919b;line-height:1.8;margin:14px 0 0;max-width:78ch}
 .ft{margin-top:52px;padding-top:16px;border-top:1px solid #e6e8eb;
   font-size:11.5px;color:#9aa0aa;line-height:1.9}
+
+/* 迁移表：固定列宽，别让「变化」列把数字挤到右半边 */
+table.mv{table-layout:fixed}
+table.mv th:nth-child(1),table.mv td:nth-child(1){width:150px;text-align:left}
+table.mv th:nth-child(2),table.mv td:nth-child(2){width:126px;text-align:left}
+table.mv th:nth-child(3),table.mv td:nth-child(3){width:104px;text-align:left}
+table.mv th:nth-child(7),table.mv td:nth-child(7){width:60px}
+/* 分组表：正向字符码固定窄列 */
+.legend{margin:2px 0 18px;font-size:11.5px;color:#98a2b3;line-height:1.9}
+.legend b{color:#667085;font-weight:600}
+table.g th:nth-child(1),table.g td:nth-child(1){width:160px;text-align:left}
+table.g th:nth-child(2),table.g td:nth-child(2){width:96px;text-align:left}
+table.g th:nth-child(8),table.g td:nth-child(8){width:78px;text-align:left;
+  letter-spacing:2px;color:#0f7b4f;font-weight:600}
 """
 
 # ─────────────────────────── 历史与迁移 ───────────────────────────
 HIST = os.path.join(BASE, "_fin_cache", "board_history.json")
 KEEP_DAYS = 90
+
+
+SIG_VERSION = "v2-添加最新季报"   # 判定口径版本；变了就不显示迁移
 
 
 def _load_hist():
@@ -91,7 +108,8 @@ def _load_hist():
 
 
 def _save_hist(hist):
-    days = sorted(hist)[-KEEP_DAYS:]
+    # 只留日期键，丢掉历史上误存到顶层的 "_v" 之类的元键
+    days = sorted(d for d in hist if not d.startswith("_"))[-KEEP_DAYS:]
     out = {d: hist[d] for d in days}
     os.makedirs(os.path.dirname(HIST), exist_ok=True)
     with open(HIST, "w", encoding="utf-8") as fh:
@@ -104,8 +122,15 @@ def mark_moves(rows, today, hist):
     为什么这一步最重要：**「从高位掉进值得看」的那一天才是信号**。
     每天覆盖的榜单只有「今天什么位置」，看不到迁移；而迁移本身就是变化。
     """
-    prev_days = [d for d in sorted(hist) if d < today]
+    prev_days = [d for d in sorted(hist) if d < today and not d.startswith("_")]
     prev = hist.get(prev_days[-1], {}) if prev_days else {}
+    # 口径变了就不比了：旧快照是「四信号」算的，今天是「四信号 + 最新季报」，
+    # 直接比会把「我改了算法」显示成「市场变了」—— 那是假信号。
+    if prev and prev.get("_v") != SIG_VERSION:
+        for r in rows:
+            r["was"] = prev.get(r["code"])
+            r["move"] = ""
+        return rows, {}, None
     moves = {"新进值得看": [], "跌出值得看": [], "新进高位": [], "跌出高位": []}
     for r in rows:
         was = prev.get(r["code"])
@@ -133,6 +158,26 @@ GROUPS = [
     ("中性", "信号混合，没有明显方向"),
     ("高位", "≥2 项负面 —— 偏贵 / 盈利走弱 / 技术超买"),
 ]
+
+# 正向信号的单字码，给榜单的「正向」列用
+_WHY = {"估值": "估", "盈利": "盈", "现金回报": "息",
+        "技术位置": "技", "最新季报": "季"}
+
+
+def _why(sig):
+    """把「估值、盈利、现金回报…」压成「估盈息技季」这种字符码。
+
+    原来直接把 verdict.reason() 的整句塞进表格，同一句话在每行重复，
+    把「理由」列撑到六成宽，而前面的数字列已经说明了同一件事。
+    """
+    out = []
+    for s_ in sig or []:
+        if s_[1] != "ok":
+            continue
+        k = _WHY.get(s_[0])
+        if k:
+            out.append(k)
+    return "".join(out) or "—"
 
 
 def main(argv=None):
@@ -179,6 +224,9 @@ def main(argv=None):
     hist = _load_hist()
     rows, moves, prev_day = mark_moves(rows, today, hist)
     hist[today] = {r["code"]: r["verdict"] for r in rows}
+    # 把「今天用哪版口径算的」记进当天的快照。
+    # 存到顶层没用 —— 第一次保存后就永远等于当前版本，闸门形同虚设。
+    hist[today]["_v"] = SIG_VERSION
     _save_hist(hist)
 
     # 排序：分组优先，组内「今日有迁移」的排最前，再按股息率
@@ -196,7 +244,8 @@ def main(argv=None):
         yl = f'{r["yld"]:.2f}%' if r.get("yld") else "—"
         ym = f'{r["yld_med"]:.2f}%' if r.get("yld_med") else "—"
         rd = f'{r["roe_delta"]:+.1f}pp' if r.get("roe_delta") is not None else "—"
-        jw = f'{r["jw"]:.0f}' if r.get("jw") is not None else "—"
+        # int(round()) 而不是 f'{x:.0f}' —— 后者会把 -0.4 格式化成 "-0"
+        jw = str(int(round(r["jw"]))) if r.get("jw") is not None else "—"
         print(f"{r['verdict']:<8}{r['code']:<8}{(r['name'] or '')[:8]:<10}"
               f"{(r['ind'] or '')[:10]:<12}{pe:>8}{yl:>8}{ym:>8}{rd:>9}{jw:>6}"
               f"  {r['reason'][:46]}")
@@ -229,7 +278,7 @@ def main(argv=None):
              + (f'{len(_moved)} 只换了位置' if _moved else '无')
              + '</span><span class="hint">与上一个交易日相比</span></h2>')
     if _moved:
-        h.append('<table><thead><tr><th>标的</th><th>变化</th><th>行业</th>'
+        h.append('<table class="mv"><thead><tr><th>标的</th><th>变化</th><th>行业</th>'
                  '<th>PE分位</th><th>股息率</th><th>ROE变化</th><th>周J</th>'
                  '</tr></thead><tbody>')
         for r in _moved:
@@ -240,7 +289,8 @@ def main(argv=None):
             pe = f'{r["pe_pct"]:.1f}%' if r.get("pe_pct") is not None else "—"
             yl = f'{r["yld"]:.2f}%' if r.get("yld") else "—"
             rd = f'{r["roe_delta"]:+.1f}pp' if r.get("roe_delta") is not None else "—"
-            jw = f'{r["jw"]:.0f}' if r.get("jw") is not None else "—"
+            # int(round()) 而不是 f'{x:.0f}' —— 后者会把 -0.4 格式化成 "-0"
+            jw = str(int(round(r["jw"]))) if r.get("jw") is not None else "—"
             h.append(f'<tr><td><a href="{r["code"]}.html">{r["name"]}</a>'
                      f'<span class="mut"> {r["code"]}</span></td>'
                      f'<td style="color:{col};font-weight:620">{arrow} {mv}</td>'
@@ -257,13 +307,13 @@ def main(argv=None):
              f'<span class="n">{cnt.get("高位",0)}</span> 只高位、'
              f'<span class="n">{cnt.get("中性",0)}</span> 只中性。</p>')
 
-    # ── 值得看：按行业分组，每组最多 3 只 ──
     def _row_html(r):
         pe = f'{r["pe_pct"]:.1f}%' if r.get("pe_pct") is not None else "—"
         yl = f'{r["yld"]:.2f}%' if r.get("yld") else "—"
         ym = f'{r["yld_med"]:.2f}%' if r.get("yld_med") else "—"
         rd = f'{r["roe_delta"]:+.1f}pp' if r.get("roe_delta") is not None else "—"
-        jw = f'{r["jw"]:.0f}' if r.get("jw") is not None else "—"
+        # int(round()) 而不是 f'{x:.0f}' —— 后者会把 -0.4 格式化成 "-0"
+        jw = str(int(round(r["jw"]))) if r.get("jw") is not None else "—"
         cls = "pos" if (r.get("roe_delta") or 0) > 0 else "neg"
         mv = r.get("move") or ""
         tag = (f'<span style="color:#24425c;font-size:11px;margin-left:6px">'
@@ -272,12 +322,12 @@ def main(argv=None):
                 f'<span class="mut"> {r["code"]}</span>{tag}</td>'
                 f'<td class="ind">{r["ind"]}</td><td>{pe}</td><td>{yl}</td>'
                 f'<td class="mut">{ym}</td><td class="{cls}">{rd}</td>'
-                f'<td>{jw}</td><td class="ind">{r["reason"]}</td></tr>')
+                f'<td>{jw}</td><td class="why">{_why(r["sig"])}</td></tr>')
 
     def _table(rs):
-        out = ['<table><thead><tr><th>标的</th><th>行业</th><th>PE分位</th>'
+        out = ['<table class="g"><thead><tr><th>标的</th><th>行业</th><th>PE分位</th>'
                '<th>股息率</th><th>历史中位</th><th>ROE变化</th><th>周J</th>'
-               '<th>理由</th></tr></thead><tbody>']
+               '<th>正向</th></tr></thead><tbody>']
         out.extend(_row_html(r) for r in rs)
         out.append('</tbody></table>')
         return "".join(out)
@@ -285,6 +335,9 @@ def main(argv=None):
     grp = [r for r in rows if r["verdict"] == "值得看"]
     h.append(f'<h2>值得看<span class="cnt">{len(grp)} 只</span>'
              f'<span class="hint">≥2 项正向且无负面 · 按行业分组，每组最多 3 只</span></h2>')
+    h.append('<p class="legend">正向列字符码：'
+             '<b>估</b> 估值偏低 · <b>盈</b> 盈利改善 · <b>息</b> 股息率高于自身历史中位 · '
+             '<b>技</b> 技术超卖 · <b>季</b> 最新季报改善</p>')
     by_ind = {}
     for r in grp:
         by_ind.setdefault(r["ind"], []).append(r)

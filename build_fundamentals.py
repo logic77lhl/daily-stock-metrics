@@ -105,12 +105,18 @@ details table{margin-bottom:12px}
 .dec .ev svg{display:block;overflow:visible}
 
 /* 格雷厄姆七条 */
-.gtab td{font-size:12.5px;padding:7px 8px}
-.gtab .gth{color:#6b7488;font-size:11.5px;text-align:left;max-width:220px}
-.gtab .gac{color:#3d4450;font-size:12px;text-align:left}
+.gtab{table-layout:fixed}
+.gtab th:nth-child(1),.gtab td:nth-child(1){width:150px}
+.gtab th:nth-child(2),.gtab td:nth-child(2){width:auto;text-align:left}
+.gtab th:nth-child(3),.gtab td:nth-child(3){width:72px;text-align:right;
+  white-space:nowrap}
+.gtab td{font-size:12.5px;padding:8px 10px;vertical-align:top}
+.gtab .gn{color:#3d4450}
+.gtab .gth{display:block;color:#98a2b3;font-size:10.5px;margin-top:2px;line-height:1.5}
 .gtab .up{color:#0f7b4f;font-weight:600}
 .gtab .down{color:#b42318;font-weight:600}
-.gtab .gnote{display:block;color:#98a2b3;font-size:10.5px;font-weight:400;margin-top:1px}
+.gtab .gnote{display:block;color:#98a2b3;font-size:10px;font-weight:400;
+  margin-top:2px;line-height:1.45}
 
 /* 年度表的趋势行 */
 .trow td{background:#f7f9fc;color:#3d4450;font-size:12px;font-weight:600;
@@ -118,8 +124,8 @@ details table{margin-bottom:12px}
 .trow td.k{color:#6b7488}
 
 /* 技术面 / TTM 各一行 */
-.strip{margin:9px 0 0;font-size:12.5px;color:#3d4450;line-height:1.9;
-  font-variant-numeric:tabular-nums;max-width:80ch}
+.strip{margin:7px 0 0;font-size:12.5px;color:#3d4450;line-height:1.8;
+  font-variant-numeric:tabular-nums}
 .strip .strip-k{display:inline-block;min-width:46px;color:#6b7488;font-size:11px;
   letter-spacing:.04em;margin-right:9px}
 .strip .strip-d{color:#8a93a5;font-size:11px;margin-left:10px}
@@ -142,9 +148,9 @@ def trend_word(vals, tol=0.0):
     if ups == 0 and downs == 0:
         return "→ 持平"
     if ups >= n * 0.75:
-        return f'↑{ups}/{n} 年'
+        return f'↑{ups}/{n}'
     if downs >= n * 0.75:
-        return f'↓{downs}/{n} 年'
+        return f'↓{downs}/{n}'
     if ups > downs:
         return f'↑{ups} ↓{downs}'
     if downs > ups:
@@ -737,59 +743,24 @@ def main(argv=None, payload=None):
              f'（公告 {latest["pubDate"] if latest else "—"}）</span>')
     h.append('</div></header>')
 
-    # ── 决策速览：四个信号灯，把「贵不贵 / 好不好 / 给不给钱 / 什么位置」合成一句 ──
-    _pp, _pbp = _pct(pe_pct), _pct(pb_pct)
-    _roe = [(y, (qof(y, 4) or {}).get("roe") * 100) for y in annual_chrono[-5:]
-            if (qof(y, 4) or {}).get("roe") is not None]
-    _ylds = [v for v in (_yield(None, "annual", y) for y in annual_chrono) if v is not None]
-    _yld_med = sorted(_ylds)[len(_ylds) // 2] if _ylds else None
-    _js = [v for v in (jd, jw, jm) if v is not None]
-
-    sig = []
-    if _pp is not None:
-        st = "bad" if _pp > 70 else ("ok" if _pp < 30 else "warn")
-        _pe_r = d.get("pe_range") or (None, None)
-        _pe_now = _f("PE_TTM")
-        sig.append(("估值", st,
-                    f'PE 分位 {_pp:.0f}%' + (f'　PB 分位 {_pbp:.0f}%' if _pbp is not None else ''),
-                    "相对自身历史偏贵" if _pp > 70 else ("相对自身历史便宜" if _pp < 30 else "中性"),
-                    posbar(_pe_r[0], _pe_r[1], _pe_now) if _pe_now else ""))
-    if len(_roe) >= 2:
-        _droe = _roe[-1][1] - _roe[0][1]
-        st = "bad" if _droe < -1 else ("ok" if _droe > 1 else "warn")
-        # 折线用完整年度序列（不只是比较的首尾 5 年）
-        _roe_ser = [(qof(y, 4) or {}).get("roe") for y in annual_chrono]
-        _roe_ser = [(v * 100 if v is not None else None) for v in _roe_ser]
-        sig.append(("盈利", st,
-                    f'ROE {_roe[0][1]:.2f}%（{_roe[0][0]}）→ {_roe[-1][1]:.2f}%（{_roe[-1][0]}）',
-                    f'{_droe:+.2f}pp，'
-                    f'{"持续下滑" if _droe < -1 else ("在改善" if _droe > 1 else "基本持平")}',
-                    spark(_roe_ser)))
-    if _yld_med and yld_now:
-        st = "ok" if yld_now >= _yld_med else "warn"
-        _yld_ser = [_yield(None, "annual", y) for y in annual_chrono]
-        sig.append(("现金回报", st,
-                    f'股息率 {yld_now:.2f}%　历史中位 {_yld_med:.2f}%',
-                    "高于自身历史中位" if st == "ok" else "低于自身历史中位",
-                    spark(_yld_ser)))
-    if _js:
-        m = sum(_js) / len(_js)
-        st = "bad" if m > 80 else ("ok" if m < 20 else "warn")
-        sig.append(("技术位置", st,
-                    f'日 J {jd:.0f}　周 J {jw:.0f}　月 J {jm:.0f}' if all(
-                        v is not None for v in (jd, jw, jm)) else f'三周期 J 均值 {m:.0f}',
-                    "三周期都在超买区" if m > 80 else ("三周期都在超卖区" if m < 20 else "在中性区"),
-                    spark([jd, jw, jm])))
+    # ── 决策速览 ──
+    # **必须走 verdict.decide()**，不能在这里再写一份。
+    # 这里曾经是内联的四信号逻辑，而 verdict.py 后来加了第 5 信号「最新季报」——
+    # 结果榜单把平安判成「中性」，个股页还写着「值得进一步看」，两套逻辑跑偏。
+    # 现在唯一实现只有 verdict.decide()，页面只负责渲染。
+    import verdict as _vd
+    _div_by_year = yearly_dividends(d["dividends"])
+    sig, _verdict, _detail = _vd.decide(qs, _div_by_year, yr_avg, meta)
+    _pp = _detail.get("pe_pct")
+    _pbp = _detail.get("pb_pct")
+    yld_now = _detail.get("yld") if _detail.get("yld") is not None else yld_now
+    _yld_med = _detail.get("yld_med")
 
     if sig:
-        nbad = sum(1 for s in sig if s[1] == "bad")
-        nok = sum(1 for s in sig if s[1] == "ok")
-        if nbad >= 2:
-            concl = "多项偏高位 / 走弱 —— 不是好的买入位置"
-        elif nok >= 2 and nbad == 0:
-            concl = "多项偏低位 / 改善 —— 值得进一步看"
-        else:
-            concl = "信号混合 —— 没有明显方向"
+        _c = {"值得看": "多项偏低位 / 改善 —— 值得进一步看",
+              "高位": "多项偏高位 / 走弱 —— 不是好的买入位置",
+              "中性": "信号混合 —— 没有明显方向"}
+        concl = _c.get(_verdict, "信号混合 —— 没有明显方向")
         h.append('<div class="dec">')
         for name, st, val, note, *rest in sig:
             ev = rest[0] if rest else ""
@@ -939,14 +910,16 @@ def main(argv=None, payload=None):
             '所以「每股分红 / 分红率 / 股息率」三列对港股一律显示「—」，'
             '这是拿不到，不是没有。当前股息率见页头。<br>'
             if d.get("market") == "HK" else '')
-        h.append(f'<div class="fn">{"　·　".join(obs)}<br>' + _hk_note +
+        h.append(f'<div class="fn">{"　·　".join(obs)}</div>')
+        h.append('<details><summary>这一年的数字怎么算的</summary>'
+                 '<div class="fn" style="margin-top:8px">' + _hk_note +
                  '业绩取年报（年内累计）。每股分红按 <b>财务年度</b> 归集（年报+中报相加），'
                  '不按除权日。分红率 = 每股分红 × 总股本 ÷ 归母净利；'
                  '股息率 = 每股分红 ÷ 当年日均价。回购按公告日年份归集，'
                  '格式为「注销式 / 激励式」—— 只有注销式才真正提高每股价值。<br>'
                  '⚠ 回购列只覆盖公告接口可取到的最近约 300 条公告（通常 2~4 年），'
                  '更早年份显示「—」<b>不代表当年没有回购</b>。'
-                 '* 该年度未走完，分红率与股息率不计算。</div>')
+                 '* 该年度未走完，分红率与股息率不计算。</div></details>')
 
     # ── 格雷厄姆「防御型投资者」7 条标准（第 14 章原文口径）──
     try:
@@ -964,30 +937,34 @@ def main(argv=None, payload=None):
                      '<span class="unit">《聪明的投资者》第 14 章 · '
                      f'{_gsum["verdict"]}</span></h2>')
             h.append('<table class="gtab"><thead><tr><th class="k">标准</th>'
-                     '<th>门槛</th><th>实际</th><th>判定</th></tr></thead><tbody>')
+                     '<th>实际 ／ 门槛</th><th>判定</th></tr></thead><tbody>')
             for _r in _grows:
                 _cls = {"pass": "up", "fail": "down", "na": "na",
                         "nodata": "na"}.get(_r["status"], "")
                 _txt = _g.label(_r["status"])
+                _extra = ""
                 if _r["status"] in ("na", "nodata") and _r.get("note"):
-                    _txt = f'{_txt}<span class="gnote">{_r["note"]}</span>'
+                    _extra = f'<span class="gnote">{_r["note"]}</span>'
                 h.append(f'<tr><td class="k">{_r["no"]}. {_r["name"]}</td>'
-                         f'<td class="gth">{_r["threshold"]}</td>'
-                         f'<td class="gac">{_r["actual"]}</td>'
+                         f'<td><span class="gn">{_r["actual"]}</span>'
+                         f'<span class="gth">{_r["threshold"]}</span>{_extra}</td>'
                          f'<td class="{_cls}">{_txt}</td></tr>')
             h.append('</tbody></table>')
             _cnt = _gsum
             h.append('<div class="fn">'
-                     f'通过 {_cnt["pass"]} 项、不通过 {_cnt["fail"]} 项、'
-                     f'不适用 {_cnt["na"]} 项、数据不足 {_cnt["nodata"]} 项。<br>'
-                     '口径取自原书第 14 章：规模门槛按 1 亿美元 × 7.2 折人民币；'
-                     '「财务状况」对工业股要求流动比 ≥ 2 <b>且</b>长期债务 ≤ 营运资本，'
-                     '公用事业改为负债 ≤ 2 倍账面股权；'
+                     f'通过 {_cnt["pass"]}、不通过 {_cnt["fail"]}、'
+                     f'不适用 {_cnt["na"]}、数据不足 {_cnt["nodata"]}'
+                     f'（共 7 项）</div>')
+            h.append('<details><summary>七条的门槛与判定口径</summary>'
+                     '<div class="fn" style="margin-top:8px">'
+                     '取自原书第 14 章。规模门槛按 1 亿美元 × 7.2 折人民币（<b>这是假设</b>）。'
+                     '「财务状况」工业股要求流动比 ≥ 2 <b>且</b>长期债务 ≤ 营运资本；'
+                     '公用事业改为负债 ≤ 2 倍账面股权。<br>'
                      '<b>金融业该条判「不适用」</b> —— 银行没有流动资产/流动负债科目，'
-                     '格雷厄姆在《证券分析》里另有标准，把它判成「不合格」是错的。<br>'
-                     '「数据不足」与「不通过」严格区分：分红记录不足 20 年时，'
-                     '若上市也不足 20 年判不适用，若上市够久但我们的数据没回溯那么远判数据不足。'
-                     '</div>')
+                     '格雷厄姆在《证券分析》里另有标准，判成「不合格」是错的。<br>'
+                     '<b>「数据不足」与「不通过」严格区分</b>：分红记录不足 20 年时，'
+                     '上市也不足 20 年判不适用；上市够久但我们的数据没回溯那么远，判数据不足。'
+                     '</div></details>')
     except Exception as _exc:
         print(f"[warn] 格雷厄姆判定失败 {code}: {type(_exc).__name__}: {_exc}")
 
@@ -1072,8 +1049,13 @@ def main(argv=None, payload=None):
     if not out:
         raise SystemExit("缺少输出路径（--out）")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    # 折叠项保持单列。
+    # 试过用正则把相邻 details 包成两列网格，结果 `.*?` 跨过了整张格雷厄姆表，
+    # 把表格当成 grid 的第二个格子挤到右半边 —— 页面直接坏了。
+    # 两列只是好看一点，不值得用脆弱的后处理换正确性，所以撤掉了。
+    _html = "\n".join(h)
     with open(out, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(h))
+        fh.write(_html)
     if not getattr(args, "quiet", False):
         print(f"已生成 {out}  ({len(''.join(h)) / 1024:.0f}KB)")
     return 0
