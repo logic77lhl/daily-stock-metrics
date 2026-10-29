@@ -53,6 +53,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
 sys.stdout.reconfigure(encoding="utf-8")
 
+import em_dc  # noqa: E402
 import http_util  # noqa: E402
 
 URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
@@ -87,14 +88,12 @@ HEADER = ["code", "template", "reportDate"] + FIELDS
 
 
 def _get(session, report, secucode, page=1, size=200):
-    params = {"reportName": report, "columns": "ALL", "pageNumber": str(page),
-              "pageSize": str(size), "filter": f'(SECUCODE="{secucode}")',
-              "sortColumns": "REPORT_DATE", "sortTypes": "-1"}
-    r = session.get(URL, params=params, headers=http_util.EM_HEADERS, timeout=(5, 30))
-    j = r.json()
-    if not j.get("success"):
-        return []
-    return (j.get("result") or {}).get("data") or []
+    """走 em_dc.query —— 它把「报表不适用」和「请求失败」分开。
+
+    原来这里 `if not success: return []`，于是限流/5xx 会被当成
+    「这只股票没有资产负债表」，然后静默少抓几只，没人发现。
+    """
+    return em_dc.query(session, report, secucode, size=size)
 
 
 def detect_template(session, secucode, tpl_cache):
@@ -236,6 +235,7 @@ def main(argv=None):
 
     print(f"观察池 {len(pool)} 只；需更新 {len(todo)} 只"
           f"（{len(pool) - len(todo)} 只已是最新）")
+    em_dc.reset_stats()
 
     ok = fail = 0
     for i, code in enumerate(todo, 1):
@@ -282,6 +282,10 @@ def main(argv=None):
     cnt = Counter(tpl_cache.get(f"{str(c).zfill(6)}.{'SH' if str(c).zfill(6)[0] == '6' else 'SZ'}") for c in pool)
     print(f"完成：成功 {ok}、失败 {fail}；"
           f"{len(all_rows)} 行资产负债表 / {len(split_rows)} 行分红送转")
+    print("  " + em_dc.stats_line())
+    if fail:
+        print(f"::warning::资产负债表有 {fail} 只抓取失败 —— "
+              f"这些股票会在下游被当成「没有资产负债表」，不是它们真的没有")
     print("模板分布：" + "　".join(f"{k} {v} 只" for k, v in sorted(cnt.items()) if k))
     print(f"→ {OUT}\n→ {SPLIT_OUT}")
     return 0

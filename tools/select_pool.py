@@ -43,6 +43,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 sys.stdout.reconfigure(encoding="utf-8")
 
+import em_dc  # noqa: E402
 import http_util  # noqa: E402
 
 DC = "https://datacenter-web.eastmoney.com/api/data/v1/get"
@@ -142,17 +143,8 @@ def cheap(rows, min_mv, min_roe, min_gp, need_gp=True, code_len=6,
 
 # ─────────────────────── 深抓 ───────────────────────
 def _dc(session, report, secucode, size=200):
-    p = {"reportName": report, "columns": "ALL", "pageNumber": "1",
-         "pageSize": str(size), "filter": f'(SECUCODE="{secucode}")',
-         "sortColumns": "REPORT_DATE", "sortTypes": "-1"}
-    try:
-        j = session.get(DC, params=p, headers=http_util.EM_HEADERS,
-                        timeout=(5, 30)).json()
-    except Exception:
-        return []
-    if not j.get("success"):
-        return []
-    return (j.get("result") or {}).get("data") or []
+    """走 em_dc.query —— 失败抛 FetchError，不再静默变成空列表。"""
+    return em_dc.query(session, report, secucode, size=size)
 
 
 def deep_a(session, code):
@@ -256,7 +248,13 @@ def main(argv=None):
     ap.add_argument("--fin-min-mv", type=float, default=100,
                     help="金融业市值门槛（亿），0 表示不启用金融通道")
     ap.add_argument("--min-mv-a", type=float, default=50)
-    ap.add_argument("--min-roe-a", type=float, default=6)
+    ap.add_argument("--min-roe-a", type=float, default=0,
+                    help="当期 ROE 下限。默认 0 只排除亏损 —— 当期是快照，\n"
+                         "用它筛全量会漏掉「今年差但长期好」的公司")
+    ap.add_argument("--min-roe-hist", type=float, default=6,
+                    help="近 5 年 ROE 均值下限（深抓后判，这才是历史口径）")
+    ap.add_argument("--min-years", type=int, default=3,
+                    help="至少要有几个年度的 ROE 才参与评分")
     ap.add_argument("--min-gp-a", type=float, default=12)
     ap.add_argument("--min-mv-hk", type=float, default=30)
     ap.add_argument("--no-deep", action="store_true", help="只跑初筛，不深抓")
@@ -264,6 +262,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     os.makedirs(OUT_DIR, exist_ok=True)
+    em_dc.reset_stats()
     session = _sess()
 
     print("① 取候选池")
@@ -294,17 +293,32 @@ def main(argv=None):
     # ── A 股深抓 ──
     print(f"\n② 深抓 A 股 {len(a_c)} 只（每只 2 请求，命中缓存 {len(deep_a_cache)} 条）")
     a_rec = []
+    deep_stat = {"ok": 0, "no_data": 0, "fail": 0}
+    fail_msgs = []
     for i, r in enumerate(a_c, 1):
         try:
             d = deep_a_cache.get(r["code"])
             if d is None:
                 d = deep_a(session, r["code"])
                 deep_a_cache[r["code"]] = d
-        except Exception:
+        except em_dc.FetchError as exc:
+            deep_stat["fail"] += 1
+            fail_msgs.append(f'{r["code"]} {exc}')
+            continue
+        except Exception as exc:
+            deep_stat["fail"] += 1
+            fail_msgs.append(f'{r["code"]} {type(exc).__name__}')
             continue
         ser = d["roe_series"]
-        if len(ser) < 2:
+        if len(ser) < args.min_years:
+            deep_stat["no_data"] += 1
             continue
+        # 历史口径的 ROE 门槛（近 5 年均值）—— 当期快照只用来排除亏损
+        _recent = [v for _, v in ser[-5:]]
+        if sum(_recent) / len(_recent) < args.min_roe_hist:
+            deep_stat["no_data"] += 1
+            continue
+        deep_stat["ok"] += 1
         roe_now = ser[-1][1]
         delta = ser[-1][1] - ser[0][1] if len(ser) >= 2 else None
         yld = None
@@ -330,6 +344,8 @@ def main(argv=None):
     # ── 港股深抓 ──
     print(f"\n③ 深抓港股 {len(hk_c)} 只（每只 1 请求，命中缓存 {len(deep_hk_cache)} 条）")
     hk_rec = []
+    hk_stat = {"ok": 0, "no_data": 0, "fail": 0}
+    hk_fail = []
     for i, r in enumerate(hk_c, 1):
         try:
             d = deep_hk_cache.get(r["code"])
@@ -337,10 +353,18 @@ def main(argv=None):
                 d = deep_hk(session, r["code"])
                 if d:
                     deep_hk_cache[r["code"]] = d
-        except Exception:
+        except em_dc.FetchError as exc:
+            hk_stat["fail"] += 1
+            hk_fail.append(f'{r["code"]} {exc}')
+            continue
+        except Exception as exc:
+            hk_stat["fail"] += 1
+            hk_fail.append(f'{r["code"]} {type(exc).__name__}')
             continue
         if not d:
+            hk_stat["no_data"] += 1
             continue
+        hk_stat["ok"] += 1
         ser = d["roe_series"]
         delta = (ser[-1][1] - ser[0][1]) if len(ser) >= 2 else None
         is_fin = _fin(r["ind"])
@@ -352,6 +376,18 @@ def main(argv=None):
         hk_rec.append(r)
         if i % 50 == 0:
             print(f"   [{i}/{len(hk_c)}] …")
+
+    print(f"   A 股深抓：成功 {deep_stat['ok']}、"
+          f"无数据/不达历史门槛 {deep_stat['no_data']}、失败 {deep_stat['fail']}")
+    if fail_msgs:
+        print(f"   ::warning:: A 股深抓失败 {len(fail_msgs)} 只，前 3："
+              + "；".join(fail_msgs[:3]))
+
+    print(f"   港股深抓：成功 {hk_stat['ok']}、无数据 {hk_stat['no_data']}、"
+          f"失败 {hk_stat['fail']}")
+    if hk_fail:
+        print(f"   ::warning:: 港股深抓失败 {len(hk_fail)} 只，前 3："
+              + "；".join(hk_fail[:3]))
 
     # ── 选 ──
     def _dedup(rows):
@@ -397,6 +433,7 @@ def main(argv=None):
     json.dump(deep_hk_cache, open(cache_hk, "w", encoding="utf-8"),
               ensure_ascii=False)
     print(f"→ {pa}\n→ {ph}")
+    print("  " + em_dc.stats_line())
     print("\nA 股前 10：")
     for r in sel_a[:10]:
         print(f"  {r['score']:>3} {r['code']} {r['name'][:6]:<7}"

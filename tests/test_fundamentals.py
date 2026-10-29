@@ -232,6 +232,69 @@ def test_annual_join_tool_golden():
           f"{r['bk_cancel']}/{r['bk_prog']}")
 
 
+
+def test_em_dc_distinguishes_empty_from_failure():
+    """em_dc 必须把「报表不适用」和「请求失败」分开 —— 这是本轮最重要的一条。
+
+    原来 `if not success: return []` 把限流/5xx/网络异常全变成「没数据」，
+    于是「初筛 447 只、深抓只有 444 只」少的 3 只没人查，
+    性能数字也可能因为「失败请求返回得特别快」而偏低。
+    """
+    import em_dc
+
+    class Resp:
+        def __init__(self, payload):
+            self._p = payload
+
+        def json(self):
+            return self._p
+
+    class Sess:
+        def __init__(self, payload=None, exc=None):
+            self.payload, self.exc = payload, exc
+
+        def get(self, *a, **k):
+            if self.exc:
+                raise self.exc
+            return Resp(self.payload)
+
+    # ① 报表不适用 → 正常空
+    em_dc.reset_stats()
+    rows = em_dc.query(Sess({"success": False, "message": "报表配置不存在,X"}),
+                       "R", "000001.SZ")
+    check("em_dc：报表不适用 → 返回空且不抛错", rows == []
+          and em_dc.STATS["empty"] == 1 and em_dc.STATS["fail"] == 0,
+          f"stats={dict(em_dc.STATS)}")
+
+    # ② success=false 但 message 不是「不适用」→ 必须抛
+    em_dc.reset_stats()
+    raised = False
+    try:
+        em_dc.query(Sess({"success": False, "message": "频率限制，请稍后"}),
+                    "R", "000001.SZ")
+    except em_dc.FetchError:
+        raised = True
+    check("em_dc：限流 → 抛 FetchError（不当成没数据）",
+          raised and em_dc.STATS["fail"] == 1, f"stats={dict(em_dc.STATS)}")
+
+    # ③ 网络异常 → 必须抛
+    em_dc.reset_stats()
+    raised = False
+    try:
+        em_dc.query(Sess(exc=ConnectionError("boom")), "R", "000001.SZ")
+    except em_dc.FetchError:
+        raised = True
+    check("em_dc：网络异常 → 抛 FetchError",
+          raised and em_dc.STATS["fail"] == 1, f"stats={dict(em_dc.STATS)}")
+
+    # ④ 有数据 → ok
+    em_dc.reset_stats()
+    rows = em_dc.query(Sess({"success": True, "result": {"data": [{"A": 1}]}}),
+                       "R", "000001.SZ")
+    check("em_dc：有数据 → 计数为 ok",
+          len(rows) == 1 and em_dc.STATS["ok"] == 1, f"stats={dict(em_dc.STATS)}")
+
+
 def main():
     print("=" * 68)
     print("基本面 / 定投 / 分组 口径自检")
@@ -241,7 +304,8 @@ def main():
                test_xirr_matches_hand_calc, test_xirr_rejects_degenerate,
                test_verdict_grouping, test_golden_icbc_from_cache,
                test_state_file_is_line_based_and_union_safe,
-               test_annual_join_tool_golden):
+               test_annual_join_tool_golden,
+               test_em_dc_distinguishes_empty_from_failure):
         try:
             fn()
         except Exception as exc:
