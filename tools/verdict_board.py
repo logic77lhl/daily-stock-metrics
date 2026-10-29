@@ -14,6 +14,7 @@
 每行给出关键数字 + 一句话理由，点名字进个股页。
 """
 import argparse
+import json
 import csv
 import os
 import sys
@@ -65,6 +66,59 @@ a:hover{border-bottom-color:#24425c}
   font-size:11.5px;color:#9aa0aa;line-height:1.9}
 """
 
+# ─────────────────────────── 历史与迁移 ───────────────────────────
+HIST = os.path.join(BASE, "_fin_cache", "board_history.json")
+KEEP_DAYS = 90
+
+
+def _load_hist():
+    if not os.path.exists(HIST):
+        return {}
+    try:
+        with open(HIST, encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def _save_hist(hist):
+    days = sorted(hist)[-KEEP_DAYS:]
+    out = {d: hist[d] for d in days}
+    os.makedirs(os.path.dirname(HIST), exist_ok=True)
+    with open(HIST, "w", encoding="utf-8") as fh:
+        json.dump(out, fh, ensure_ascii=False, sort_keys=True)
+
+
+def mark_moves(rows, today, hist):
+    """对比上一个快照，标出「新进 / 跌出」。返回 (rows, 迁移摘要)。
+
+    为什么这一步最重要：**「从高位掉进值得看」的那一天才是信号**。
+    每天覆盖的榜单只有「今天什么位置」，看不到迁移；而迁移本身就是变化。
+    """
+    prev_days = [d for d in sorted(hist) if d < today]
+    prev = hist.get(prev_days[-1], {}) if prev_days else {}
+    moves = {"新进值得看": [], "跌出值得看": [], "新进高位": [], "跌出高位": []}
+    for r in rows:
+        was = prev.get(r["code"])
+        now = r["verdict"]
+        r["was"] = was
+        r["move"] = ""
+        if was is None:
+            continue
+        if was != now:
+            if now == "值得看":
+                r["move"] = "新进值得看"
+            elif was == "值得看":
+                r["move"] = "跌出值得看"
+            elif now == "高位":
+                r["move"] = "新进高位"
+            elif was == "高位":
+                r["move"] = "跌出高位"
+            if r["move"]:
+                moves[r["move"]].append(r["name"])
+    return rows, moves, (prev_days[-1] if prev_days else None)
+
+
 GROUPS = [
     ("值得看", "≥2 项正向且无负面 —— 估值便宜 / 盈利改善 / 股息率高于历史中位 / 技术超卖"),
     ("中性", "信号混合，没有明显方向"),
@@ -111,8 +165,19 @@ def main(argv=None):
                          ind=m.get("行业") or "—", verdict=v,
                          reason=verdict.reason(sig), sig=sig, **d))
 
+    # 迁移标记（与上一个快照比）
+    today = os.path.basename(metrics).replace("metrics_", "").replace(".csv", "")
+    hist = _load_hist()
+    rows, moves, prev_day = mark_moves(rows, today, hist)
+    hist[today] = {r["code"]: r["verdict"] for r in rows}
+    _save_hist(hist)
+
+    # 排序：分组优先，组内「今日有迁移」的排最前，再按股息率
     order = {g: i for i, (g, _) in enumerate(GROUPS)}
-    rows.sort(key=lambda r: (order.get(r["verdict"], 9), -(r.get("yld") or 0)))
+    prio = {"新进值得看": 0, "新进高位": 0, "跌出值得看": 1, "跌出高位": 1, "": 2}
+    rows.sort(key=lambda r: (order.get(r["verdict"], 9),
+                             prio.get(r.get("move", ""), 2),
+                             -(r.get("yld") or 0)))
 
     print(f"{'分组':<8}{'代码':<8}{'名称':<10}{'行业':<12}"
           f"{'PE分位':>8}{'股息率':>8}{'中位':>8}{'ROE变化':>9}{'周J':>6}  理由")
@@ -127,6 +192,12 @@ def main(argv=None):
               f"{(r['ind'] or '')[:10]:<12}{pe:>8}{yl:>8}{ym:>8}{rd:>9}{jw:>6}"
               f"  {r['reason'][:46]}")
     print("-" * 118)
+    if prev_day and any(moves.values()):
+        print(f"\n与 {prev_day} 相比：")
+        for k, v in moves.items():
+            if v:
+                print(f"  {k} {len(v)} 只：{'、'.join(v[:6])}"
+                      + (f" 等 {len(v)} 只" if len(v) > 6 else ""))
     from collections import Counter
     cnt = Counter(r["verdict"] for r in rows)
     print("分组统计：" + "　".join(f"{g} {cnt.get(g,0)} 只" for g, _ in GROUPS)
@@ -142,6 +213,10 @@ def main(argv=None):
     h.append('<h1>全池分组榜单<small>按四信号分组</small></h1>')
     h.append(f'<div class="meta">技术面 {os.path.basename(metrics).replace("metrics_","").replace(".csv","")}'
              f' ｜ 财务取最近年报 ｜ 共 {len(rows)} 只</div>')
+    if prev_day and any(moves.values()):
+        _mv = "　".join(f'{k} <span class="n">{len(v)}</span> 只'
+                        for k, v in moves.items() if v)
+        h.append(f'<p class="note" style="margin-top:10px">与 {prev_day} 相比：{_mv}</p>')
     h.append(f'<p class="lede">今天有 <span class="n">{cnt.get("值得看",0)}</span> 只值得看、'
              f'<span class="n">{cnt.get("高位",0)}</span> 只在高位、'
              f'<span class="n">{cnt.get("中性",0)}</span> 只中性。'
@@ -164,8 +239,11 @@ def main(argv=None):
             rd = f'{r["roe_delta"]:+.1f}pp' if r.get("roe_delta") is not None else "—"
             jw = f'{r["jw"]:.0f}' if r.get("jw") is not None else "—"
             cls = "pos" if (r.get("roe_delta") or 0) > 0 else "neg"
+            mv = r.get("move") or ""
+            tag = (f'<span style="color:#24425c;font-size:11px;margin-left:6px">'
+                   f'{"↑ " if mv.startswith("新进") else "↓ "}{mv}</span>') if mv else ""
             h.append(f'<tr><td><a href="{r["code"]}.html">{r["name"]}</a>'
-                     f'<span class="mut"> {r["code"]}</span></td>'
+                     f'<span class="mut"> {r["code"]}</span>{tag}</td>'
                      f'<td class="ind">{r["ind"]}</td><td>{pe}</td>'
                      f'<td>{yl}</td><td class="mut">{ym}</td>'
                      f'<td class="{cls}">{rd}</td><td>{jw}</td>'
