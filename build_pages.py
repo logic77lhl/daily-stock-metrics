@@ -24,6 +24,94 @@ BT_SOURCES = [("个股", "a"), ("ETF", "etf"), ("HK", "hk")]
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # 用于 _strip_outer_div 的深度扫描与 _split_leading_title 的前导块剥离
 _DIV_TOKEN = re.compile(r"<div\b[^>]*>|</div>")
+# ── 深色主题覆盖层 ──────────────────────────────────────────────
+# 顶层三页（首页 / 归档 / 价值标的）的样式是历史遗留的浅色模板，
+# 与个股页、日期页的深色语言不一致。在 </body> 前追加一层覆盖：
+# 后出现的规则优先，加 !important 压过旧模板。改一处，三页同时生效。
+# 为什么用覆盖层而不逐条改：三套模板 400+ 行、带 {{ }} 双写转义，
+# 逐条替换的出错面很大；而且里面还有大量已不再使用的规则。
+_DARK = """<style>
+:root{
+  --bg:#0a0e15;--bg2:#0e141d;--panel:#131b26;--panel2:#17202d;
+  --line:#22303f;--line2:#2d3d4f;
+  --tx:#e8eef7;--dim:#8fa3ba;--dim2:#7b8fa5;
+  --acc:#ffd21e;--ok:#34d399;--warn:#fbbf24;--bad:#fb7185;
+  --blue:#7dd3fc;--violet:#a78bfa;
+  --mono:ui-monospace,"Cascadia Code",Consolas,"SF Mono",monospace;
+}
+html{background:var(--bg)!important}
+body{background:
+  radial-gradient(1100px 500px at 12% -10%,rgba(255,210,30,.07),transparent 60%),
+  radial-gradient(900px 480px at 92% 0%,rgba(125,211,252,.06),transparent 60%),
+  var(--bg)!important;color:var(--tx)!important;-webkit-font-smoothing:antialiased}
+a{color:var(--blue)}
+header{background:linear-gradient(135deg,#0c1219 0%,#101a26 60%,#132030 100%)!important;
+  border-bottom:1px solid var(--line)!important}
+header h1{color:var(--tx)!important}
+header p,.subtitle{color:var(--dim2)!important}
+.breadcrumb{background:rgba(255,255,255,.06)!important;
+  border:1px solid var(--line)!important;color:var(--dim)!important}
+.kpi,.card,.icard,.mini-card,.tabs,.summary-card,.legend,.panel{
+  background:linear-gradient(180deg,var(--panel),var(--bg2))!important;
+  border:1px solid var(--line)!important;box-shadow:none!important;color:var(--tx)!important}
+.k-label,.mini-note,.muted,.more{color:var(--dim2)!important}
+.k-value{font-family:var(--mono)!important;color:var(--acc)!important}
+.card-title,.icard-title,.mini-title,.section-sub,.sec-title{color:var(--tx)!important}
+.card-title:after{background:linear-gradient(90deg,var(--line),transparent)!important}
+.chip,.pill,.chip2,.bt,.arch{background:var(--panel2)!important;
+  border:1px solid var(--line)!important;color:var(--dim)!important}
+.pill.hot{border-color:rgba(255,210,30,.35)!important;
+  background:rgba(255,210,30,.12)!important;color:var(--acc)!important}
+.ins,.val{color:var(--tx)!important}
+.tab-btn{color:var(--dim)!important}
+.tab-btn:hover{background:rgba(255,255,255,.05)!important;color:var(--tx)!important}
+.tab-btn.active{background:rgba(255,210,30,.14)!important;color:var(--acc)!important;
+  box-shadow:none!important}
+table,.datatable{background:transparent!important;color:var(--tx)!important}
+.datatable th{background:var(--panel2)!important;color:var(--dim2)!important;
+  border-bottom:1px solid var(--line2)!important}
+.datatable td{border-bottom:1px solid var(--line)!important;color:var(--tx)!important;
+  font-family:var(--mono)!important;font-size:12.5px!important}
+.datatable td.tl,.datatable td:first-child{font-family:inherit!important;font-size:13px!important}
+.datatable tr:nth-child(even) td{background:rgba(255,255,255,.015)!important}
+.datatable tr:hover td{background:rgba(255,255,255,.035)!important}
+.datatable .mute{color:var(--dim2)!important}
+.tblwrap{border:1px solid var(--line)!important;border-radius:10px!important}
+.temp{color:#0a0e15!important}
+.sec-row,.dsm-sec-cols,.dsm-sec-col,.opp-grid,.dsm-brd-grid,.v-row,.v-mkt,.v-item,
+.stats,.kpi-row,.dash{background:transparent!important;border-color:var(--line)!important}
+.dsm-sec-col,.v-item,.v-mkt{border:1px solid var(--line)!important;
+  border-radius:10px!important;background:var(--panel)!important}
+.footer{color:var(--dim2)!important}
+/* market_insights / strategy_summary 的片段把白底写在**内联 style** 上
+   （<div style="background:#fff;border-radius:10px">），类选择器抓不到。
+   用属性选择器 + !important 压过去 —— 这是覆盖内联样式唯一可靠的方式。 */
+div[style*="background:#fff"],div[style*="background: #fff"],
+section[style*="background:#fff"],section[style*="background: #fff"]{
+  background:linear-gradient(180deg,var(--panel),var(--bg2))!important;
+  border:1px solid var(--line)!important;box-shadow:none!important;color:var(--tx)!important}
+/* 浅色底的子块（实测用到的几个十六进制值，逐个列出来 —— 属性选择器
+   没法做"亮度判断"，只能穷举） */
+div[style*="background:#f7f9fc"],div[style*="background:#f8f9fb"],
+div[style*="background:#f5f7fb"],div[style*="background:#f1f3f9"],
+div[style*="background:#eef1f7"],div[style*="background:#fbfcfe"],
+div[style*="background:#fafbfd"]{
+  background:rgba(255,255,255,.04)!important;border-color:var(--line)!important}
+div[style*="border:1px solid #eef1f7"],div[style*="border:1px solid #e5e8f0"],
+div[style*="border:1px solid #eceef4"],div[style*="border:1px solid #f0f2f8"]{
+  border-color:var(--line)!important}
+/* 内联文字色 */
+div[style*="color:#1c2333"],div[style*="color:#343a40"],div[style*="color:#1a1a2e"]{
+  color:var(--tx)!important}
+div[style*="color:#8791a8"],div[style*="color:#6b7280"],
+div[style*="color:#495057"],div[style*="color:#657289"],div[style*="color:#666"]{
+  color:var(--dim2)!important}
+div[style*="color:#d9480f"],span[style*="color:#d9480f"]{color:var(--warn)!important}
+div[style*="color:#c92a2a"],span[style*="color:#c92a2a"]{color:var(--bad)!important}
+div[style*="color:#2b8a3e"],span[style*="color:#2b8a3e"]{color:var(--ok)!important}
+</style>"""
+
+
 _STYLE_BLOCK = re.compile(r"^\s*<style\b[^>]*>.*?</style>\s*", re.DOTALL | re.IGNORECASE)
 _LEADING_TITLE = re.compile(r"^\s*<div\b[^>]*>([^<]*)</div>\s*")
 # 归档页最多展示多少天。必须与 prune_outputs 的保留策略取同一个数，
@@ -465,7 +553,7 @@ function switchTab(btn){{
     }});
 }})();
 </script>
-</body></html>"""
+{_DARK}</body></html>"""
     return html
 
 
@@ -794,7 +882,29 @@ footer{{text-align:center;color:#98a1b3;font-size:12px;padding:14px 12px 30px;li
     apply();
 }})();
 </script>
-</body></html>"""
+{_DARK}</body></html>"""
+
+
+def _copy_dark(src, dst):
+    """复制 HTML，并在 </body> 前注入深色覆盖层。
+
+    回测报告（backtest.py）和价值标的（build_value.py）各自带一套浅色样式，
+    都是 `shutil.copy` 直接搬进 docs 的。与其去改那两个模块的模板，
+    不如在**搬的时候**注入同一份 `_DARK` —— 一处覆盖 4 个页面，
+    而且以后新增的复制页也会自动带上。
+    """
+    try:
+        with open(src, encoding="utf-8") as fh:
+            body = fh.read()
+        if _DARK not in body:
+            body = body.replace("</body>", _DARK + "</body>", 1)
+        with open(dst, "w", encoding="utf-8") as fh:
+            fh.write(body)
+    except Exception as exc:
+        # 注入失败就退回原样复制 —— 样式不统一好过页面缺内容
+        print(f"[warn] 深色注入失败 {os.path.basename(dst)}: "
+              f"{type(exc).__name__}: {exc}")
+        shutil.copy(src, dst)
 
 
 def collect_extras():
@@ -807,14 +917,14 @@ def collect_extras():
     for src_key, dst_key in BT_SOURCES:
         src = os.path.join(BASE_DIR, "backtest_results", src_key, "backtest_report.html")
         if os.path.exists(src):
-            shutil.copy(src, os.path.join(DOCS_DIR, f"backtest-{dst_key}.html"))
+            _copy_dark(src, os.path.join(DOCS_DIR, f"backtest-{dst_key}.html"))
             extras.append(f"backtest-{dst_key}.html")
         csv_src = os.path.join(BASE_DIR, "backtest_results", src_key, "backtest_report_trades.csv")
         if os.path.exists(csv_src):
             shutil.copy(csv_src, os.path.join(DOCS_DIR, f"backtest-{dst_key}-trades.csv"))
     vl = _latest("value_*.html")
     if vl:
-        shutil.copy(vl, os.path.join(DOCS_DIR, "value.html"))
+        _copy_dark(vl, os.path.join(DOCS_DIR, "value.html"))
         extras.append("value.html")
     return extras
 
@@ -1131,7 +1241,7 @@ footer{{text-align:center;color:#98a1b3;font-size:11.5px;padding:16px 12px 28px;
 <div class="dash">{summary_html}</div>
 </main>
 <footer>由 GitHub Actions 每个交易日自动构建部署<br>数据仅供研究参考，不构成任何投资建议</footer>
-</body></html>"""
+{_DARK}</body></html>"""
 
 
 def main():
