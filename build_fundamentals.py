@@ -29,106 +29,154 @@ elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
 
 CSS = """
+:root{
+  --bg:#0a0e15; --bg2:#0e141d; --panel:#131b26; --panel2:#17202d;
+  --line:#22303f; --line2:#2d3d4f;
+  --tx:#e8eef7; --dim:#8fa3ba; --dim2:#7b8fa5;
+  --acc:#ffd21e; --acc2:#f7b500;
+  --ok:#34d399; --warn:#fbbf24; --bad:#fb7185;
+  --blue:#7dd3fc; --violet:#a78bfa;
+  --mono:ui-monospace,"Cascadia Code",Consolas,"SF Mono",monospace;
+}
 *{box-sizing:border-box;-webkit-text-size-adjust:100%}
-body{margin:0;background:#fff;color:#101828;
-  font:14px/1.5 -apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif}
-.page{max-width:960px;margin:0 auto;padding:20px 16px 40px}
+body{margin:0;color:var(--tx);
+  background:
+    radial-gradient(1100px 500px at 12% -10%,rgba(255,210,30,.07),transparent 60%),
+    radial-gradient(900px 480px at 92% 0%,rgba(125,211,252,.06),transparent 60%),
+    var(--bg);
+  font:14.5px/1.6 -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;padding-bottom:40px}
+a{color:var(--blue);text-decoration:none}
+.page{max-width:1020px;margin:0 auto;padding:0 18px 40px}
 
-/* 抬头：白底、无渐变、左对齐 */
-header{border-bottom:2px solid #101828;padding-bottom:12px;margin-bottom:22px}
-.title{font-size:22px;font-weight:700;letter-spacing:-.2px}
-.title .code{font-size:14px;color:#667085;font-weight:400;margin-left:6px}
-.title .ind{font-size:12px;background:#f2f4f7;color:#475467;padding:2px 7px;
-  border-radius:4px;margin-left:8px;font-weight:400;vertical-align:2px}
-.prow{display:flex;align-items:baseline;gap:10px;margin-top:8px;flex-wrap:wrap}
-.prow .px{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
-.prow .chg{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
-.prow .meta{font-size:12px;color:#667085}
+/* ── 抬头：粘顶 + 毛玻璃 ── */
+header{position:sticky;top:0;z-index:20;backdrop-filter:blur(14px);
+  background:rgba(10,14,21,.86);border-bottom:1px solid var(--line);
+  padding:14px 0 12px;margin-bottom:20px}
+.title{font-size:21px;font-weight:700;letter-spacing:-.2px;display:flex;
+  align-items:baseline;gap:8px;flex-wrap:wrap}
+.title .code{font:600 13px var(--mono);color:var(--acc);letter-spacing:.5px}
+.title .ind{font-size:11px;color:var(--dim);background:var(--panel);
+  border:1px solid var(--line);padding:3px 9px;border-radius:999px;font-weight:500}
+.prow{display:flex;align-items:baseline;gap:12px;margin-top:7px;flex-wrap:wrap}
+.prow .px{font:700 23px/1.1 var(--mono);color:var(--tx)}
+.prow .chg{font:600 14px/1 var(--mono)}
+.prow .meta{font-size:11.5px;color:var(--dim2);letter-spacing:.2px}
 
-/* 区块标题 */
-h2{font-size:15px;font-weight:700;margin:26px 0 10px;display:flex;
-  align-items:baseline;justify-content:space-between;gap:12px}
-h2 .unit{font-size:11.5px;color:#98a2b3;font-weight:400}
+/* ── 区块标题 ── */
+h2{font-size:15px;font-weight:700;margin:26px 0 12px;display:flex;
+  align-items:baseline;gap:9px;flex-wrap:wrap}
+h2 .unit{font-size:11.5px;color:var(--dim2);font-weight:400}
+h2 .cnt{font:700 11px var(--mono);color:var(--acc);background:rgba(255,210,30,.1);
+  border:1px solid rgba(255,210,30,.25);padding:3px 8px;border-radius:6px}
 
-/* 财务表：行=指标，列=期间 */
+/* ── 信号卡片：首屏唯一主角 ── */
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin:16px 0 0}
+.stat{background:linear-gradient(180deg,var(--panel),var(--bg2));
+  border:1px solid var(--line);border-radius:12px;padding:13px 14px;min-width:0}
+.stat .k{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim2);
+  letter-spacing:.4px;white-space:nowrap}
+.stat .k .dot{width:6px;height:6px;border-radius:50%;flex:none}
+.stat .v{font:800 21px/1.15 var(--mono);margin-top:9px;letter-spacing:-.5px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat .n{font-size:11px;color:var(--dim);margin-top:6px;line-height:1.45;
+  overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.stat.ok .v{color:var(--ok)}
+.stat.warn .v{color:var(--warn)}
+.stat.bad .v{color:var(--bad)}
+.stat.na .v{color:var(--dim2)}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}
+.dot.bad{background:var(--bad)}.dot.na{background:var(--dim2)}
+
+/* 结论条 */
+.sum{margin-top:12px;padding:13px 16px;border-radius:12px;font-size:14px;
+  font-weight:660;border:1px solid var(--line2);background:var(--panel2);
+  display:flex;align-items:center;gap:10px}
+.sum .mk{width:3px;align-self:stretch;border-radius:2px;background:var(--dim2)}
+.sum.ok .mk{background:var(--ok)}.sum.bad .mk{background:var(--bad)}
+
+/* ── 财务表 ── */
 table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;
-  font-size:13.5px}
-thead th{position:sticky;top:0;background:#fff;z-index:1}
-th,td{padding:8px 10px;text-align:right;border-bottom:1px solid #f0f2f5;
+  font-size:13px}
+thead th{position:sticky;top:64px;background:var(--bg);z-index:1}
+th,td{padding:8px 9px;text-align:right;border-bottom:1px solid var(--line);
   white-space:nowrap}
-th.k,td.k{text-align:left;font-weight:500;color:#101828;position:sticky;left:0;
-  background:#fff;z-index:2}
-thead tr:first-child th{border-bottom:0;font-size:12.5px;font-weight:700;color:#101828}
-thead tr.sub th{border-bottom:1.5px solid #d0d5dd;font-size:11px;font-weight:400;
-  color:#98a2b3;padding-top:0}
-tbody tr.main td{font-weight:600}
-tbody tr.subrow td{font-size:12px;color:#667085;padding-top:0;border-bottom:1px solid #f7f8fa}
-tbody tr.subrow td.k{color:#98a2b3;padding-left:22px;font-size:11.5px}
-tbody tr.gap td{border-bottom:1px solid #eaecf0}
-.up{color:#d92d20}
-.down{color:#079455}
-.na{color:#d0d5dd}
-.fn{font-size:11px;color:#98a2b3;margin:8px 0 0;line-height:1.7}
+th{font-size:11.5px;font-weight:600;color:var(--dim2);letter-spacing:.3px}
+th.k,td.k{text-align:left;font-weight:500;color:var(--tx);position:sticky;left:0;
+  background:var(--bg);z-index:2}
+td{font-family:var(--mono);font-size:12.5px}
+td.k{font-family:inherit;font-size:13px}
+tbody tr:hover td{background:rgba(255,255,255,.018)}
+/* 语义：pos/neg 是「基本面好坏」，up/down 是「涨跌」（A 股红涨绿跌） */
+.pos{color:var(--ok)}
+.neg{color:var(--bad)}
+.up{color:var(--bad)}
+.down{color:var(--ok)}
+.na,.mut{color:var(--dim2)}
+.fn{font-size:11px;color:var(--dim2);margin:9px 0 0;line-height:1.75}
+.fn b{color:var(--dim)}
 
-/* 结论 */
-.verdict{border-left:3px solid #d0d5dd;padding:10px 0 10px 14px;margin-top:26px;
-  font-size:13.5px}
-.verdict.warn{border-left-color:#f79009}
-.verdict.ok{border-left-color:#12b76a}
+/* 结论块（旧版兼容） */
+.verdict{border-left:3px solid var(--line2);padding:10px 0 10px 14px;
+  margin-top:26px;font-size:13.5px}
+.verdict.warn{border-left-color:var(--warn)}
+.verdict.ok{border-left-color:var(--ok)}
 .verdict b{display:block;margin-bottom:4px}
-.verdict .kv{font-size:12.5px;color:#667085}
-.ft{color:#98a2b3;font-size:11px;text-align:center;margin-top:34px;line-height:1.9}
-/* 折叠 */
-details{margin-top:10px;border:1px solid #eaecf0;border-radius:8px;padding:0 12px}
-details summary{cursor:pointer;padding:10px 0;font-size:13px;color:#475467;
+.verdict .kv{font-size:12.5px;color:var(--dim)}
+.ft{color:var(--dim2);font-size:11px;text-align:center;margin-top:34px;line-height:1.9}
+
+/* ── 折叠 ── */
+details{margin-top:9px;border:1px solid var(--line);border-radius:10px;
+  padding:0 14px;background:rgba(255,255,255,.012)}
+details summary{cursor:pointer;padding:11px 0;font-size:12.5px;color:var(--dim);
   list-style:none}
 details summary::-webkit-details-marker{display:none}
-details summary::before{content:"▸ ";color:#98a2b3}
+details summary::before{content:"▸ ";color:var(--dim2)}
 details[open] summary::before{content:"▾ "}
 details table{margin-bottom:12px}
 
-
-/* 决策速览：四信号（首屏唯一主角） */
-.dec{border:1px solid #e4e8ef;border-radius:10px;overflow:hidden;margin:18px 0 0}
-.dec .row{display:flex;align-items:flex-start;gap:10px;padding:11px 15px;
-  border-bottom:1px solid #f4f6f9;font-size:13.5px}
-.dec .row:last-child{border-bottom:0}
-.dec .row .n{width:60px;color:#5c6675;font-size:12px;flex-shrink:0;white-space:nowrap}
-.dec .row .dot{width:7px;height:7px;border-radius:50%;margin-top:7px;flex-shrink:0}
-.dec .row .dot.ok{background:#12b76a}.dec .row .dot.warn{background:#f79009}
-.dec .row .dot.bad{background:#d92d20}.dec .row .dot.na{background:#d0d5dd}
-.dec .row .txt{flex:1;line-height:1.6;font-variant-numeric:tabular-nums}
-.dec .row .txt b{font-weight:620;margin-right:10px}
-.dec .row .txt em{font-style:normal;color:#6b7488;font-size:12px}
-.dec .sum{background:#f7f9fc;padding:13px 15px;font-size:13.5px;font-weight:660}
-.dec .ev{flex:none;display:flex;align-items:center;margin-left:auto;padding-left:14px}
-.dec .ev svg{display:block;overflow:visible}
-
-/* 格雷厄姆七条 */
+/* ── 格雷厄姆七条 ── */
 .gtab{table-layout:fixed}
 .gtab th:nth-child(1),.gtab td:nth-child(1){width:150px}
 .gtab th:nth-child(2),.gtab td:nth-child(2){width:auto;text-align:left}
 .gtab th:nth-child(3),.gtab td:nth-child(3){width:72px;text-align:right;
   white-space:nowrap}
-.gtab td{font-size:12.5px;padding:8px 10px;vertical-align:top}
-.gtab .gn{color:#3d4450}
-.gtab .gth{display:block;color:#98a2b3;font-size:10.5px;margin-top:2px;line-height:1.5}
-.gtab .up{color:#0f7b4f;font-weight:600}
-.gtab .down{color:#b42318;font-weight:600}
-.gtab .gnote{display:block;color:#98a2b3;font-size:10px;font-weight:400;
-  margin-top:2px;line-height:1.45}
+.gtab td{font-size:12.5px;padding:9px 10px;vertical-align:top}
+.gtab td:nth-child(2){font-family:inherit}
+.gtab .gn{color:var(--tx)}
+.gtab .gth{display:block;color:var(--dim2);font-size:10.5px;margin-top:3px;
+  line-height:1.5;font-family:inherit}
+.gtab .pos{font-weight:700}
+.gtab .neg{font-weight:700}
+.gtab .gnote{display:block;color:var(--dim2);font-size:10px;font-weight:400;
+  margin-top:2px;line-height:1.45;font-family:inherit}
 
-/* 年度表的趋势行 */
-.trow td{background:#f7f9fc;color:#3d4450;font-size:12px;font-weight:600;
-  border-top:1px solid #dcdfe4;border-bottom:0}
-.trow td.k{color:#6b7488}
+/* 年度表趋势行 */
+.trow td{background:rgba(255,210,30,.045);color:var(--dim);font-size:11.5px;
+  font-weight:600;border-top:1px solid var(--line2);border-bottom:0}
+.trow td.k{color:var(--dim2);background:rgba(255,210,30,.045)}
 
 /* 技术面 / TTM 各一行 */
-.strip{margin:7px 0 0;font-size:12.5px;color:#3d4450;line-height:1.8;
+.strip{margin:8px 0 0;font-size:12px;color:var(--dim);line-height:1.85;
   font-variant-numeric:tabular-nums}
-.strip .strip-k{display:inline-block;min-width:46px;color:#6b7488;font-size:11px;
-  letter-spacing:.04em;margin-right:9px}
-.strip .strip-d{color:#8a93a5;font-size:11px;margin-left:10px}
+.strip .strip-k{display:inline-block;min-width:44px;color:var(--dim2);font-size:10.5px;
+  letter-spacing:.06em;margin-right:9px}
+.strip .strip-d{color:var(--dim2);font-size:10.5px;margin-left:10px}
+
+/* 站内导航胶囊 */
+.nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 6px}
+.nav a{font-size:12px;color:var(--dim);border:1px solid var(--line);
+  border-radius:999px;padding:5px 13px;background:var(--panel);transition:.16s}
+.nav a:hover{color:var(--acc);border-color:rgba(255,210,30,.35)}
+
+@media(max-width:860px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .stat .v{font-size:18px}
+}
+@media(max-width:520px){
+  .stats{grid-template-columns:1fr 1fr}
+  .page{padding:0 12px 30px}
+}
 """
 
 
@@ -158,7 +206,7 @@ def trend_word(vals, tol=0.0):
     return f'↑{ups} ↓{downs}'
 
 
-def spark(vals, w=62, h=20, color="#24425c"):
+def spark(vals, w=62, h=20, color="#7dd3fc"):
     """迷你折线：只表达方向，不带坐标轴。
 
     刻意不画网格、不标数值 —— 数值已经在左边用大字写着了，
@@ -204,11 +252,11 @@ def posbar(lo, hi, cur, w=62, h=14):
     x = 1.5 + t * (w - 3)
     return (f'<svg class="pos" width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
             f'aria-hidden="true">'
-            f'<line x1="1.5" y1="{y}" x2="{w - 1.5}" y2="{y}" stroke="#e4e8ef" '
+            f'<line x1="1.5" y1="{y}" x2="{w - 1.5}" y2="{y}" stroke="#22303f" '
             f'stroke-width="3" stroke-linecap="round"/>'
-            f'<line x1="1.5" y1="{y}" x2="{x:.1f}" y2="{y}" stroke="#24425c" '
+            f'<line x1="1.5" y1="{y}" x2="{x:.1f}" y2="{y}" stroke="#ffd21e" '
             f'stroke-width="3" stroke-linecap="round"/>'
-            f'<circle cx="{x:.1f}" cy="{y}" r="2.7" fill="#fff" stroke="#24425c" '
+            f'<circle cx="{x:.1f}" cy="{y}" r="2.7" fill="#fff" stroke="#ffd21e" '
             f'stroke-width="1.6"/></svg>')
 
 
@@ -264,8 +312,8 @@ def bar_chart(labels, series, height=230, unit="亿", width=780, legend=None,
         y = pad_t + ph - (t - lo) / (hi - lo) * ph
         if grid:
             out.append(f'<line x1="{pad_l}" y1="{y:.1f}" x2="{width - pad_r}" '
-                       f'y2="{y:.1f}" stroke="#f2f4f7"/>')
-        out.append(f'<text x="{pad_l - 6}" y="{y + 3.5:.1f}" font-size="10" fill="#9aa3b5" '
+                       f'y2="{y:.1f}" stroke="#1c2634"/>')
+        out.append(f'<text x="{pad_l - 6}" y="{y + 3.5:.1f}" font-size="10" fill="#7b8fa5" '
                    f'text-anchor="end">{_fmt(t, 0)}</text>')
     for i, lab in enumerate(labels):
         cx = pad_l + slot * i
@@ -281,14 +329,14 @@ def bar_chart(labels, series, height=230, unit="亿", width=780, legend=None,
                        f'<title>{html.escape(lab)} {name}: {_fmt(v)} {unit}</title></rect>')
         if n <= 14 or i % 2 == 0:
             out.append(f'<text x="{cx + slot / 2:.1f}" y="{height - 12}" font-size="9.5" '
-                       f'fill="#9aa3b5" text-anchor="middle">{html.escape(lab)}</text>')
+                       f'fill="#7b8fa5" text-anchor="middle">{html.escape(lab)}</text>')
     if legend:
         lx = width - pad_r
         for name, color in reversed(legend):
             w_ = 20 + len(name) * 10
             lx -= w_
             out.append(f'<rect x="{lx}" y="6" width="8" height="8" fill="{color}" rx="1.5"/>')
-            out.append(f'<text x="{lx + 12}" y="13.5" font-size="10" fill="#7a8397">'
+            out.append(f'<text x="{lx + 12}" y="13.5" font-size="10" fill="#8fa3ba">'
                        f'{html.escape(name)}</text>')
     out.append("</svg>")
     return "".join(out)
@@ -735,8 +783,8 @@ def main(argv=None, payload=None):
     if yld_now is None and d.get("yld_now"):
         yld_now = d["yld_now"]          # 港股：源直接给当前股息率
     h.append(f'<span class="meta">'
-             + (f'股息率 <b style="color:#101828">{yld_now:.2f}%</b>'
-                f'<span style="color:#98a2b3">（{_fy_y} 年度 ÷ 现价）</span> ｜ '
+             + (f'股息率 <b style="color:var(--acc)">{yld_now:.2f}%</b>'
+                f'<span style="color:var(--dim2)">（{_fy_y} 年度 ÷ 现价）</span> ｜ '
                 if yld_now else '')
              + f'PE 分位 {pe_pct} ｜ PB 分位 {pb_pct} ｜ '
              f'最新数据 {latest["statDate"] if latest else "—"}'
@@ -757,22 +805,60 @@ def main(argv=None, payload=None):
     _yld_med = _detail.get("yld_med")
 
     if sig:
-        _c = {"值得看": "多项偏低位 / 改善 —— 值得进一步看",
-              "高位": "多项偏高位 / 走弱 —— 不是好的买入位置",
-              "中性": "信号混合 —— 没有明显方向"}
-        concl = _c.get(_verdict, "信号混合 —— 没有明显方向")
-        h.append('<div class="dec">')
-        for name, st, val, note, *rest in sig:
-            ev = rest[0] if rest else ""
-            h.append(f'<div class="row"><span class="n">{name}</span>'
-                     f'<span class="dot {st}"></span>'
-                     f'<span class="txt"><b>{val}</b><em>{note}</em></span>'
-                     + (f'<span class="ev">{ev}</span>' if ev else '')
-                     + '</div>')
-        h.append(f'<div class="sum">{concl}</div>')
-        h.append('</div>')
-        h.append('<div class="fn">这四项都是<b>位置描述</b>，不是预测。'
-                 '独立回测显示这类技术信号对未来收益无预测力，请只当作"现在处在什么位置"来看。</div>')
+        _c = {"值得看": ("ok", "多项偏低位 / 改善 —— 值得进一步看"),
+              "高位": ("bad", "多项偏高位 / 走弱 —— 不是好的买入位置"),
+              "中性": ("", "信号混合 —— 没有明显方向")}
+        _vk, concl = _c.get(_verdict, ("", "信号混合 —— 没有明显方向"))
+
+        # 每张卡片：一个大数字 + 一行小字。大数字取自 _detail 的原始值，
+        # 小字补上「另一个维度」，避免和数字重复。
+        _d = _detail.get("roe_delta")
+        _roe = _detail.get("roe_now")
+        _yld = _detail.get("yld")
+        _med = _detail.get("yld_med")
+        _jw = _detail.get("jw")
+        _javg = _detail.get("j")
+        _qy = _detail.get("q_yoy")
+        _lastq = ""
+        for _n, _st, _val, _note, *_rest in sig:
+            if _n == "最新季报":
+                _lastq = _val
+                break
+
+        def _card(name, big, sub, st):
+            if big is None:
+                big, st = "—", "na"
+            return (f'<div class="stat {st}"><div class="k">'
+                    f'<span class="dot {st}"></span>{name}</div>'
+                    f'<div class="v">{big}</div>'
+                    f'<div class="n">{sub}</div></div>')
+
+        _cards = []
+        _cards.append(_card("估值",
+                            f'{_pp:.0f}%' if _pp is not None else None,
+                            f'PE 分位' + (f'　PB {_pbp:.0f}%' if _pbp is not None else ''),
+                            next((s[1] for s in sig if s[0] == "估值"), "")))
+        _cards.append(_card("盈利",
+                            f'{_d:+.1f}pp' if _d is not None else None,
+                            f'ROE {_roe:.2f}%' if _roe is not None else 'ROE 趋势',
+                            next((s[1] for s in sig if s[0] == "盈利"), "")))
+        _cards.append(_card("现金回报",
+                            f'{_yld:.2f}%' if _yld else None,
+                            f'历史中位 {_med:.2f}%' if _med else '股息率',
+                            next((s[1] for s in sig if s[0] == "现金回报"), "")))
+        _cards.append(_card("技术位置",
+                            f'{_jw:.0f}' if _jw is not None else None,
+                            (f'周J　均 {_javg:.0f}' if _javg is not None else '周J'),
+                            next((s[1] for s in sig if s[0] == "技术位置"), "")))
+        _cards.append(_card("最新季报",
+                            f'{_qy * 100:+.0f}%' if _qy is not None else None,
+                            _lastq.replace("单季", "单季").split("（")[0] or "季报同比",
+                            next((s[1] for s in sig if s[0] == "最新季报"), "")))
+        h.append('<div class="stats">' + "".join(_cards) + '</div>')
+        h.append(f'<div class="sum {_vk}"><span class="mk"></span>{concl}</div>')
+        h.append('<div class="fn">这些都是<b>位置描述</b>，不是预测。'
+                 '独立回测显示技术类信号对未来收益无预测力，请只当作'
+                 '"现在处在什么位置"来看。</div>')
 
     # ── 技术面 / TTM：各一行，不再占独立区块 ──
     # 技术面本来就每天更新、财务是季报节奏，两者必须分开标日期，
@@ -797,7 +883,7 @@ def main(argv=None, payload=None):
     _md = (meta.get("数据日期") or "")[:10]
     if meta.get("_no_metrics"):
         h.append('<p class="strip"><span class="strip-k">技术面</span>'
-                 '<span style="color:#8a93a5">未纳入日更采集 —— '
+                 '<span style="color:var(--dim2)">未纳入日更采集 —— '
                  '本页只有财务数据（年度串联、ROE 趋势完整可用），'
                  '估值分位与技术位置待当日行情补齐</span></p>')
     if _bits:
@@ -844,7 +930,7 @@ def main(argv=None, payload=None):
             bk = (f'{x["bk_cancel"]} / {x["bk_prog"]}'
                   if (x["bk_cancel"] or x["bk_prog"]) else "—")
             warn = (f'<span title="{html.escape(x["flag"])}" '
-                    f'style="color:#c92a2a;cursor:help">⚠</span>') if x.get("flag") else ""
+                    f'style="color:var(--warn);cursor:help">⚠</span>') if x.get("flag") else ""
             h.append(f'<tr><td class="k">{x["year"]}{mark} {warn}</td>')
             h.append(f'<td>{x["revenue"]:,.0f}</td>' if x["revenue"] else '<td class="na">—</td>')
             h.append(f'<td>{x["netProfit"]:,.0f}</td>' if x["netProfit"] else '<td class="na">—</td>')
@@ -939,7 +1025,10 @@ def main(argv=None, payload=None):
             h.append('<table class="gtab"><thead><tr><th class="k">标准</th>'
                      '<th>实际 ／ 门槛</th><th>判定</th></tr></thead><tbody>')
             for _r in _grows:
-                _cls = {"pass": "up", "fail": "down", "na": "na",
+                # pass 用 pos（绿），fail 用 neg（红）。
+                # 不能用 up/down —— 那两个是「红涨绿跌」的行情语义，
+                # 用在「通过/不通过」上会让「通过」显示成红色。
+                _cls = {"pass": "pos", "fail": "neg", "na": "na",
                         "nodata": "na"}.get(_r["status"], "")
                 _txt = _g.label(_r["status"])
                 _extra = ""
@@ -1009,7 +1098,7 @@ def main(argv=None, payload=None):
     cq = qs[-20:]
     labels = [quarter_label(q) for q in cq]
     h.append('<details><summary>展开单季净利趋势（近 20 季）</summary>')
-    h.append(bar_chart(labels, [("单季净利", "#2d4a6e",
+    h.append(bar_chart(labels, [("单季净利", "#7dd3fc",
                                  [(q.get("qNetProfit") or 0) / 1e8
                                   if q.get("qNetProfit") else None for q in cq])],
                        height=180, unit="亿"))
@@ -1038,7 +1127,7 @@ def main(argv=None, payload=None):
              '<th style="text-align:left">公式 / 口径</th></tr></thead><tbody>')
     for nm, fm in FORMULAS:
         h.append(f'<tr><td class="k">{nm}</td>'
-                 f'<td style="text-align:left;white-space:normal;color:#475467">{fm}</td></tr>')
+                 f'<td style="text-align:left;white-space:normal;color:var(--dim)">{fm}</td></tr>')
     h.append('</tbody></table></details>')
 
     h.append(f'<div class="ft">数据：东财 datacenter（季频指标 / 分红）· 本地估值序列<br>'
@@ -1187,25 +1276,20 @@ def _write_index(out_dir, rows, metrics):
          f'<div class="prow"><span class="meta">财务 _fin_cache ｜ 技术面与估值分位 {date}'
          f' ｜ 点名字进个股页</span></div></header>',
          # 站内导航 —— 之前没有入口，用户只能靠记住文件名
-         '<div class="nav" style="margin:18px 0 4px;display:flex;gap:10px;flex-wrap:wrap">'
-         '<a href="榜单.html" style="font-size:12.5px;color:#175cd3;text-decoration:none;'
-         'border:1px solid #d0d5dd;border-radius:999px;padding:5px 13px">四信号分组榜单</a>'
-         '<a href="格雷厄姆.html" style="font-size:12.5px;color:#175cd3;text-decoration:none;'
-         'border:1px solid #d0d5dd;border-radius:999px;padding:5px 13px">格雷厄姆七条</a>'
-         '<a href="AH比价.html" style="font-size:12.5px;color:#175cd3;text-decoration:none;'
-         'border:1px solid #d0d5dd;border-radius:999px;padding:5px 13px">A/H 比价</a>'
-         '<a href="定投回测.html" style="font-size:12.5px;color:#175cd3;text-decoration:none;'
-         'border:1px solid #d0d5dd;border-radius:999px;padding:5px 13px">定投回测</a>'
-         '<a href="港股名单.html" style="font-size:12.5px;color:#175cd3;text-decoration:none;'
-         'border:1px solid #d0d5dd;border-radius:999px;padding:5px 13px">港股 100 只</a>'
+         '<div class="nav">'
+         '<a href="榜单.html">四信号分组榜单</a>'
+         '<a href="格雷厄姆.html">格雷厄姆七条</a>'
+         '<a href="AH比价.html">A/H 比价</a>'
+         '<a href="定投回测.html">定投回测</a>'
+         '<a href="港股名单.html">港股 100 只</a>'
          '</div>',
          '<h2>按红灯数排序<span class="unit">红 = 估值偏高 / ROE 走弱 / 周J 超买</span></h2>',
          '<div class="scroll"><table><thead><tr><th class="k">标的</th><th>行业</th>'
          '<th>最新价</th><th>PE分位</th><th>PB分位</th><th>股息率</th><th>ROE</th>'
          '<th>ROE 4年</th><th>净利同比</th><th>周J</th><th>灯</th></tr></thead><tbody>']
     for r in rows:
-        dots = ("<span style='color:#d92d20'>●</span>" * r["red"]
-                + "<span style='color:#d0d5dd'>○</span>" * (3 - r["red"]))
+        dots = ("<span class='neg'>●</span>" * r["red"]
+                + "<span class='na'>○</span>" * (3 - r["red"]))
         pe_txt = f'{r["pe_pct"]:.0f}%' if r["pe_pct"] is not None else "—"
         pb_txt = f'{r["pb_pct"]:.0f}%' if r["pb_pct"] is not None else "—"
         yld_txt = f'{r["yld"]:.2f}%' if r["yld"] else "—"
@@ -1215,10 +1299,10 @@ def _write_index(out_dir, rows, metrics):
         n_txt = f'{r["np_yoy"]:+.1f}%' if r["np_yoy"] is not None else "—"
         j_txt = f'{r["jw"]:.0f}' if r["jw"] is not None else "—"
         h.append(
-            f'<tr><td class="k"><a href="{r["code"]}.html" style="color:#175cd3;'
+            f'<tr><td class="k"><a href="{r["code"]}.html" style="color:var(--blue);'
             f'text-decoration:none">{html.escape(str(r["name"]))}'
-            f'<span style="color:#98a2b3;font-size:11px"> {r["code"]}</span></a></td>'
-            f'<td style="text-align:left;color:#667085;font-size:12px">'
+            f'<span style="color:var(--dim2);font-size:11px"> {r["code"]}</span></a></td>'
+            f'<td style="text-align:left;color:var(--dim);font-size:12px">'
             f'{html.escape(str(r["ind"]))}</td>'
             f'<td>{r["px"] if r["px"] else "—"}</td><td>{pe_txt}</td><td>{pb_txt}</td>'
             f'<td>{yld_txt}</td><td>{roe_txt}</td><td class="{d_cls}">{d_txt}</td>'

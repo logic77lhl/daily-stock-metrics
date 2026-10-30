@@ -67,7 +67,7 @@ def _num(v):
 
 # 页面局部覆盖：bf.CSS 是为个股页写的，h1/h2 的多 span 布局在这里会散开
 _LOCAL_CSS = """
-h1 .unit{margin-left:10px;font-size:12.5px;font-weight:400;color:#98a2b3;
+h1 .unit{margin-left:10px;font-size:12.5px;font-weight:400;color:var(--dim2);
   letter-spacing:0;display:inline-block}
 h2{display:flex;align-items:baseline;justify-content:flex-start;gap:8px}
 h2 .hint{margin-left:auto;font-weight:400}
@@ -129,9 +129,9 @@ def graham_page():
 
     # 偏差警告放最前 —— 不读它就会误读下面的名单
     fin = sum(1 for r in full if graham._is_fin(r["ind"]))
-    body.append('<div class="fn" style="border-left:3px solid #d97706;padding-left:12px;'
-                'margin:14px 0 22px;background:#fffbeb;border-radius:0 6px 6px 0;'
-                'padding:12px 14px">'
+    body.append('<div class="fn" style="border-left:3px solid var(--warn);'
+                'margin:14px 0 22px;background:rgba(255,210,30,.06);border-radius:0 8px 8px 0;'
+                'padding:13px 15px;color:var(--dim)">'
                 f'⚠ <b>读这份名单前必须知道一件事</b>：七条全过的 {len(full)} 只里，'
                 f'<b>{fin} 只是金融股</b>（银行/保险/券商）。不是因为它们更符合格雷厄姆，'
                 '而是<b>第 2 条「财务状况」对金融业判「不适用」—— 等于少考了一门</b>。'
@@ -148,8 +148,8 @@ def graham_page():
         rows = {x["no"]: x for x in r["rows"]}
         pe = rows[6]["actual"].replace("PE(3 年平均) ", "")
         pb = rows[7]["actual"].split("　")[0].replace("PB ", "")
-        tag = ('<span style="color:#b42318">金融 · 少考第 2 条</span>'
-               if graham._is_fin(r["ind"]) else '<span style="color:#0f7b4f">完整七条</span>')
+        tag = ('<span style="color:var(--bad)">金融 · 少考第 2 条</span>'
+               if graham._is_fin(r["ind"]) else '<span style="color:var(--ok)">完整七条</span>')
         body.append(f'<tr><td class="k"><a href="{r["code"]}.html">{r["name"]}</a>'
                     f'<span class="mut"> {r["code"]}</span></td>'
                     f'<td class="ind">{r["ind"]}</td><td>{pe}</td><td>{pb}</td>'
@@ -199,7 +199,7 @@ def ah_page():
     pos = [r for r in rows if (r["_prem"] or 0) > 0]
     med = st.median([r["_prem"] for r in pos]) if pos else 0
 
-    body.append(f'<p class="strip muted" style="color:#98a2b3;font-size:12px">'
+    body.append(f'<p class="strip muted" style="color:var(--dim2);font-size:12px">'
                 f'{_stamp(os.path.join(POOL, "ah_compare.csv"))}</p>')
     body.append(f'<p class="strip">{len(rows)} 组同名 A/H 股里，'
                 f'<b>{len(pos)} 组 A 股更贵</b>，PE 溢价中位 <b>{med:+.0f}%</b></p>')
@@ -253,7 +253,7 @@ def dca_page():
                     f'　四分位 {xs[len(xs) // 4]:.2f}% ~ {xs[3 * len(xs) // 4]:.2f}%'
                     f'　最大回撤中位 {st.median(ds):.1f}%</p>')
 
-    body.append(f'<p class="strip" style="color:#98a2b3;font-size:12px">'
+    body.append(f'<p class="strip" style="color:var(--dim2);font-size:12px">'
                 f'{_stamp(os.path.join(POOL, "dca_results.csv"))}</p>')
     body.append('<p class="strip">每月 1,000 元、分红再投、<b>不复权价 + 分红单列</b>，'
                 '2014-01 起</p>')
@@ -352,8 +352,8 @@ def hk_page():
     body = []
     body.append(f'<p class="strip">港股 <b>{len(recs)} 只</b>（策展池）· '
                 '按最近年报 ROE 排序</p>')
-    body.append('<div class="fn" style="border-left:3px solid #d97706;padding:12px 14px;'
-                'margin:14px 0 22px;background:#fffbeb;border-radius:0 6px 6px 0">'
+    body.append('<div class="fn" style="border-left:3px solid var(--warn);padding:13px 15px;'
+                'margin:14px 0 22px;background:rgba(255,210,30,.06);border-radius:0 8px 8px 0;color:var(--dim)">'
                 '⚠ <b>港股进不了「四信号榜单」</b>：没有港股日线，'
                 '算不出 PE 在自身历史上的分位，所以「估值」这一信号缺失。<br>'
                 '另外<b>港股分红历史拿不到可信序列</b>（`DPS_HKD` 与 `DIVIDEND_RATE` '
@@ -369,7 +369,7 @@ def hk_page():
                                                  and r["roe_first"] is not None) else None
         dcls = "pos" if (d or 0) > 0 else "neg"
         if r["lq"] is None:
-            lq = '<span class="mut">—</span>'
+            lq = '<span class="na">—</span>'
         else:
             c = "pos" if r["lq"] >= 0.3 else ("neg" if r["lq"] <= -0.3 else "mut")
             lq = f'<span class="{c}">{r["lq"] * 100:+.0f}%</span>'

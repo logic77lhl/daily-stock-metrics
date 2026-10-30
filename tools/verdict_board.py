@@ -28,52 +28,73 @@ import build_fundamentals as bf  # noqa: E402
 import verdict  # noqa: E402
 
 CSS = """
+:root{
+  --bg:#0a0e15; --bg2:#0e141d; --panel:#131b26; --panel2:#17202d;
+  --line:#22303f; --line2:#2d3d4f;
+  --tx:#e8eef7; --dim:#8fa3ba; --dim2:#7b8fa5;
+  --acc:#ffd21e; --ok:#34d399; --warn:#fbbf24; --bad:#fb7185;
+  --blue:#7dd3fc;
+  --mono:ui-monospace,"Cascadia Code",Consolas,"SF Mono",monospace;
+}
 *{box-sizing:border-box}
-::selection{background:#24425c;color:#fff}
-html{scrollbar-color:#c9ced6 transparent}
+::selection{background:rgba(255,210,30,.28);color:#fff}
+html{scrollbar-color:#2d3d4f transparent}
 ::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-thumb{background:#c9ced6;border-radius:5px}
-:focus-visible{outline:2px solid #24425c;outline-offset:3px}
-body{margin:0;background:#fdfdfc;color:#16181d;
-  font:15px/1.6 -apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+::-webkit-scrollbar-thumb{background:#2d3d4f;border-radius:5px}
+:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
+body{margin:0;color:var(--tx);
+  background:
+    radial-gradient(1100px 500px at 12% -10%,rgba(255,210,30,.07),transparent 60%),
+    radial-gradient(900px 480px at 92% 0%,rgba(125,211,252,.06),transparent 60%),
+    var(--bg);
+  font:14.5px/1.6 -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
   -webkit-font-smoothing:antialiased}
-.wrap{max-width:1160px;margin:0 auto;padding:40px 24px 72px}
-h1{margin:0 0 6px;font-size:26px;font-weight:660;letter-spacing:-.022em}
-h1 small{font-size:13px;font-weight:400;color:#6b7280;margin-left:8px;letter-spacing:0}
-.meta{font-size:12.5px;color:#6b7280;font-variant-numeric:tabular-nums}
-.lede{margin:20px 0 0;font-size:16px;line-height:1.72;max-width:76ch}
-.lede .n{font-variant-numeric:tabular-nums;font-weight:660}
-h2{margin:44px 0 0;padding-top:16px;border-top:1px solid #e6e8eb;
-  font-size:14px;font-weight:660}
-h2 .cnt{font-weight:400;color:#8b919b;font-size:12.5px;margin-left:10px}
-h2 .hint{font-weight:400;color:#8b919b;font-size:12px;margin-left:10px}
-h3{margin:26px 0 0;font-size:13px;font-weight:620;color:#3d4450}
-h3 .cnt{font-weight:400;color:#9aa0aa;font-size:11.5px;margin-left:8px}
-details{margin-top:18px}
-summary{cursor:pointer;font-size:13px;color:#24425c;list-style:none;
-  padding:6px 0;display:inline-flex;align-items:center;gap:7px}
+a{color:var(--blue);text-decoration:none}
+.wrap{max-width:1040px;margin:0 auto;padding:32px 22px 72px}
+h1{margin:0 0 6px;font-size:25px;font-weight:700;letter-spacing:-.022em}
+h1 small{font-size:12.5px;font-weight:400;color:var(--dim2);margin-left:9px;
+  letter-spacing:0}
+.meta{font-size:12px;color:var(--dim2);font-variant-numeric:tabular-nums}
+.lede{margin:18px 0 0;font-size:15.5px;line-height:1.75;max-width:76ch;color:var(--tx)}
+.lede .n{font-family:var(--mono);font-weight:700;color:var(--acc)}
+h2{margin:40px 0 0;padding-top:16px;border-top:1px solid var(--line);
+  font-size:14px;font-weight:700;display:flex;align-items:baseline;gap:9px;
+  flex-wrap:wrap}
+h2 .cnt{font-family:var(--mono);font-weight:700;color:var(--acc);font-size:11px;
+  background:rgba(255,210,30,.1);border:1px solid rgba(255,210,30,.25);
+  padding:3px 8px;border-radius:6px}
+h2 .hint{font-weight:400;color:var(--dim2);font-size:11.5px;margin-left:auto}
+h3{margin:24px 0 0;font-size:13px;font-weight:650;color:var(--tx);
+  display:flex;align-items:baseline;gap:8px}
+h3 .cnt{font-weight:400;color:var(--dim2);font-size:11.5px}
+.legend{margin:2px 0 16px;font-size:11.5px;color:var(--dim2);line-height:1.9}
+.legend b{color:var(--dim);font-weight:600}
+details{margin-top:16px}
+summary{cursor:pointer;font-size:12.5px;color:var(--dim);list-style:none;
+  padding:7px 0;display:inline-flex;align-items:center;gap:7px}
 summary::-webkit-details-marker{display:none}
 summary::after{content:"";width:5px;height:5px;border-right:1px solid currentColor;
   border-bottom:1px solid currentColor;transform:rotate(45deg)}
 details[open] summary::after{transform:rotate(-135deg)}
-table{width:100%;border-collapse:collapse;margin-top:14px;
-  font-size:13.5px;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
-th,td{padding:9px 10px;text-align:right;border-bottom:1px solid #eff1f4;white-space:nowrap}
+table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px;
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+th,td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--line);
+  white-space:nowrap}
 th:first-child,td:first-child{text-align:left;font-weight:600}
-th{font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.04em;
-  border-bottom:1px solid #dcdfe4}
+th{font-size:11px;font-weight:600;color:var(--dim2);letter-spacing:.04em;
+  border-bottom:1px solid var(--line2)}
 tbody tr:last-child td{border-bottom:0}
-tbody tr:hover td{background:#f6f8fa}
-td.ind{color:#9aa0aa;font-size:12px;text-align:left}
-td.mut{color:#9aa0aa}
-td.pos{font-weight:660}
-td.neg{color:#9aa0aa}
-a{color:#24425c;text-decoration:none;border-bottom:1px solid #d8dee6}
-a:hover{border-bottom-color:#24425c}
-.note{font-size:12px;color:#8b919b;line-height:1.8;margin:14px 0 0;max-width:78ch}
-.ft{margin-top:52px;padding-top:16px;border-top:1px solid #e6e8eb;
-  font-size:11.5px;color:#9aa0aa;line-height:1.9}
-
+tbody tr:hover td{background:rgba(255,255,255,.018)}
+td{font-family:var(--mono);font-size:12.5px}
+td:first-child{font-family:inherit;font-size:13px}
+td.ind{color:var(--dim);font-size:12px;text-align:left;font-family:inherit}
+td.mut{color:var(--dim2)}
+td.pos{color:var(--ok);font-weight:700}
+td.neg{color:var(--bad);font-weight:700}
+td.why{color:var(--ok);font-weight:700;letter-spacing:2px;font-size:12px}
+.note,.ft{color:var(--dim2);font-size:11px;line-height:1.8}
+.ft{text-align:center;margin-top:36px}
+.note{margin:10px 0 0}
 /* 迁移表：固定列宽，别让「变化」列把数字挤到右半边 */
 table.mv{table-layout:fixed}
 table.mv th:nth-child(1),table.mv td:nth-child(1){width:150px;text-align:left}
@@ -81,12 +102,22 @@ table.mv th:nth-child(2),table.mv td:nth-child(2){width:126px;text-align:left}
 table.mv th:nth-child(3),table.mv td:nth-child(3){width:104px;text-align:left}
 table.mv th:nth-child(7),table.mv td:nth-child(7){width:60px}
 /* 分组表：正向字符码固定窄列 */
-.legend{margin:2px 0 18px;font-size:11.5px;color:#98a2b3;line-height:1.9}
-.legend b{color:#667085;font-weight:600}
-table.g th:nth-child(1),table.g td:nth-child(1){width:160px;text-align:left}
-table.g th:nth-child(2),table.g td:nth-child(2){width:96px;text-align:left}
+table.g{table-layout:fixed}
+table.g th:nth-child(1),table.g td:nth-child(1){width:172px;text-align:left}
+table.g th:nth-child(2),table.g td:nth-child(2){width:92px;text-align:left}
+table.g th:nth-child(3),table.g td:nth-child(3){width:74px}
+table.g th:nth-child(4),table.g td:nth-child(4){width:74px}
+table.g th:nth-child(5),table.g td:nth-child(5){width:82px}
+table.g th:nth-child(6),table.g td:nth-child(6){width:88px}
+table.g th:nth-child(7),table.g td:nth-child(7){width:56px}
 table.g th:nth-child(8),table.g td:nth-child(8){width:78px;text-align:left;
-  letter-spacing:2px;color:#0f7b4f;font-weight:600}
+  letter-spacing:2px;color:var(--ok);font-weight:700}
+@media(max-width:760px){
+  .wrap{padding:22px 14px 60px}
+  h1{font-size:21px}
+  table{font-size:12px}
+  th,td{padding:7px 6px}
+}
 """
 
 # ─────────────────────────── 历史与迁移 ───────────────────────────
