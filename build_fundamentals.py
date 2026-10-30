@@ -28,114 +28,9 @@ if sys.stdout is None:
 elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
 
-CSS = """
-:root{
-  --bg:#0a0e15; --bg2:#0e141d; --panel:#131b26; --panel2:#17202d;
-  --line:#22303f; --line2:#2d3d4f;
-  --tx:#e8eef7; --dim:#8fa3ba; --dim2:#7b8fa5;
-  --acc:#ffd21e; --acc2:#f7b500;
-  --ok:#34d399; --warn:#fbbf24; --bad:#fb7185;
-  --blue:#7dd3fc; --violet:#a78bfa;
-  --mono:ui-monospace,"Cascadia Code",Consolas,"SF Mono",monospace;
-}
-*{box-sizing:border-box;-webkit-text-size-adjust:100%}
-body{margin:0;color:var(--tx);
-  background:
-    radial-gradient(1100px 500px at 12% -10%,rgba(255,210,30,.07),transparent 60%),
-    radial-gradient(900px 480px at 92% 0%,rgba(125,211,252,.06),transparent 60%),
-    var(--bg);
-  font:14.5px/1.6 -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
-  -webkit-font-smoothing:antialiased;padding-bottom:40px}
-a{color:var(--blue);text-decoration:none}
-.page{max-width:1020px;margin:0 auto;padding:0 18px 40px}
-
-/* ── 抬头：粘顶 + 毛玻璃 ── */
-header{position:sticky;top:0;z-index:20;backdrop-filter:blur(14px);
-  background:rgba(10,14,21,.86);border-bottom:1px solid var(--line);
-  padding:14px 0 12px;margin-bottom:20px}
-.title{font-size:21px;font-weight:700;letter-spacing:-.2px;display:flex;
-  align-items:baseline;gap:8px;flex-wrap:wrap}
-.title .code{font:600 13px var(--mono);color:var(--acc);letter-spacing:.5px}
-.title .ind{font-size:11px;color:var(--dim);background:var(--panel);
-  border:1px solid var(--line);padding:3px 9px;border-radius:999px;font-weight:500}
-.prow{display:flex;align-items:baseline;gap:12px;margin-top:7px;flex-wrap:wrap}
-.prow .px{font:700 23px/1.1 var(--mono);color:var(--tx)}
-.prow .chg{font:600 14px/1 var(--mono)}
-.prow .meta{font-size:11.5px;color:var(--dim2);letter-spacing:.2px}
-
-/* ── 区块标题 ── */
-h2{font-size:15px;font-weight:700;margin:26px 0 12px;display:flex;
-  align-items:baseline;gap:9px;flex-wrap:wrap}
-h2 .unit{font-size:11.5px;color:var(--dim2);font-weight:400}
-h2 .cnt{font:700 11px var(--mono);color:var(--acc);background:rgba(255,210,30,.1);
-  border:1px solid rgba(255,210,30,.25);padding:3px 8px;border-radius:6px}
-
-/* ── 信号卡片：首屏唯一主角 ── */
-.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin:16px 0 0}
-.stat{background:linear-gradient(180deg,var(--panel),var(--bg2));
-  border:1px solid var(--line);border-radius:12px;padding:13px 14px;min-width:0}
-.stat .k{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim2);
-  letter-spacing:.4px;white-space:nowrap}
-.stat .k .dot{width:6px;height:6px;border-radius:50%;flex:none}
-.stat .v{font:800 21px/1.15 var(--mono);margin-top:9px;letter-spacing:-.5px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stat .n{font-size:11px;color:var(--dim);margin-top:6px;line-height:1.45;
-  overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.stat.ok .v{color:var(--ok)}
-.stat.warn .v{color:var(--warn)}
-.stat.bad .v{color:var(--bad)}
-.stat.na .v{color:var(--dim2)}
-.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}
-.dot.bad{background:var(--bad)}.dot.na{background:var(--dim2)}
-
-/* 结论条 */
-.sum{margin-top:12px;padding:13px 16px;border-radius:12px;font-size:14px;
-  font-weight:660;border:1px solid var(--line2);background:var(--panel2);
-  display:flex;align-items:center;gap:10px}
-.sum .mk{width:3px;align-self:stretch;border-radius:2px;background:var(--dim2)}
-.sum.ok .mk{background:var(--ok)}.sum.bad .mk{background:var(--bad)}
-
-/* ── 财务表 ── */
-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;
-  font-size:13px}
-thead th{position:sticky;top:64px;background:var(--bg);z-index:1}
-th,td{padding:8px 9px;text-align:right;border-bottom:1px solid var(--line);
-  white-space:nowrap}
-th{font-size:11.5px;font-weight:600;color:var(--dim2);letter-spacing:.3px}
-th.k,td.k{text-align:left;font-weight:500;color:var(--tx);position:sticky;left:0;
-  background:var(--bg);z-index:2}
-td{font-family:var(--mono);font-size:12.5px}
-td.k{font-family:inherit;font-size:13px}
-tbody tr:hover td{background:rgba(255,255,255,.018)}
-/* 语义：pos/neg 是「基本面好坏」，up/down 是「涨跌」（A 股红涨绿跌） */
-.pos{color:var(--ok)}
-.neg{color:var(--bad)}
-.up{color:var(--bad)}
-.down{color:var(--ok)}
-.na,.mut{color:var(--dim2)}
-.fn{font-size:11px;color:var(--dim2);margin:9px 0 0;line-height:1.75}
-.fn b{color:var(--dim)}
-
-/* 结论块（旧版兼容） */
-.verdict{border-left:3px solid var(--line2);padding:10px 0 10px 14px;
-  margin-top:26px;font-size:13.5px}
-.verdict.warn{border-left-color:var(--warn)}
-.verdict.ok{border-left-color:var(--ok)}
-.verdict b{display:block;margin-bottom:4px}
-.verdict .kv{font-size:12.5px;color:var(--dim)}
-.ft{color:var(--dim2);font-size:11px;text-align:center;margin-top:34px;line-height:1.9}
-
-/* ── 折叠 ── */
-details{margin-top:9px;border:1px solid var(--line);border-radius:10px;
-  padding:0 14px;background:rgba(255,255,255,.012)}
-details summary{cursor:pointer;padding:11px 0;font-size:12.5px;color:var(--dim);
-  list-style:none}
-details summary::-webkit-details-marker{display:none}
-details summary::before{content:"▸ ";color:var(--dim2)}
-details[open] summary::before{content:"▾ "}
-details table{margin-bottom:12px}
-
-/* ── 格雷厄姆七条 ── */
+# 页面专属：格雷厄姆表要固定列宽（三列：标准 / 实际·门槛 / 判定）。
+# 其余样式一律来自 site_theme —— 通用规则在这里重复一次，以后就会分叉一次。
+_GRAHAM_CSS = """
 .gtab{table-layout:fixed}
 .gtab th:nth-child(1),.gtab td:nth-child(1){width:150px}
 .gtab th:nth-child(2),.gtab td:nth-child(2){width:auto;text-align:left}
@@ -146,38 +41,13 @@ details table{margin-bottom:12px}
 .gtab .gn{color:var(--tx)}
 .gtab .gth{display:block;color:var(--dim2);font-size:10.5px;margin-top:3px;
   line-height:1.5;font-family:inherit}
-.gtab .pos{font-weight:700}
-.gtab .neg{font-weight:700}
+.gtab .pos,.gtab .neg{font-weight:700}
 .gtab .gnote{display:block;color:var(--dim2);font-size:10px;font-weight:400;
   margin-top:2px;line-height:1.45;font-family:inherit}
-
-/* 年度表趋势行 */
-.trow td{background:rgba(255,210,30,.045);color:var(--dim);font-size:11.5px;
-  font-weight:600;border-top:1px solid var(--line2);border-bottom:0}
-.trow td.k{color:var(--dim2);background:rgba(255,210,30,.045)}
-
-/* 技术面 / TTM 各一行 */
-.strip{margin:8px 0 0;font-size:12px;color:var(--dim);line-height:1.85;
-  font-variant-numeric:tabular-nums}
-.strip .strip-k{display:inline-block;min-width:44px;color:var(--dim2);font-size:10.5px;
-  letter-spacing:.06em;margin-right:9px}
-.strip .strip-d{color:var(--dim2);font-size:10.5px;margin-left:10px}
-
-/* 站内导航胶囊 */
-.nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 6px}
-.nav a{font-size:12px;color:var(--dim);border:1px solid var(--line);
-  border-radius:999px;padding:5px 13px;background:var(--panel);transition:.16s}
-.nav a:hover{color:var(--acc);border-color:rgba(255,210,30,.35)}
-
-@media(max-width:860px){
-  .stats{grid-template-columns:repeat(2,1fr)}
-  .stat .v{font-size:18px}
-}
-@media(max-width:520px){
-  .stats{grid-template-columns:1fr 1fr}
-  .page{padding:0 12px 30px}
-}
 """
+
+from site_theme import page_css as _page_css  # noqa: E402
+CSS = _page_css(_GRAHAM_CSS)
 
 
 # ─────────────────────────── SVG 基础件 ───────────────────────────

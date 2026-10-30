@@ -288,11 +288,13 @@ def test_style_externalized_for_site_but_kept_in_report() -> None:
     import generate_report
     import site_css
 
-    base = "<style>\n    * { margin: 0; padding: 0; }\n    body { color: #333; }\n</style>"
+    # 用 site_theme 真实输出的特征片段，而不是写死旧 CSS 的字面文本 ——
+    # 写死字面文本会让「样式重构」变成「测试失败」，那是测试的问题不是代码的问题
+    base = "<style>\n    /* site-theme:v1 */\n    :root{--bg:#0a0e15}\n</style>"
     frag = "<style>.chip2{color:red}</style>"
     out = build_pages.externalize_style(f"<html><head>{base}{frag}</head><body>x</body></html>")
     assert f'href="{site_css.REPORT_CSS_HREF_FROM_DATE_PAGE}"' in out, "站点侧应外链样式"
-    assert "* { margin: 0" not in out, "基础样式应被替换掉（否则重复依旧存在）"
+    assert "site-theme:v1" not in out, "基础样式应被替换掉（否则重复依旧存在）"
     assert ".chip2{color:red}" in out, "片段样式必须保留，否则卡片会掉样式"
 
     # 报告侧：generate_report 的产物必须自包含（邮件要用）
@@ -302,7 +304,9 @@ def test_style_externalized_for_site_but_kept_in_report() -> None:
         write_metrics(csv_path, TRADING_DAY, n=12)
         path = generate_report.generate_report(csv_path, tmp, title="t")
         html = Path(path).read_text(encoding="utf-8")
-        assert "* { margin: 0" in html, "报告必须内联基础样式（邮件客户端会剥掉 <link>）"
+        # 断言语义而不是字面：报告必须**自包含**一份基础样式
+        assert "<style>" in html and "box-sizing:border-box" in html, \
+            "报告必须内联基础样式（邮件客户端会剥掉 <link>）"
         assert "report.css" not in html, "报告里不该出现站点资产链接"
         assert site_css.REPORT_CSS in html, "报告内联的必须是同一份样式来源"
     finally:

@@ -38,6 +38,19 @@ def _num(s):
 # 避免改动三十多处调用点 —— 关键是**实现**只有一份。
 from util import esc as _esc, md_esc as _md_esc  # noqa: E402
 
+# 价值页专属：只有 6 个类，其中 4 个 theme 已覆盖（wrap/note/sub/good/bad）
+_V_EXTRA = """
+.win{color:var(--ok);font-weight:600}
+.sub{color:var(--dim2);font-size:11.5px}
+.note{font-size:11px;color:var(--dim2)}
+"""
+
+import os as _os
+import sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from site_theme import page_css as _page_css  # noqa: E402
+_V_CSS = _page_css(_V_EXTRA)
+
 
 def _round_or_dash(v, digits=1):
     """缺失值一律渲染成 '-'：ETF 的 PE_TTM 天然为 NaN，旧代码会印出字面量 `nan`。"""
@@ -206,19 +219,7 @@ def main():
 <html lang="zh-CN"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>💎 价值投资标的 A股30 港股30 ETF10 - {today}</title>
-<style>
-body{{margin:0;background:#f0f2f5;color:#1a1a2e;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;padding:16px}}
-.wrap{{max-width:960px;margin:0 auto}}
-h1{{font-size:20px;margin:8px 0}}
-.sub{{color:#666;font-size:13px;margin-bottom:14px}}
-table{{width:100%;border-collapse:collapse;font-size:13px;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)}}
-th{{background:#1a1a2e;color:#fff;padding:9px 6px;font-weight:600;white-space:nowrap}}
-td{{padding:8px 6px;text-align:center;border-bottom:1px solid #f0f0f0;white-space:nowrap}}
-tr:hover td{{background:#f8f9fd}}
-.win.good{{color:#2e7d32;font-weight:700}}.win.bad{{color:#c62828}}
-.note{{color:#999;font-size:12px;margin-top:12px;line-height:1.7}}
-@media(max-width:768px){{body{{padding:8px}}table{{font-size:11px}}td,th{{padding:6px 3px}}}}
-</style></head><body><div class="wrap">
+<style>{_V_CSS}</style></head><body><div class="wrap">
 <h1>💎 价值投资标的 (A股{a_cnt}/港股{h_cnt}/ETF{e_cnt}) <span style="font-size:13px;color:#888">{today}</span></h1>
 <div class="sub">分市场独立评分：市值≥300亿，股票要求 0&lt;PE≤60 且 PB≤12 · 质量35% + 估值35% + 成长20% + 规模10%（市场内百分位计分）</div>
 {_html_table(df)}

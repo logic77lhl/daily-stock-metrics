@@ -65,20 +65,11 @@ def _num(v):
         return None
 
 
-# 页面局部覆盖：bf.CSS 是为个股页写的，h1/h2 的多 span 布局在这里会散开
-_LOCAL_CSS = """
-h1 .unit{margin-left:10px;font-size:12.5px;font-weight:400;color:var(--dim2);
-  letter-spacing:0;display:inline-block}
-h2{display:flex;align-items:baseline;justify-content:flex-start;gap:8px}
-h2 .hint{margin-left:auto;font-weight:400}
-"""
-
-
 def _page(title, subtitle, body, out_name):
     """统一外壳。"""
     html = (f'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-            f'<title>{title}</title><style>{bf.CSS}{_LOCAL_CSS}</style></head>'
+            f'<title>{title}</title><style>{bf.CSS}</style></head>'
             f'<body><div class="page">'
             f'<h1>{title}<span class="unit">{subtitle}</span></h1>'
             + "".join(body) +

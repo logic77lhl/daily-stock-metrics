@@ -23,6 +23,50 @@ import time
 import numpy as np
 import pandas as pd
 
+# 回测页专属：只有这几个类 theme 里没有（选股卡、规则行、图例）。
+# 其余容器/表格/胶囊/页脚一律来自 site_theme。
+_BT_EXTRA = """
+.pick-card{background:linear-gradient(180deg,var(--panel),var(--bg2));
+  border:1px solid var(--line);border-radius:var(--r-card);padding:14px 16px;
+  margin-bottom:12px}
+.pk-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;
+  border-bottom:1px solid var(--line);padding-bottom:9px;margin-bottom:10px;
+  font-size:14px;font-weight:700}
+.pk-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+  gap:10px}
+.pk-recent,.pk-rule{color:var(--dim2);font-size:11.5px;line-height:1.8}
+.rule-line{border-top:1px solid var(--line);margin:12px 0 10px}
+.baserow{display:flex;gap:10px;flex-wrap:wrap;color:var(--dim);
+  font-size:12px;line-height:1.8}
+.carry,.disclosure{color:var(--dim2);font-size:11px;line-height:1.75}
+.filter-label{color:var(--dim2);font-size:11.5px;margin-right:4px}
+.legend-box{display:flex;gap:14px;flex-wrap:wrap;background:var(--panel);
+  border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 14px;
+  margin-bottom:12px}
+.legend-item{display:flex;align-items:center;gap:6px;font-size:11.5px;
+  color:var(--dim)}
+.sort-asc{color:var(--acc)}
+.label,.base{color:var(--dim2);font-size:11.5px}
+.num{font-family:var(--mono)}
+.em{font-style:normal;color:var(--tx);font-weight:600}
+.dot{width:6px;height:6px;border-radius:50%;display:inline-block}
+.good,.win{color:var(--ok)}
+.bad{color:var(--bad)}
+.flat{color:var(--dim2)}
+.active{color:var(--acc);font-weight:700}
+.card-red .num{color:var(--bad)}
+.card-green .num{color:var(--ok)}
+.card-gold .num{color:var(--acc)}
+.card-blue .num{color:var(--blue)}
+.card-gray .num{color:var(--dim)}
+"""
+
+import os as _os
+import sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from site_theme import page_css as _page_css  # noqa: E402
+_BT_CSS = _page_css(_BT_EXTRA)
+
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
 elif sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -829,73 +873,7 @@ def generate_html(summary, trades, equity, out_dir, first_date, last_date, n_day
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>指标回测报告 - {first_date} ~ {last_date}</title>
-<style>
-    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f0f2f5; color: #333; padding: 20px; }}
-    .container {{ max-width: 1500px; margin: 0 auto; }}
-    h1 {{ font-size: 24px; margin-bottom: 4px; color: #1a1a2e; }}
-    .subtitle {{ color: #666; font-size: 14px; margin-bottom: 20px; }}
-    .summary-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }}
-    .summary-card {{ background: #fff; border-radius: 10px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
-    .summary-card .num {{ font-size: 28px; font-weight: 700; }}
-    .summary-card .label {{ font-size: 13px; color: #888; margin-top: 2px; }}
-    .card-blue .num {{ color: #1565c0; }}
-    .card-green .num {{ color: #2e7d32; }}
-    .card-red .num {{ color: #c62828; }}
-    .card-gray .num {{ color: #666; }}
-    .card-gold .num {{ color: #f57f17; }}
-    .section-title {{ font-size: 16px; font-weight: 600; margin: 20px 0 10px; color: #1a1a2e; }}
-    table {{ width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
-    th {{ background: #1a1a2e; color: #fff; padding: 12px 10px; font-size: 13px; font-weight: 600; text-align: center; white-space: nowrap; }}
-    td {{ padding: 10px; text-align: center; font-size: 13px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }}
-    tr:hover {{ background: #f8f9ff; }}
-    .name {{ text-align: left; font-weight: 500; }}
-    .price {{ font-weight: 600; }}
-    .chg {{ font-weight: 600; }}
-    .chg.up {{ color: #c62828; }}
-    .chg.down {{ color: #2e7d32; }}
-    .chg.flat {{ color: #666; }}
-    .win.good {{ color: #2e7d32; font-weight: 700; }}
-    .win.bad {{ color: #c62828; font-weight: 700; }}
-    .flag {{ display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }}
-    .flag.carry {{ background: #fff3e0; color: #e65100; }}
-    .flag.normal {{ background: #f5f5f5; color: #999; }}
-    .filter-bar {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }}
-    .filter-btn {{ padding: 5px 14px; border: 1px solid #ddd; border-radius: 16px; background: #fff; font-size: 12px; cursor: pointer; transition: all 0.15s; }}
-    .filter-btn:hover {{ border-color: #1a1a2e; }}
-    .filter-btn.active {{ background: #1a1a2e; color: #fff; border-color: #1a1a2e; }}
-    .filter-label {{ font-size: 13px; color: #888; line-height: 30px; margin-right: 4px; }}
-    .legend-box {{ display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; }}
-    .legend-item {{ font-size: 13px; color: #555; }}
-    .legend-item .dot {{ display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }}
-    .footer {{ margin-top: 16px; font-size: 12px; color: #999; text-align: center; }}
-    th.sortable {{ cursor: pointer; user-select: none; position: relative; }}
-    th.sortable:hover {{ background: #2a2a4e; }}
-    th.sortable::after {{ content: ' ⇅'; font-size: 11px; opacity: 0.4; }}
-    th.sort-asc::after {{ content: ' ↑'; opacity: 1; }}
-    th.sort-desc::after {{ content: ' ↓'; opacity: 1; }}
-    .picks {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }}
-    .base {{ color: #999; font-size: 11.5px; font-weight: 400; }}
-    tr.baserow {{ background: #f3f6ff; }}
-    tr.baserow td {{ font-weight: 600; }}
-    .pick-card {{ background: #fff; border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-top: 3px solid #f59f00; }}
-    .pk-head {{ display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }}
-    .pk-rule {{ color: #666; font-size: 12.5px; margin: 6px 0; font-family: Consolas, monospace; }}
-    .pk-stats {{ font-size: 13px; margin-bottom: 8px; }}
-    .pk-recent {{ font-size: 12px; line-height: 2; }}
-    .chip {{ background: #f5f6fa; border-radius: 8px; padding: 2px 8px; margin-right: 4px; white-space: nowrap; display: inline-block; }}
-    .rule-line {{ font-size: 12.5px; padding: 4px 0; border-bottom: 1px dashed #eee; color: #555; }}
-    .warn-strip {{ background: #fff4e5; border-left: 4px solid #e65100; color: #8a4b00; font-size: 13px; padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; }}
-    .disclosure {{ background: #fff; border-radius: 10px; border-left: 5px solid #e65100; padding: 16px 20px; margin-top: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); text-align: left; }}
-    .disclosure h2 {{ font-size: 16px; color: #b23c00; margin-bottom: 10px; }}
-    .disclosure h3 {{ font-size: 13.5px; color: #1a1a2e; margin: 12px 0 4px; }}
-    .disclosure p, .disclosure li {{ font-size: 12.5px; line-height: 1.75; color: #444; }}
-    .disclosure ol {{ margin-left: 20px; }}
-    .disclosure table {{ box-shadow: none; border: 1px solid #eee; margin-top: 6px; }}
-    .disclosure th {{ background: #f5f6fa; color: #333; padding: 6px 8px; font-size: 12px; text-align: left; }}
-    .disclosure td {{ padding: 6px 8px; font-size: 12px; text-align: left; }}
-    .disclosure .em {{ color: #c62828; font-weight: 700; }}
-</style>
+<style>{_BT_CSS}</style>
 </head>
 <body>
 <div class="container">
