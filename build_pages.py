@@ -1045,6 +1045,10 @@ def main():
         # 但之前只有命令行工具自己读，页面上一个入口都没有 —— 算完就丢了。
         import extra_pages
         extra_pages.main()
+
+        # 财报季速览：跨股票聚合，个股页做不到（那是单只视角）
+        import q3_digest
+        q3_digest.main(["--html"])
     except Exception as e:
         print(f"[warn] 分组榜单构建失败: {type(e).__name__}: {e}")
 

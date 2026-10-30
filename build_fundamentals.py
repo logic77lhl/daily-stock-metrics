@@ -1152,6 +1152,7 @@ def _write_index(out_dir, rows, metrics):
          '<a href="AH比价.html">A/H 比价</a>'
          '<a href="定投回测.html">定投回测</a>'
          '<a href="港股名单.html">港股 100 只</a>'
+         '<a href="Q3财报季.html">Q3 财报季</a>'
          '</div>',
          '<h2>按红灯数排序<span class="unit">红 = 估值偏高 / ROE 走弱 / 周J 超买</span></h2>',
          '<div class="scroll"><table><thead><tr><th class="k">标的</th><th>行业</th>'

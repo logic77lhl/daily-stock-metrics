@@ -65,6 +65,38 @@ def _single(qs, y, q):
     return cur["netProfit"] - prev["netProfit"]
 
 
+def quarter_change(cur, prev):
+    """单季变化。返回 (pct, status, note)。
+
+    **符号翻转时比值没有意义**，这是必须单独处理的：
+    本期 +12 亿、上期 −0.86 亿 → 12/(−0.86)−1 = −1493%，
+    但真实情况是「从亏 0.86 亿变成赚 12 亿」，是巨幅改善。
+    直接算比值会把最好的公司排进「最差」。
+
+    实测 2026Q3 池内踩到 3 只：大普微（+12 亿被算成 −1493%）、
+    潮宏基（+1 亿被算成 −898%）、华特达因（−1 亿被算成 −195%）。
+
+    规则：
+    * 由亏转盈 → pct=None，OK，note 说「扭亏」
+    * 由盈转亏 → pct=None，BAD，note 说「转亏」
+    * 两期都亏 → 按绝对值算，比的是「亏损扩大/收窄」
+    * 两期都盈 → 正常百分比
+    """
+    if cur is None or prev is None or prev == 0:
+        return None, WARN, ""
+    if (cur > 0) != (prev > 0):
+        if cur > 0:
+            return None, OK, f'扭亏（上年同期亏 {abs(prev) / 1e8:,.1f} 亿）'
+        return None, BAD, f'转亏（上年同期盈利 {prev / 1e8:,.1f} 亿）'
+    if prev < 0:
+        g = abs(cur) / abs(prev) - 1
+        st = BAD if g >= 0.3 else (OK if g <= -0.3 else WARN)
+        return g, st, ('亏损扩大' if g > 0 else '亏损收窄')
+    g = cur / prev - 1
+    st = BAD if g <= -0.3 else (OK if g >= 0.3 else WARN)
+    return g, st, f'{g * 100:+.0f}% 同比'
+
+
 def latest_quarter_signal(qs):
     """最新季报的单季净利同比 —— 补上「只看年报」的滞后。
 
@@ -84,13 +116,7 @@ def latest_quarter_signal(qs):
     prev = _single(qs, last["year"] - 1, last["quarter"])
     if cur is None or prev is None or prev == 0:
         return None
-    yoy = cur / prev - 1
-    if yoy <= -0.3:
-        st = BAD
-    elif yoy >= 0.3:
-        st = OK
-    else:
-        st = WARN
+    yoy, st, _why = quarter_change(cur, prev)
     # 距今多久没更新 —— 季报季里这条很关键：人保/人寿 2026Q3 还没披露时，
     # 它们凭 Q2 的漂亮数据（+103% / +850%）留在「值得看」，而两天后 Q3 一落地
     # 结论就会翻转。把「数据截至哪天」写出来，读者才不会把旧数据当最新。
@@ -103,16 +129,12 @@ def latest_quarter_signal(qs):
             _age = f' · 数据截至 {_sd}（{_n} 天前）'
     except Exception:
         pass
-    # 单季转亏时百分比没有意义（-194% 读起来像"跌了近两倍"），直接说亏损多少
-    if cur < 0:
-        _desc = (f'{last["year"]}Q{last["quarter"]} 单季亏损 {abs(cur) / 1e8:,.0f} 亿'
-                 f'（上年同期 {"盈利" if prev > 0 else "亏损"} {abs(prev) / 1e8:,.0f} 亿）')
-        _note = f'由盈转亏{_age}' if prev > 0 else f'继续亏损{_age}'
-    else:
-        _desc = (f'{last["year"]}Q{last["quarter"]} 单季净利 {cur / 1e8:,.0f} 亿'
-                 f'（上年同期 {prev / 1e8:,.0f} 亿）')
-        _note = f'{yoy * 100:+.0f}% 同比{_age}'
-    return ("最新季报", st, _desc, _note, yoy)
+    _tag = '亏损' if cur < 0 else '净利'
+    _desc = (f'{last["year"]}Q{last["quarter"]} 单季{_tag} '
+             f'{abs(cur) / 1e8:,.0f} 亿'
+             f'（上年同期 {"亏" if prev < 0 else ""} '
+             f'{abs(prev) / 1e8:,.0f} 亿）')
+    return ("最新季报", st, _desc, _why + _age, yoy)
 
 
 def decide(quarters, div_by_year, yr_avg, meta):
