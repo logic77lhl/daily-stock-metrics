@@ -1,0 +1,10 @@
+status=ok
+date=2026-10-30
+market=港股通
+rows=187
+success_ratio=1.0000
+fill=1.0000
+generated_at=2026-10-30 16:35:48
+universe=pool-fallback
+degraded=true
+missing_fields=PE_TTM,PE历史分位%,PB_MRQ,PB历史分位%,成交额(亿),PE5年分位%,PB5年分位%,行业

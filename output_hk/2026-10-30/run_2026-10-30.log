@@ -1,0 +1,18 @@
+2026-10-30 16:35:25  ===== 开始每日港股通指标任务 2026-10-30 =====
+2026-10-30 16:35:25  步骤1: 获取港股通总市值前100标的…
+获取港股通标的列表(共取市值前 100 只)...
+2026-10-30 16:35:30  [fetch_hk] push2.eastmoney.com 第 1 轮失败: ReadTimeout: HTTPSConnectionPool(host='push2delay.eastmoney.com', port=443): Read timed out. (read timeout=4)
+2026-10-30 16:35:35  [fetch_hk] push2delay.eastmoney.com 第 1 轮失败: ReadTimeout: HTTPSConnectionPool(host='push2delay.eastmoney.com', port=443): Read timed out. (read timeout=4)
+2026-10-30 16:35:36  [fetch_hk] 82.push2.eastmoney.com 第 1 轮失败: ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-10-30 16:35:37  [fetch_hk] 1.push2.eastmoney.com 第 1 轮失败: ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-10-30 16:35:37  步骤1失败(耗时 12s，预算 45.0s，ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')))，降级为观察池历史名单
+2026-10-30 16:35:37  步骤1完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-30/hk_list_2026-10-30.csv（名单来源: pool-fallback，耗时 12s）
+2026-10-30 16:35:37  步骤2: 计算 KDJ-J(日/周/月) 及估值…
+2026-10-30 16:35:37  观察池: 共187只(含历史追踪0只) -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-30/tracked_2026-10-30.csv
+2026-10-30 16:35:37  待处理 187 条，并发数 16
+2026-10-30 16:35:48  共享价格序列：187 只写入 /tmp/dsm-prices-8v9cutk8/output_hk.csv（回测将直接读它，省掉 187 次重复请求）
+2026-10-30 16:35:48  全部完成：成功 187/187，失败 0，数据日期 2026-10-30，结果已写入 /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-30/metrics_2026-10-30.csv
+2026-10-30 16:35:48  步骤2完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-30/metrics_2026-10-30.csv（成功 187/187，失败 0）
+2026-10-30 16:35:48  步骤3: 生成 HTML 总结报告…
+2026-10-30 16:35:48  步骤3完成 -> /home/runner/work/daily-stock-metrics/daily-stock-metrics/output_hk/2026-10-30/report_2026-10-30.html
+2026-10-30 16:35:48  ===== 全部完成 2026-10-30（邮件由流水线末尾统一发送）=====
