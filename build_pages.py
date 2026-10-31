@@ -1156,6 +1156,12 @@ def main():
         import industry_page
         industry_page.main([])
 
+        # 定投固定股数（每月 100 股）—— 数据由 tools/dca_shares_batch.py 离线算好，
+        # 这里只渲染。不放进日更：它要抓 380 只的 8 年日线，约 6 分钟，
+        # 而结果日间几乎不变。
+        import dca_shares_page
+        dca_shares_page.main([])
+
         # 财报季速览：跨股票聚合，个股页做不到（那是单只视角）
         import q3_digest
         q3_digest.main(["--html"])
