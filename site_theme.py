@@ -214,6 +214,8 @@ tbody tr:last-child td{border-bottom:0}
 td.ind{color:var(--dim);font-size:12px;text-align:left;font-family:inherit}
 td.why{color:var(--ok);font-weight:700;letter-spacing:2px;font-size:12px}
 .tblwrap{overflow:auto;border:1px solid var(--line);border-radius:var(--r-sm)}
+/* 宽表兜底：列多到装不下时横向滚动，而不是把右侧列裁掉 */
+.icard-body,.opp-grid{overflow-x:auto}
 .tblwrap table{margin-top:0}
 /* 年度表趋势行 */
 .trow td{background:rgba(255,210,30,.045);color:var(--dim);font-size:11.5px;
@@ -272,6 +274,11 @@ details table{margin-bottom:12px}
 .nav a{font-size:12px;color:var(--dim);border:1px solid var(--line);
   border-radius:var(--r-pill);padding:5px 13px;background:var(--panel);transition:.16s}
 .nav a:hover{color:var(--acc);border-color:rgba(255,210,30,.35);text-decoration:none}
+.nav a.on{color:var(--acc);border-color:rgba(255,210,30,.35);
+  background:rgba(255,210,30,.1)}
+.nav a.back{color:var(--tx);font-weight:600}
+th[data-dir]:after{content:" ▲";font-size:8px;color:var(--acc)}
+th[data-dir="desc"]:after{content:" ▼"}
 .legend{margin:2px 0 16px;font-size:11.5px;color:var(--dim2);line-height:1.9}
 .legend b{color:var(--dim);font-weight:600}
 .verdict{border-left:3px solid var(--line2);padding:10px 0 10px 14px;
@@ -285,7 +292,9 @@ LAYOUT = """
 .kpi-row,.stats{display:grid;gap:9px}
 .kpi-row{grid-template-columns:repeat(4,1fr)}
 .dsm-brd-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.opp-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.opp-grid{display:grid;grid-template-columns:1fr;gap:14px}
+/* 超跌/超买这两张表各有 10 列，2 列网格里每边只有 500px，右侧列会被截断。
+   整宽堆叠才装得下。 */
 .sec-row,.dsm-sec-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .dsm-sec-col,.v-item,.v-mkt,.mini-card{background:var(--panel);
   border:1px solid var(--line);border-radius:var(--r-card);padding:13px 15px}
@@ -293,7 +302,7 @@ LAYOUT = """
 .dash{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media(max-width:900px){
   .kpi-row{grid-template-columns:repeat(2,1fr)}
-  .opp-grid,.sec-row,.dsm-sec-cols,.dash,.v-row{grid-template-columns:1fr}
+  .sec-row,.dsm-sec-cols,.dash,.v-row{grid-template-columns:1fr}
 }
 """
 
@@ -336,3 +345,66 @@ if __name__ == "__main__":
     print(f"page_css() 共 {len(out)} 字符")
     print(f"容器 {CONTAINER}px · 正文 {BODY_SIZE} · h1 {H1_SIZE} · "
           f"h2 {H2_SIZE} · 表格 {TABLE_SIZE} · 卡片圆角 {CARD_RADIUS}")
+
+
+# ── 统一导航 ──────────────────────────────────────────────────
+# 为什么要有：之前每个子页面都没有回首页的路，用户点进去就出不来。
+# 现在全站一套导航，`prefix` 用于从顶层页（docs/）指向 基本面/ 子目录。
+_NAV = [
+    ("{p}index.html", "买什么", "四信号榜单"),
+    ("{p}行业.html", "看行业", "行业排行 + 成员"),
+    ("{p}Q3财报季.html", "财报季", "本季横向对比"),
+    ("{p}格雷厄姆.html", "看长期", "七条标准"),
+    ("{p}index.html", "全部标的", "380 只可排序清单"),
+]
+
+
+def nav(prefix: str = "", home: str = "", current: str = "") -> str:
+    """返回统一导航条。
+
+    prefix —— 从当前页到 `基本面/` 的相对前缀（顶层页传 "../基本面/"）
+    home   —— 回首页的相对路径（基本面/ 下传 "../index.html"）
+    current—— 当前项的标签，用于高亮
+    """
+    out = ['<div class="nav">']
+    if home:
+        out.append(f'<a class="back" href="{home}">← 首页</a>')
+    for href, label, tip in _NAV:
+        h = href.format(p=prefix)
+        cls = ' class="on"' if label == current else ""
+        out.append(f'<a href="{h}" title="{tip}"{cls}>{label}</a>')
+    out.append('</div>')
+    return "".join(out)
+
+
+# ── 可排序表格（客户端，~20 行，无依赖）────────────────────────
+# 为什么现在才加：我最初把「零 JS」当原则，结果 380 行的表只能按生成器
+# 决定的顺序看 —— 用户要按股息率排、按 PE 分位排，都做不到。
+# 原则应该服从需求：静态文件 + 20 行原生 JS 仍然没有构建步骤、没有服务端。
+SORT_JS = """<script>
+(function(){
+  document.querySelectorAll('table[data-sort]').forEach(function(t){
+    var tb=t.tBodies[0], hd=t.tHead.rows[0];
+    Array.prototype.forEach.call(hd.cells,function(th,i){
+      if(th.hasAttribute('data-nosort'))return;
+      th.style.cursor='pointer';
+      th.addEventListener('click',function(){
+        var d=th.getAttribute('data-dir')==='asc'?'desc':'asc';
+        Array.prototype.forEach.call(hd.cells,function(x){x.removeAttribute('data-dir')});
+        th.setAttribute('data-dir',d);
+        var rs=Array.prototype.slice.call(tb.rows);
+        rs.sort(function(a,b){
+          var x=a.cells[i].getAttribute('data-v'),
+              y=b.cells[i].getAttribute('data-v');
+          var nx=parseFloat(x), ny=parseFloat(y);
+          var v=(x!==null&&y!==null&&!isNaN(nx)&&!isNaN(ny))
+                ? nx-ny
+                : String(x||'').localeCompare(String(y||''),'zh');
+          return d==='asc'?v:-v;
+        });
+        rs.forEach(function(r){tb.appendChild(r)});
+      });
+    });
+  });
+})();
+</script>"""

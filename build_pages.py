@@ -29,31 +29,75 @@ _DIV_TOKEN = re.compile(r"<div\b[^>]*>|</div>")
 # ── 页面专属：清洗第三方片段的内联样式 ──────────────────────────
 # market_insights / strategy_summary 生成的片段把颜色写在内联 style 上
 # （background:#f7f9fc、color:#1c2333），类选择器抓不到。
-# 属性选择器 + !important 是覆盖内联普通声明的唯一可靠方式 ——
-# 作者 !important 声明优先于内联普通声明。
-# 通用样式一律不在这里，全部来自 site_theme。
+#
+# 两个关键点：
+# 1. 用 [style*="..."] 而**不是** div[style*=] —— 这些元素是 <td>/<span>，
+#    限定 div 就完全匹配不上（第一次就是这么错的，首页名字近黑看不见）。
+# 2. 颜色必须**穷举**。属性选择器没法做「亮度判断」，只能把生成页面里
+#    实际出现的 26 种 hex 全列出来 —— 漏一个就是一处看不见的字。
+#
+# 作者 !important 声明优先于内联普通声明，这是覆盖内联样式的唯一可靠方式。
 _PAGE_EXTRA = """
-div[style*="background:#fff"],div[style*="background: #fff"],
-section[style*="background:#fff"],section[style*="background: #fff"]{
+/* 三条路径卡片：首页的核心入口，必须比仪表盘更显眼 */
+.paths{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;
+  max-width:1080px;margin:16px auto 4px;padding:0 2px}
+.path{display:block;padding:16px 18px;border-radius:12px;text-decoration:none;
+  background:linear-gradient(180deg,var(--panel),var(--bg2));
+  border:1px solid var(--line);transition:.18s}
+.path:hover{border-color:rgba(255,210,30,.4);transform:translateY(-2px);
+  text-decoration:none}
+.path .pk{font:600 10.5px var(--mono);color:var(--dim2);letter-spacing:.1em}
+.path .pt{font-size:16px;font-weight:700;color:var(--tx);margin-top:6px}
+.path .pn{font:800 15px var(--mono);color:var(--acc);margin-top:8px}
+.path .pd{font-size:11.5px;color:var(--dim);margin-top:6px;line-height:1.6}
+@media(max-width:860px){.paths{grid-template-columns:1fr}}
+[style*="color:#1c2333"]{color:var(--tx)!important}
+[style*="color:#343a40"]{color:var(--tx)!important}
+[style*="color:#1a1a2e"]{color:var(--tx)!important}
+[style*="color:#495057"]{color:var(--dim)!important}
+[style*="color:#666"]{color:var(--dim)!important}
+[style*="color:#8791a8"]{color:var(--dim2)!important}
+[style*="color:#657289"]{color:var(--dim2)!important}
+[style*="color:#6b7280"]{color:var(--dim2)!important}
+[style*="color:#888"]{color:var(--dim2)!important}
+[style*="color:#1971c2"]{color:var(--blue)!important}
+[style*="color:#1565c0"]{color:var(--blue)!important}
+[style*="color:#22b8cf"]{color:var(--blue)!important}
+[style*="color:#5f3dc4"]{color:var(--violet)!important}
+[style*="color:#6a1b9a"]{color:var(--violet)!important}
+[style*="color:#2f9e44"]{color:var(--ok)!important}
+[style*="color:#2b8a3e"]{color:var(--ok)!important}
+[style*="color:#51cf66"]{color:var(--ok)!important}
+[style*="color:#d9480f"]{color:var(--warn)!important}
+[style*="color:#ff922b"]{color:var(--warn)!important}
+[style*="color:#fa5252"]{color:var(--bad)!important}
+[style*="color:#c92a2a"]{color:var(--bad)!important}
+[style*="color:#c62828"]{color:var(--bad)!important}
+
+[style*="background:#fff"],
+[style*="background:#f1f3f9"],
+[style*="background:#f7f9fc"],
+[style*="background:#f8f9fb"],
+[style*="background:#f5f7fb"],
+[style*="background:#eef1f7"],
+[style*="background:#fbfcfe"],
+[style*="background:#fafbfd"],
+[style*="background:rgb"]{
   background:linear-gradient(180deg,var(--panel),var(--bg2))!important;
-  border:1px solid var(--line)!important;box-shadow:none!important;
+  border-color:var(--line)!important;box-shadow:none!important;
   color:var(--tx)!important}
-div[style*="background:#f7f9fc"],div[style*="background:#f8f9fb"],
-div[style*="background:#f5f7fb"],div[style*="background:#f1f3f9"],
-div[style*="background:#eef1f7"],div[style*="background:#fbfcfe"],
-div[style*="background:#fafbfd"]{
-  background:rgba(255,255,255,.04)!important;border-color:var(--line)!important}
-div[style*="border:1px solid #eef1f7"],div[style*="border:1px solid #e5e8f0"],
-div[style*="border:1px solid #eceef4"],div[style*="border:1px solid #f0f2f8"]{
+
+[style*="border:1px solid #eef1f7"],
+[style*="border:1px solid #e5e8f0"],
+[style*="border:1px solid #eceef4"],
+[style*="border:1px solid #f0f2f8"],
+[style*="border:1px solid #f4f6fa"],
+[style*="border:1px solid #eee"],
+[style*="border-bottom:1px solid #f4f6fa"]{
   border-color:var(--line)!important}
-div[style*="color:#1c2333"],div[style*="color:#343a40"],div[style*="color:#1a1a2e"]{
-  color:var(--tx)!important}
-div[style*="color:#8791a8"],div[style*="color:#6b7280"],
-div[style*="color:#495057"],div[style*="color:#657289"],div[style*="color:#666"]{
-  color:var(--dim2)!important}
-div[style*="color:#d9480f"],span[style*="color:#d9480f"]{color:var(--warn)!important}
-div[style*="color:#c92a2a"],span[style*="color:#c92a2a"]{color:var(--bad)!important}
-div[style*="color:#2b8a3e"],span[style*="color:#2b8a3e"]{color:var(--ok)!important}
+
+/* 报告页专属：宽表容器比正文页宽一档，刻意例外 */
+.container{max-width:1400px}
 """
 
 import site_theme  # noqa: E402
@@ -843,6 +887,58 @@ def _strip_outer_div(body):
     return text[open_end:close_end - len("</div>")].strip()
 
 
+def _three_paths():
+    """首页的三条路径 —— 每条带一个当下可用的数字，不是空链接。
+
+    数字从 `_fin_cache/board_history.json`（今日分组）和 `codes.csv`（行业数）
+    直接读，不重新计算 —— 建站时榜单已经算过了，这里只是引用。
+    """
+    import json
+    n_watch = n_high = 0
+    try:
+        hp = os.path.join(BASE_DIR, "_fin_cache", "board_history.json")
+        hist = json.load(open(hp, encoding="utf-8"))
+        days = sorted(d for d in hist if not d.startswith("_"))
+        if days:
+            today = hist[days[-1]]
+            n_watch = sum(1 for v in today.values() if v == "值得看")
+            n_high = sum(1 for v in today.values() if v == "高位")
+    except Exception:
+        pass
+    n_ind = 0
+    try:
+        seen = set()
+        with open(os.path.join(BASE_DIR, "_fin_cache", "codes.csv"),
+                  encoding="utf-8-sig") as fh:
+            for r in csv.DictReader(fh):
+                v = (r.get("industry") or "").strip()
+                if v:
+                    seen.add(v)
+        n_ind = len(seen)
+    except Exception:
+        pass
+
+    def card(href, kicker, title, desc, num):
+        return (
+            f'<a class="path" href="{href}">'
+            f'<div class="pk">{kicker}</div>'
+            f'<div class="pt">{title}</div>'
+            f'<div class="pn">{num}</div>'
+            f'<div class="pd">{desc}</div></a>')
+
+    return ('<div class="paths">'
+            + card("基本面/榜单.html", "路径一", "我想买什么",
+                   "四信号分组：估值 / 盈利 / 现金回报 / 技术位置 / 最新季报",
+                   f'{n_watch} 只值得看' if n_watch else "看榜单")
+            + card("基本面/行业.html", "路径二", "我想了解某行业",
+                   "97 个行业排行，点进去看成员、Q3 同比、估值分位",
+                   f'{n_ind} 个行业' if n_ind else "看行业")
+            + card("基本面/定投回测.html", "路径三", "我想看长期",
+                   "定投回测 XIRR · 格雷厄姆七条标准",
+                   "定投 + 格雷厄姆")
+            + '</div>')
+
+
 def build_index(dates, extras, ctx):
     """首页 = 单页流式仪表盘：KPI 摘要带 + 市场洞察（大盘宽度/板块温度/超跌+超买双列）+ 今日摘要。"""
     total_reports = sum(len(k) for _, k in dates)
@@ -894,6 +990,13 @@ def build_index(dates, extras, ctx):
             f'<ul style="margin:6px 0 0;padding-left:20px">{items}</ul></div>'
         )
 
+    # ── 三条路径 ──────────────────────────────────────────────
+    # 用户反馈：「整个框架更像杂糅，没有很强的关联和互动逻辑」。
+    # 首页原来只是一堆仪表盘，看完不知道下一步去哪。这里按「我想做什么」
+    # 给三条明确路径，每条都带一个当下可用的数字，不是空链接。
+    _paths = _three_paths()
+    paths_html = _paths
+
     stale = ctx.get("stale") or []
     stale_html = ""
     if stale:
@@ -938,6 +1041,7 @@ def build_index(dates, extras, ctx):
 <span class="chip">🔄 每交易日收盘后自动更新</span>
 </div>
 {nav_html}
+{paths_html}
 {banner_html}
 </div></header>
 <main>
@@ -1045,6 +1149,12 @@ def main():
         # 但之前只有命令行工具自己读，页面上一个入口都没有 —— 算完就丢了。
         import extra_pages
         extra_pages.main()
+
+        # 行业页（路径二的落点）。
+        # **必须在这里调用**：上面有 shutil.rmtree(DOCS_DIR)，任何没被重建的
+        # 文件都会被静默删掉 —— 我第一次生成行业页后就撞上了这个。
+        import industry_page
+        industry_page.main([])
 
         # 财报季速览：跨股票聚合，个股页做不到（那是单只视角）
         import q3_digest

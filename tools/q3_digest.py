@@ -199,9 +199,7 @@ def write_html(recs, period, done, pend, ys, rs, inds):
          f'<span class="code">{len(done)}/{len(recs)} 已披露</span></div>',
          '<div class="prow"><span class="meta">'
          '单季口径（当期累计 − 上期累计）· 同比对上年同季</span></div></header>',
-         '<div class="nav"><a href="index.html">个股清单</a>'
-         '<a href="榜单.html">四信号榜单</a>'
-         '<a href="格雷厄姆.html">格雷厄姆七条</a></div>']
+         site_theme.nav(home="../index.html", current="财报季")]
 
     # 概览
     pos = sum(1 for v in ys if v > 0)

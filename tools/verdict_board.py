@@ -49,7 +49,7 @@ table.g th:nth-child(8),table.g td:nth-child(8){width:78px;text-align:left;
 import os as _os
 import sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-from site_theme import page_css as _page_css  # noqa: E402
+from site_theme import page_css as _page_css, nav as _theme_nav  # noqa: E402
 CSS = _page_css(_BOARD_CSS)
 
 # ─────────────────────────── 历史与迁移 ───────────────────────────
@@ -237,6 +237,7 @@ def main(argv=None):
 
     # ── 首屏：只讲迁移 ──
     _moved = [r for r in rows if r.get("move")]
+    h.append(_theme_nav(home="../index.html", current="买什么"))
     h.append('<h2>今日迁移<span class="cnt">'
              + (f'{len(_moved)} 只换了位置' if _moved else '无')
              + '</span><span class="hint">与上一个交易日相比</span></h2>')

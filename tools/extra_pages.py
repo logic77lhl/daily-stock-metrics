@@ -72,6 +72,7 @@ def _page(title, subtitle, body, out_name):
             f'<title>{title}</title><style>{bf.CSS}</style></head>'
             f'<body><div class="page">'
             f'<h1>{title}<span class="unit">{subtitle}</span></h1>'
+            + bf._theme_nav(home="../index.html", current=out_name.split(".")[0])
             + "".join(body) +
             '<div class="ft">数据：东财 datacenter / 本地估值序列　·　仅供参考，不构成投资建议</div>'
             '</div></body></html>')

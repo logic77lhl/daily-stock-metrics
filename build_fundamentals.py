@@ -47,6 +47,7 @@ _GRAHAM_CSS = """
 """
 
 from site_theme import page_css as _page_css  # noqa: E402
+from site_theme import nav as _theme_nav, SORT_JS as _THEME_SORT_JS  # noqa: E402
 CSS = _page_css(_GRAHAM_CSS)
 
 
@@ -660,6 +661,14 @@ def main(argv=None, payload=None):
              f'最新数据 {latest["statDate"] if latest else "—"}'
              f'（公告 {latest["pubDate"] if latest else "—"}）</span>')
     h.append('</div></header>')
+    # 统一导航 + 行业回链：之前个股页没有任何出口，
+    # 行业标签也不可点 —— 看到一只股票想知道「同行还有谁」无路可走。
+    h.append(_theme_nav(home="../index.html"))
+    _ind = html.escape(str(ind))
+    if ind and ind != "—":
+        h.append(f'<p class="strip"><span class="strip-k">同行业</span>'
+                 f'<a href="行业.html#ind-{_ind}">{_ind}</a>'
+                 f'　共 <a href="行业.html#ind-{_ind}">查看该行业全部成员与排行</a></p>')
 
     # ── 决策速览 ──
     # **必须走 verdict.decide()**，不能在这里再写一份。
@@ -1136,8 +1145,13 @@ def _summary_row(pl, meta):
 
 
 def _write_index(out_dir, rows, metrics):
-    rows = sorted(rows, key=lambda r: (-r["red"], -(r["yld"] or 0)))
+    # 默认按股息率降序。原来按「红灯数」排 —— 那是三个异质指标压成一个数，
+    # 读者看不出为什么这只排在前面，也没法按自己关心的维度重排。
+    # 现在默认给一个可操作的顺序，其余维度点表头即可。
+    rows = sorted(rows, key=lambda r: -(r["yld"] or 0))
     date = os.path.basename(metrics).replace("metrics_", "").replace(".csv", "")
+    _NAV_HTML = _theme_nav(home="../index.html", current="全部标的")
+    _SORT_JS = _THEME_SORT_JS
     h = ['<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">',
          '<meta name="viewport" content="width=device-width,initial-scale=1">',
          f'<title>基本面榜单 {date}</title><style>{CSS}</style></head><body>',
@@ -1154,10 +1168,12 @@ def _write_index(out_dir, rows, metrics):
          '<a href="港股名单.html">港股 100 只</a>'
          '<a href="Q3财报季.html">Q3 财报季</a>'
          '</div>',
-         '<h2>按红灯数排序<span class="unit">红 = 估值偏高 / ROE 走弱 / 周J 超买</span></h2>',
-         '<div class="scroll"><table><thead><tr><th class="k">标的</th><th>行业</th>'
+         _NAV_HTML,
+         '<h2>全部标的<span class="unit">点表头排序 · 红 = 估值偏高 / ROE 走弱 / 周J 超买</span></h2>',
+         '<div class="scroll"><table data-sort><thead><tr><th class="k">标的</th><th>行业</th>'
          '<th>最新价</th><th>PE分位</th><th>PB分位</th><th>股息率</th><th>ROE</th>'
-         '<th>ROE 4年</th><th>净利同比</th><th>周J</th><th>灯</th></tr></thead><tbody>']
+         '<th>ROE 4年</th><th>净利同比</th><th>周J</th><th data-nosort>灯</th>'
+         '</tr></thead><tbody>']
     for r in rows:
         dots = ("<span class='neg'>●</span>" * r["red"]
                 + "<span class='na'>○</span>" * (3 - r["red"]))
@@ -1169,18 +1185,29 @@ def _write_index(out_dir, rows, metrics):
         d_cls = "down" if (r["roe_delta"] or 0) < 0 else "up"
         n_txt = f'{r["np_yoy"]:+.1f}%' if r["np_yoy"] is not None else "—"
         j_txt = f'{r["jw"]:.0f}' if r["jw"] is not None else "—"
+        def _v(x):
+            return "" if x is None else x
         h.append(
-            f'<tr><td class="k"><a href="{r["code"]}.html" style="color:var(--blue);'
+            f'<tr><td class="k" data-v="{html.escape(str(r["name"]))}">'
+            f'<a href="{r["code"]}.html" style="color:var(--blue);'
             f'text-decoration:none">{html.escape(str(r["name"]))}'
             f'<span style="color:var(--dim2);font-size:11px"> {r["code"]}</span></a></td>'
-            f'<td style="text-align:left;color:var(--dim);font-size:12px">'
+            f'<td data-v="{html.escape(str(r["ind"]))}" '
+            f'style="text-align:left;color:var(--dim);font-size:12px">'
             f'{html.escape(str(r["ind"]))}</td>'
-            f'<td>{r["px"] if r["px"] else "—"}</td><td>{pe_txt}</td><td>{pb_txt}</td>'
-            f'<td>{yld_txt}</td><td>{roe_txt}</td><td class="{d_cls}">{d_txt}</td>'
-            f'<td>{n_txt}</td><td>{j_txt}</td><td>{dots}</td></tr>')
+            f'<td data-v="{_v(r["px"])}">{r["px"] if r["px"] else "—"}</td>'
+            f'<td data-v="{_v(r["pe_pct"])}">{pe_txt}</td>'
+            f'<td data-v="{_v(r["pb_pct"])}">{pb_txt}</td>'
+            f'<td data-v="{_v(r["yld"])}">{yld_txt}</td>'
+            f'<td data-v="{_v(r["roe"])}">{roe_txt}</td>'
+            f'<td data-v="{_v(r["roe_delta"])}" class="{d_cls}">{d_txt}</td>'
+            f'<td data-v="{_v(r["np_yoy"])}">{n_txt}</td>'
+            f'<td data-v="{_v(r["jw"])}">{j_txt}</td>'
+            f'<td data-v="{r["red"]}">{dots}</td></tr>')
     h.append('</tbody></table></div>')
     h.append('<div class="fn">红灯数只是位置描述，不是买卖建议。'
              '排序 = 红灯数降序、同灯数按股息率降序。</div>')
+    h.append(_SORT_JS)
     h.append(f'<div class="ft">生成于 {datetime.now():%Y-%m-%d %H:%M}　·　'
              f'仅供参考，不构成投资建议</div></div></body></html>')
     with open(os.path.join(out_dir, "index.html"), "w", encoding="utf-8") as fh:
