@@ -754,6 +754,14 @@ def _copy_dark(src, dst):
     try:
         with open(src, encoding="utf-8") as fh:
             body = fh.read()
+        # 修坏链接：回测页里写的是 href="backtest_report_trades.csv"，
+        # 但复制到 docs 时文件被改名成 backtest-{key}-trades.csv ——
+        # 于是「下载全部交易明细CSV」是 404。这里把链接改成实际文件名。
+        _dst = os.path.basename(dst)
+        if _dst.startswith("backtest-") and _dst.endswith(".html"):
+            _key = _dst[len("backtest-"):-len(".html")]
+            body = body.replace('href="backtest_report_trades.csv"',
+                                f'href="backtest-{_key}-trades.csv"')
         _tag = "<style>" + _page_css(_PAGE_EXTRA) + "</style>"
         if _tag not in body:
             body = body.replace("</body>", _tag + "</body>", 1)
