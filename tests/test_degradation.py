@@ -21,8 +21,11 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -38,6 +41,8 @@ import requests  # noqa: E402
 import fetch_metrics  # noqa: E402
 import quality  # noqa: E402
 import runner  # noqa: E402
+
+_ANNOTATION_RE = re.compile(r"^::(?:warning|error|notice)::")
 import strategy_summary  # noqa: E402
 
 # 2026-10-09（周五）22:00 北京时间：已收盘、且下一交易日 10-12 尚未开盘，
@@ -142,7 +147,19 @@ def _run_with(stack):
     for patcher in stack:
         patcher.start()
     try:
-        return runner.run(runner.SPECS["a"])
+        # 捕获 runner 的 stdout，只把 GitHub Actions 的注解命令
+        # （::warning:: / ::error:: / ::notice::）丢掉，其余照常打印。
+        # 理由：这些**测试**里故意制造的失败（模拟东财 RST）会被 Actions 当成
+        # 真实告警挂在运行页上，每次运行多出 4 条假警告，把真正的告警淹掉。
+        # 2026-11 排查「很多报错」时就被它误导过一次：以为线上在降级，
+        # 实际线上站点根本没有降级横幅。
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = runner.run(runner.SPECS["a"])
+        for line in buf.getvalue().splitlines():
+            if not _ANNOTATION_RE.match(line):
+                print(line)
+        return rc
     finally:
         for patcher in reversed(stack):
             patcher.stop()

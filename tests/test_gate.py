@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import shutil
 import sys
@@ -165,10 +167,19 @@ def test_site_only_mode_exits_zero() -> None:
         _seed_all(root)
         os.remove(os.path.join(root, "output_hk", EXPECTED, "DONE"))
         with mock.patch.object(gate, "BASE_DIR", root):
-            code = gate.main(["--expected-a", EXPECTED, "--expected-hk", EXPECTED,
-                              "--lookback", "3", "--mode", "site-only"])
+            # 捕获 stdout：gate 会打印 ::warning:: 注解命令，直接漏到 CI 会被
+            # Actions 当成真实告警挂到运行页上（每次运行多一条假警告）。
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = gate.main(["--expected-a", EXPECTED, "--expected-hk", EXPECTED,
+                                  "--lookback", "3", "--mode", "site-only"])
+        out = buf.getvalue()
         assert code == 0, f"site-only 应退出 0，实际 {code}"
-        print("  [PASS] site-only 模式缺数据仍退出 0（与「把跳过当绿灯」的区别是显式且页面可见）")
+        # 顺手把 docstring 里「必须留警告」这句话变成真的断言 —— 原来只是写着，
+        # 没有任何地方检查，删掉警告也照样绿。
+        assert "::warning::site-only" in out, (
+            "site-only 必须发出警告，否则等于静默跳过")
+        print("  [PASS] site-only 模式缺数据仍退出 0，且确实发出了警告")
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
