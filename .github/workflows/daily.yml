@@ -232,8 +232,37 @@ jobs:
         with:
           path: docs
 
+      # 部署要重试。2026-11-23/24 连续三次「红」全是同一个假故障：
+      #   Upload site 成功（Artifact 13.9MB、ID 都打出来了）
+      #   → deploy-pages 报 "No artifacts named github-pages were found"
+      # 日志里能同时看到 "Found 1 artifact(s)" 和 "Fetching artifact metadata
+      # failed" —— 制品在，只是元数据查询那一刻还没就绪（最终一致性），
+      # 属于 GitHub 侧抖动，跟我们的代码和数据无关。
+      # 2026-11-04 的 updating_pages 超时也是同一类。
+      # 处理：等一会儿重试，最多三次；三次都失败才真的红。
       - name: Deploy to GitHub Pages
+        id: deploy_1
         if: always() && steps.pipeline.outcome == 'success'
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Wait before deploy retry
+        if: always() && steps.deploy_1.outcome == 'failure'
+        run: sleep 30
+
+      - name: Deploy to GitHub Pages (retry 2)
+        id: deploy_2
+        if: always() && steps.deploy_1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Wait before deploy retry 2
+        if: always() && steps.deploy_1.outcome == 'failure' && steps.deploy_2.outcome == 'failure'
+        run: sleep 60
+
+      # 第三次不加 continue-on-error —— 真的挂了就要红，不能永远绿着。
+      - name: Deploy to GitHub Pages (retry 3)
+        if: always() && steps.deploy_1.outcome == 'failure' && steps.deploy_2.outcome == 'failure'
         uses: actions/deploy-pages@v4
 
       # 唯一的红/绿裁决点。原来这里是**两段** bash：一段算出 complete、另一段
