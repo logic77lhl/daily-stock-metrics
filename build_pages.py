@@ -1019,6 +1019,18 @@ def build_index(dates, extras, ctx):
             '请勿当作最新行情使用。</div></div>'
         )
 
+    # ── 数据日期 ──────────────────────────────────────────────
+    # 首页必须能一眼看出「这是哪天的数据」。原来只有「已收录 30 个交易日」，
+    # 看不出最新一天是哪天 —— 站点悄悄停更时，页面跟正常时长得一模一样，
+    # 只能靠翻日期页去猜。2026-11 排查 CI 报警时就被这一点耽误过。
+    latest_day = dates[0][0] if dates else ""
+    if latest_day:
+        _tone = (' style="border-color:#fb7185;color:#fb7185"' if stale else "")
+        day_chip = (f'<span class="chip"{_tone}>📅 数据日期 '
+                    f'{html.escape(str(latest_day))}</span>')
+    else:
+        day_chip = '<span class="chip">📅 暂无数据</span>'
+
     # ---- 洞察区：大盘宽度（宽卡）+ 板块温度（宽卡）+ 超跌/超买双列 ----
     breadth_card = _insight_card("大盘宽度仪表盘", "📡",
                                   _strip_outer_div(ctx.get("breadth", "")), tone="value")
@@ -1044,7 +1056,8 @@ def build_index(dates, extras, ctx):
 <h1>📈 每日<span>市场洞察</span></h1>
 <p>大盘温度 · 板块景气 · 超跌机会 · 策略命中 · 价值标的</p>
 <div class="stats">
-<span class="chip">📅 已收录 {len(dates)} 个交易日</span>
+{day_chip}
+<span class="chip">📊 已收录 {len(dates)} 个交易日</span>
 <span class="chip">📊 {total_reports} 份报告</span>
 <span class="chip">🔄 每交易日收盘后自动更新</span>
 </div>
